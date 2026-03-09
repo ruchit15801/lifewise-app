@@ -1,7 +1,7 @@
-# SpendIQ - UPI Expense Intelligence App
+# SpendIQ - AI Life Assistant / Smart Expense Intelligence App
 
 ## Overview
-A mobile-first personal finance app that analyzes UPI/SMS transactions to provide spending insights, money leak detection, bill alerts, and monthly financial summaries. Features light/dark theme toggle, animated splash screen, multi-step onboarding, and email/password authentication.
+A premium luxury fintech-style mobile app that acts as an intelligent life companion for managing spending, bills, and financial health. Features smart spending analysis, money leak detection, payment reminders, and a spending health score. Inspired by CRED, Apple Health, Jupiter Money, and Headspace.
 
 ## Tech Stack
 - **Frontend**: Expo (React Native) with Expo Router for file-based routing
@@ -15,18 +15,18 @@ A mobile-first personal finance app that analyzes UPI/SMS transactions to provid
 ```
 app/
   _layout.tsx          # Root layout with ThemeProvider, AuthProvider, ExpenseProvider, AuthGate routing
-  onboarding.tsx       # 3-slide swipeable onboarding intro
+  onboarding.tsx       # 3-slide swipeable onboarding (purple/blue/orange accents)
   settings.tsx         # Settings screen (dark mode toggle, profile, logout)
   (auth)/
     _layout.tsx        # Auth stack layout
-    login.tsx          # Email/password login + social buttons
+    login.tsx          # Email/password login + social buttons (purple gradient)
     register.tsx       # Registration with name/email/password
   (tabs)/
     _layout.tsx        # Tab navigation (5 tabs with liquid glass support)
-    index.tsx          # Home Dashboard
-    transactions.tsx   # Transaction Timeline
-    reports.tsx        # Monthly Report
-    leaks.tsx          # Money Leak Detector
+    index.tsx          # Home Dashboard with spending score ring
+    transactions.tsx   # Transaction Timeline with premium cards
+    reports.tsx        # Monthly Report with data visualizations
+    leaks.tsx          # Money Leak Detector with savings insights
     bills.tsx          # Smart Payment Reminder System
 lib/
   data.ts              # Types, mock data generators, utility functions
@@ -35,7 +35,7 @@ lib/
   theme-context.tsx    # Theme context (light/dark mode, AsyncStorage persisted)
   query-client.ts      # React Query client config, getApiUrl(), apiRequest()
 constants/
-  colors.ts            # Light + dark theme color palettes with ThemeColors type
+  colors.ts            # Premium fintech color palette (ThemeColors interface)
 components/
   ErrorBoundary.tsx    # Error boundary component
   ErrorFallback.tsx    # Error fallback UI
@@ -44,46 +44,44 @@ server/
   routes.ts            # API routes (auth/register, auth/login)
 ```
 
+## Design System
+### Color Palette
+- **Primary Accent**: Electric Purple (#8B5CF6 dark / #7C3AED light)
+- **Secondary Accents**: Neon Blue (#3B82F6), Soft Mint (#10B981), Warm Orange (#F59E0B)
+- **Dark Mode**: Midnight blue gradient (#0F172A → #1E293B), cards #1E293B
+- **Light Mode**: Soft gradient (#F8FAFC → #EEF2FF), white cards
+- **Semantic**: Danger #EF4444, Warning #F59E0B
+- **Hero gradients**: Purple-tinted gradient surfaces for key cards
+
+### Typography
+- Inter font family (Regular 400, Medium 500, SemiBold 600, Bold 700)
+- Title: 28-32px, Cards: 18-22px, Body: 14-16px
+- Numbers feel bold and premium with negative letter-spacing
+
+### Layout Principles
+- Luxury minimalism: large cards, generous whitespace, soft borders
+- Card borderRadius: 18-24px with 1px subtle borders
+- Calm, intelligent feel — no clutter
+
 ## Auth Flow
-1. **Splash screen** - Dark branded splash with SpendIQ logo (1.2s)
-2. **Onboarding** - 3-slide intro (Smart Insights, Money Leaks, Payment Reminders) - shown once
-3. **Login/Register** - Email/password auth with social buttons (coming soon)
-4. **Main Tabs** - 5-tab dashboard after authentication
+1. **Splash** - Midnight blue gradient with purple SpendIQ logo (1.2s)
+2. **Onboarding** - 3 slides (Smart Insights, Money Leaks, Payment Reminders)
+3. **Login/Register** - Email/password with purple gradient buttons
+4. **Main Tabs** - 5-tab premium dashboard
 
 ## Key Features
-1. **Home Dashboard** - Daily/monthly spend summary, budget tracking, category breakdown, recent transactions
-2. **Transaction Timeline** - Chronological transaction list with category filters, grouped by date
-3. **Monthly Reports** - Month-by-month spending analysis with category bars, top merchants, savings rate
-4. **Money Leak Detector** - Identifies recurring expenses, estimates monthly/yearly savings potential
-5. **Smart Payment Reminder System** - Full reminder center with:
-   - Three reminder types: Bill, Subscription, Custom
-   - Repeat options: One-time, Daily, Weekly, Monthly, Yearly
-   - Actions: Mark Paid, Snooze (1d/2d/3d/1w), Edit, Delete
-   - Add/Edit modal with icon picker, category selector, type selector
-   - Snooze modal with preset durations
-   - Settings modal (notification timing, sound/vibration toggles)
-   - Filter tabs: All / Bills / Subscriptions / Custom
-   - Overview card with pending total, urgent count, subscription total
+1. **Home Dashboard** - Greeting, spending score ring, hero spending card, life insights, category pills, recent transactions
+2. **Transaction Timeline** - Premium grouped cards with category filters, summary stats
+3. **Monthly Reports** - Month selector, gradient summary card, category bars, top merchants, savings rate
+4. **Money Leak Detector** - Leak cards with savings potential, gradient savings summary, AI-friendly suggestions
+5. **Smart Payment Reminders** - Bill/subscription/custom types, CRUD, snooze, filter tabs, overview card
 6. **Light/Dark Mode** - Toggle in Settings, persisted via AsyncStorage, default: light
-7. **Settings** - Profile display, theme toggle, logout
+7. **Spending Health Score** - Computed from budget usage, bills paid, leak amounts
 
 ## Data Model
 - **Users table** (PostgreSQL): id, email, password_hash, name, created_at
-- `Bill` type: `reminderType` (bill/subscription/custom), `repeatType`, `status`, `snoozedUntil`, `reminderDaysBefore`
-- `ReminderSettings`: `defaultReminderDays`, `soundEnabled`, `vibrationEnabled`
-- `ExpenseContext` provides: `addReminder`, `editReminder`, `deleteReminder`, `snoozeReminder`, `updateReminderSettings`
-- Storage keys use `_v2` suffix for bills. Auth keys: `@spendiq_user`, `@spendiq_token`, `@spendiq_onboarded`, `@spendiq_theme`
-
-## Design
-- **Light mode (default)**: #F5F7FA background, #00C48C accent, white cards
-- **Dark mode**: #06060E background, #00E5A0 neon green accent, glassmorphic cards
-- Category color coding system
-- Inter font family (Regular, Medium, SemiBold, Bold)
-- NativeTabs with liquid glass support for iOS 26+
-- No emoji - uses Ionicons exclusively
-
-## Data
-Uses demo transaction data generated by `lib/data.ts`. Transactions simulate realistic Indian UPI payments across categories (Swiggy, Zomato, Amazon, Uber, etc.). Data persists locally via AsyncStorage. Bills include 10 demo entries covering utility bills and subscriptions.
+- Storage keys: `@spendiq_user`, `@spendiq_token`, `@spendiq_onboarded`, `@spendiq_theme`
+- Bills use `_v2` storage key suffix
 
 ## Environment
 - Frontend: Port 8081 (Expo web)
