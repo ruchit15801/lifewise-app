@@ -564,11 +564,17 @@ export default function BillsScreen() {
     .filter(b => b.reminderType === 'subscription' && b.status !== 'paid' && !b.isPaid)
     .reduce((s, b) => s + b.amount, 0);
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   const handleDelete = (billId: string) => {
-    Alert.alert('Delete Reminder', 'Are you sure you want to delete this reminder?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteReminder(billId) },
-    ]);
+    if (Platform.OS === 'web') {
+      setDeleteConfirmId(billId);
+    } else {
+      Alert.alert('Delete Reminder', 'Are you sure you want to delete this reminder?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteReminder(billId) },
+      ]);
+    }
   };
 
   const handleSave = (billData: Omit<Bill, 'id'> | Bill) => {
@@ -607,6 +613,8 @@ export default function BillsScreen() {
                 onPress={() => setShowSettingsModal(true)}
                 style={styles.headerIconBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                testID="settings-btn"
+                accessibilityLabel="Settings"
               >
                 <Ionicons name="settings-outline" size={22} color={Colors.dark.textSecondary} />
               </Pressable>
@@ -614,6 +622,7 @@ export default function BillsScreen() {
                 onPress={() => { setEditBill(null); setShowAddModal(true); }}
                 style={styles.addBtn}
                 testID="add-reminder-btn"
+                accessibilityLabel="Add reminder"
               >
                 <Ionicons name="add" size={22} color={Colors.dark.bg} />
               </Pressable>
@@ -740,6 +749,31 @@ export default function BillsScreen() {
         settings={reminderSettings}
         onSave={updateReminderSettings}
       />
+
+      <Modal visible={!!deleteConfirmId} animationType="fade" transparent>
+        <Pressable style={styles.snoozeOverlay} onPress={() => setDeleteConfirmId(null)}>
+          <View style={styles.snoozeSheet}>
+            <Text style={styles.snoozeTitle}>Delete Reminder</Text>
+            <Text style={styles.snoozeSubtitle}>Are you sure you want to delete this reminder?</Text>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              <Pressable
+                onPress={() => setDeleteConfirmId(null)}
+                style={[styles.actionBtn, { flex: 1, backgroundColor: Colors.dark.card, paddingVertical: 14 }]}
+              >
+                <Text style={[styles.actionText, { color: Colors.dark.textSecondary, fontSize: 14 }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { if (deleteConfirmId) deleteReminder(deleteConfirmId); setDeleteConfirmId(null); }}
+                style={[styles.actionBtn, { flex: 1, backgroundColor: Colors.dark.danger + '18', paddingVertical: 14 }]}
+                testID="confirm-delete-btn"
+              >
+                <Ionicons name="trash" size={16} color={Colors.dark.danger} />
+                <Text style={[styles.actionText, { color: Colors.dark.danger, fontSize: 14 }]}>Delete</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
