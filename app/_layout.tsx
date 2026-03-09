@@ -20,6 +20,7 @@ import { queryClient } from "@/lib/query-client";
 import { ExpenseProvider } from "@/lib/expense-context";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeProvider, useTheme } from "@/lib/theme-context";
+import { CurrencyProvider } from "@/lib/currency-context";
 import { StatusBar } from "expo-status-bar";
 
 SplashScreen.preventAutoHideAsync();
@@ -121,6 +122,9 @@ function AuthGate() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="life-memory" />
+        <Stack.Screen name="family" />
+        <Stack.Screen name="assistant" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>
@@ -149,11 +153,13 @@ export default function RootLayout() {
         <GestureHandlerRootView>
           <KeyboardProvider>
             <ThemeProvider>
-              <AuthProvider>
-                <ExpenseProvider>
-                  <AuthGate />
-                </ExpenseProvider>
-              </AuthProvider>
+              <CurrencyProvider>
+                <AuthProvider>
+                  <ExpenseProvider>
+                    <AuthGate />
+                  </ExpenseProvider>
+                </AuthProvider>
+              </CurrencyProvider>
             </ThemeProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>

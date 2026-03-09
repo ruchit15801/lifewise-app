@@ -13,10 +13,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
+import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import {
   CATEGORIES,
-  formatCurrency,
   formatTime,
   getDateLabel,
   CategoryType,
@@ -37,7 +37,7 @@ const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'others', label: 'Others', icon: 'ellipsis-horizontal' },
 ];
 
-function TransactionItem({ item, colors, isDark }: { item: Transaction; colors: ThemeColors; isDark: boolean }) {
+function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
   const cat = CATEGORIES[item.category];
   return (
     <View
@@ -63,7 +63,7 @@ function TransactionItem({ item, colors, isDark }: { item: Transaction; colors: 
       </View>
       <View style={styles.txRight}>
         <Text style={[styles.txAmount, { color: colors.danger }]}>
-          -{formatCurrency(item.amount)}
+          -{formatAmount(item.amount)}
         </Text>
         <Text style={[styles.txTime, { color: colors.textTertiary }]}>
           {formatTime(item.date)}
@@ -76,6 +76,7 @@ function TransactionItem({ item, colors, isDark }: { item: Transaction; colors: 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { formatAmount } = useCurrency();
   const { transactions, isLoading } = useExpenses();
   const [activeFilter, setActiveFilter] = useState('all');
 
@@ -132,7 +133,7 @@ export default function TransactionsScreen() {
                 Total Spent
               </Text>
               <Text style={[styles.summaryAmount, { color: colors.text }]}>
-                {formatCurrency(totalFiltered)}
+                {formatAmount(totalFiltered)}
               </Text>
             </View>
             <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
@@ -187,7 +188,7 @@ export default function TransactionsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <TransactionItem item={item} colors={colors} isDark={isDark} />}
+        renderItem={({ item }) => <TransactionItem item={item} colors={colors} isDark={isDark} formatAmount={formatAmount} />}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
@@ -195,7 +196,7 @@ export default function TransactionsScreen() {
             </Text>
             <View style={[styles.sectionBadge, { backgroundColor: colors.surfaceGlow }]}>
               <Text style={[styles.sectionTotal, { color: colors.accent }]}>
-                {formatCurrency((section as any).total)}
+                {formatAmount((section as any).total)}
               </Text>
             </View>
           </View>
