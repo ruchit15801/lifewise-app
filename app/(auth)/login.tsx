@@ -115,13 +115,13 @@ export default function LoginScreen() {
             testID="login-submit"
           >
             <LinearGradient
-              colors={[colors.accent, '#00B87A']}
+              colors={[...colors.buttonGradient] as [string, string]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.loginBtn}
             >
               {isSubmitting ? (
-                <ActivityIndicator color="#06060E" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.loginBtnText}>Sign In</Text>
               )}
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   loginBtnText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 16,
-    color: '#06060E',
+    color: '#FFFFFF',
   },
   dividerRow: {
     flexDirection: 'row',

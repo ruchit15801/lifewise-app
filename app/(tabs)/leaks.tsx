@@ -23,27 +23,37 @@ function LeakCard({ leak, index, colors }: { leak: MoneyLeak; index: number; col
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200 + index * 100).duration(500) : undefined}>
       <View style={[styles.leakCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.leakHeader}>
-          <View style={[styles.leakIcon, { backgroundColor: cat.color + '18' }]}>
-            <Ionicons name={cat.icon as any} size={20} color={cat.color} />
+          <View style={[styles.leakIcon, { backgroundColor: cat.color + '15' }]}>
+            <Ionicons name={cat.icon as any} size={22} color={cat.color} />
           </View>
           <View style={styles.leakInfo}>
             <Text style={[styles.leakMerchant, { color: colors.text }]}>{leak.merchant}</Text>
             <View style={styles.leakMeta}>
-              <View style={[styles.freqBadge, { backgroundColor: colors.dangerDim }]}>
-                <Text style={[styles.freqText, { color: colors.danger }]}>{leak.frequency}</Text>
+              <View style={[styles.freqBadge, { backgroundColor: colors.warningDim }]}>
+                <Ionicons name="time-outline" size={10} color={colors.warning} style={{ marginRight: 3 }} />
+                <Text style={[styles.freqText, { color: colors.warning }]}>{leak.frequency}</Text>
               </View>
-              <Text style={[styles.leakCount, { color: colors.textTertiary }]}>{leak.transactionCount} times this month</Text>
+              <Text style={[styles.leakCount, { color: colors.textTertiary }]}>{leak.transactionCount} times</Text>
             </View>
           </View>
           <View style={styles.leakAmountBox}>
-            <Text style={[styles.leakAmount, { color: colors.text }]}>{formatCurrency(leak.monthlyEstimate)}</Text>
-            <Text style={[styles.leakAmountLabel, { color: colors.textTertiary }]}>/month</Text>
+            <Text style={[styles.leakAmount, { color: colors.danger }]}>{formatCurrency(leak.monthlyEstimate)}</Text>
+            <Text style={[styles.leakAmountLabel, { color: colors.textTertiary }]}>per month</Text>
           </View>
         </View>
 
+        <View style={[styles.savingsPotentialRow, { backgroundColor: colors.accentMintDim }]}>
+          <Ionicons name="leaf-outline" size={14} color={colors.accentMint} />
+          <Text style={[styles.savingsPotentialText, { color: colors.accentMint }]}>
+            Save up to {formatCurrency(leak.monthlyEstimate * 12)}/year
+          </Text>
+        </View>
+
         <View style={[styles.suggestionBox, { borderTopColor: colors.border }]}>
-          <Ionicons name="bulb" size={14} color={colors.warning} />
-          <Text style={[styles.suggestionText, { color: colors.warning }]}>{leak.suggestion}</Text>
+          <View style={[styles.suggestionIconWrap, { backgroundColor: colors.warningDim }]}>
+            <Ionicons name="bulb-outline" size={13} color={colors.warning} />
+          </View>
+          <Text style={[styles.suggestionText, { color: colors.textSecondary }]}>{leak.suggestion}</Text>
         </View>
       </View>
     </Animated.View>
@@ -53,15 +63,11 @@ function LeakCard({ leak, index, colors }: { leak: MoneyLeak; index: number; col
 export default function LeaksScreen() {
   const insets = useSafeAreaInsets();
   const { leaks, isLoading } = useExpenses();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
   const potentialYearlySavings = totalLeaks * 12;
-
-  const gradientColors: [string, string, string] = isDark
-    ? ['#2D1117', '#1A0A0F', '#110D1A']
-    : ['#FFF0F0', '#FFF5F0', '#F8F0FF'];
 
   if (isLoading) {
     return (
@@ -82,41 +88,61 @@ export default function LeaksScreen() {
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
           <Text style={[styles.screenTitle, { color: colors.text }]}>Money Leaks</Text>
-          <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>Recurring expenses draining your wallet</Text>
+          <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
+            Smart insights on recurring expenses
+          </Text>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}>
           <LinearGradient
-            colors={gradientColors}
+            colors={colors.heroGradient as unknown as [string, string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.savingsCard, { borderColor: colors.danger + '25' }]}
+            style={[styles.savingsCard, { borderColor: colors.border }]}
           >
-            <View style={[styles.savingsIconWrap, { backgroundColor: colors.dangerDim }]}>
-              <Ionicons name="water" size={28} color={colors.danger} />
-            </View>
-            <View style={styles.savingsContent}>
-              <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Potential Monthly Savings</Text>
-              <Text style={[styles.savingsAmount, { color: colors.danger }]}>{formatCurrency(totalLeaks)}</Text>
-              <View style={styles.yearlyRow}>
-                <Ionicons name="trending-up" size={14} color={colors.accent} />
-                <Text style={[styles.yearlyText, { color: colors.accent }]}>
-                  That's {formatCurrency(potentialYearlySavings)} per year
-                </Text>
+            <View style={styles.savingsCardTop}>
+              <View style={[styles.savingsIconWrap, { backgroundColor: colors.accentMintDim }]}>
+                <Ionicons name="shield-checkmark" size={26} color={colors.accentMint} />
               </View>
+              <View style={styles.savingsContent}>
+                <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Potential Savings</Text>
+                <Text style={[styles.savingsAmount, { color: colors.accentMint }]}>
+                  {formatCurrency(totalLeaks)}
+                </Text>
+                <Text style={[styles.savingsAmountSuffix, { color: colors.textTertiary }]}>per month</Text>
+              </View>
+            </View>
+
+            <View style={[styles.yearlySavingsRow, { backgroundColor: colors.surfaceGlow }]}>
+              <Ionicons name="trending-up" size={16} color={colors.accentMint} />
+              <Text style={[styles.yearlyText, { color: colors.accentMint }]}>
+                {formatCurrency(potentialYearlySavings)} potential yearly savings
+              </Text>
             </View>
           </LinearGradient>
         </Animated.View>
 
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-          {leaks.length} leak{leaks.length !== 1 ? 's' : ''} detected
-        </Text>
+        <Animated.View
+          entering={Platform.OS !== 'web' ? FadeInDown.delay(150).duration(500) : undefined}
+          style={styles.sectionHeader}
+        >
+          <View style={[styles.sectionBadge, { backgroundColor: colors.warningDim }]}>
+            <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
+            <Text style={[styles.sectionTitle, { color: colors.warning }]}>
+              {leaks.length} leak{leaks.length !== 1 ? 's' : ''} detected
+            </Text>
+          </View>
+        </Animated.View>
 
         {leaks.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="shield-checkmark" size={48} color={colors.accent} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No leaks detected</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Your spending looks healthy</Text>
+          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.emptyIconWrap, { backgroundColor: colors.accentMintDim }]}>
+              <Ionicons name="shield-checkmark" size={40} color={colors.accentMint} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>All clear!</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+              No spending leaks detected. Your finances look healthy.
+            </Text>
           </View>
         ) : (
           leaks.map((leak, idx) => (
@@ -142,6 +168,7 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontFamily: 'Inter_700Bold',
     fontSize: 28,
+    letterSpacing: -0.5,
   },
   screenSubtitle: {
     fontFamily: 'Inter_400Regular',
@@ -150,18 +177,22 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   savingsCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
     marginBottom: 28,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  savingsCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+    marginBottom: 18,
   },
   savingsIconWrap: {
     width: 56,
     height: 56,
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -172,33 +203,52 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.8,
+    letterSpacing: 1,
+    marginBottom: 4,
   },
   savingsAmount: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 32,
-    marginVertical: 4,
+    fontSize: 36,
+    letterSpacing: -1,
   },
-  yearlyRow: {
+  savingsAmountSuffix: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  yearlySavingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  yearlyText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+  },
+  sectionBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  yearlyText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    marginBottom: 14,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    fontSize: 13,
+    letterSpacing: 0.3,
   },
   leakCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 14,
     borderWidth: 1,
   },
   leakHeader: {
@@ -206,19 +256,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   leakIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   leakInfo: {
     flex: 1,
   },
   leakMerchant: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
+    fontSize: 16,
     marginBottom: 6,
   },
   leakMeta: {
@@ -227,9 +277,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   freqBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   freqText: {
     fontFamily: 'Inter_600SemiBold',
@@ -246,36 +298,72 @@ const styles = StyleSheet.create({
   },
   leakAmount: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 18,
+    fontSize: 20,
+    letterSpacing: -0.3,
   },
   leakAmountLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
+    marginTop: 2,
+  },
+  savingsPotentialRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  savingsPotentialText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
   },
   suggestionBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     marginTop: 14,
-    paddingTop: 12,
+    paddingTop: 14,
     borderTopWidth: 1,
+  },
+  suggestionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   suggestionText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+    fontSize: 13,
     flex: 1,
+    lineHeight: 18,
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
-    gap: 12,
+    paddingHorizontal: 32,
+    gap: 14,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  emptyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   emptyTitle: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
   },
   emptySubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

@@ -32,7 +32,7 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
     <View style={styles.catBarRow}>
       <View style={styles.catBarLeft}>
         <View style={[styles.catBarIcon, { backgroundColor: cat.color + '18' }]}>
-          <Ionicons name={cat.icon as any} size={16} color={cat.color} />
+          <Ionicons name={cat.icon as any} size={18} color={cat.color} />
         </View>
         <View style={styles.catBarInfo}>
           <Text style={[styles.catBarName, { color: colors.text }]}>{cat.label}</Text>
@@ -40,10 +40,15 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
         </View>
       </View>
       <View style={styles.catBarRight}>
-        <View style={[styles.catBarTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-          <View style={[styles.catBarFill, { width: `${barWidth}%` as any, backgroundColor: cat.color }]} />
+        <View style={[styles.catBarTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+          <LinearGradient
+            colors={[cat.color, cat.color + 'BB']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.catBarFill, { width: `${barWidth}%` as any }]}
+          />
         </View>
-        <Text style={[styles.catBarAmount, { color: cat.color }]}>{formatCurrency(total)}</Text>
+        <Text style={[styles.catBarAmount, { color: colors.text }]}>{formatCurrency(total)}</Text>
       </View>
     </View>
   );
@@ -95,8 +100,6 @@ export default function ReportsScreen() {
     );
   }
 
-  const gradientColors: [string, string] = isDark ? ['#111133', '#0D0D2B'] : ['#E8ECF4', '#DEE4F0'];
-
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
@@ -108,65 +111,83 @@ export default function ReportsScreen() {
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
           <Text style={[styles.screenTitle, { color: colors.text }]}>Monthly Report</Text>
+          <Text style={[styles.screenSubtitle, { color: colors.textTertiary }]}>
+            {MONTHS[selectedMonth]} {selectedYear}
+          </Text>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.monthRow}>
-            {MONTHS.map((m, idx) => (
-              <Pressable
-                key={m}
-                onPress={() => setSelectedMonth(idx)}
-                style={[
-                  styles.monthChip,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  selectedMonth === idx && { backgroundColor: colors.accentBlueDim, borderColor: colors.accentBlue + '50' },
-                  idx > now.getMonth() && styles.monthChipDisabled,
-                ]}
-                disabled={idx > now.getMonth()}
-              >
-                <Text style={[
-                  styles.monthChipText,
-                  { color: colors.textSecondary },
-                  selectedMonth === idx && { color: colors.accentBlue },
-                  idx > now.getMonth() && { color: colors.textTertiary },
-                ]}>
-                  {m}
-                </Text>
-              </Pressable>
-            ))}
+            {MONTHS.map((m, idx) => {
+              const isSelected = selectedMonth === idx;
+              const isDisabled = idx > now.getMonth();
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => setSelectedMonth(idx)}
+                  style={[
+                    styles.monthChip,
+                    { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderColor: 'transparent' },
+                    isSelected && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' },
+                    isDisabled && styles.monthChipDisabled,
+                  ]}
+                  disabled={isDisabled}
+                >
+                  <Text style={[
+                    styles.monthChipText,
+                    { color: colors.textTertiary },
+                    isSelected && { color: colors.accent, fontFamily: 'Inter_600SemiBold' },
+                    isDisabled && { color: colors.textTertiary },
+                  ]}>
+                    {m}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
           <LinearGradient
-            colors={gradientColors}
-            style={[styles.summaryCard, { borderColor: colors.accentBlue + '20' }]}
+            colors={colors.heroGradient as unknown as [string, string, ...string[]]}
+            style={[styles.summaryCard, { borderColor: colors.accent + '15' }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
           >
             <View style={styles.summaryTop}>
               <View>
-                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total Spent</Text>
+                <Text style={[styles.summaryLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }]}>Total Spent</Text>
                 <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatCurrency(totalSpent)}</Text>
               </View>
-              <View style={[styles.savingsCircle, { borderColor: colors.accent }]}>
-                <Text style={[styles.savingsValue, { color: colors.accent }]}>{savingsRate}%</Text>
-                <Text style={[styles.savingsLabel, { color: colors.textTertiary }]}>Saved</Text>
+              <View style={[styles.savingsCircle, { borderColor: colors.accentMint, backgroundColor: colors.accentMintDim }]}>
+                <Text style={[styles.savingsValue, { color: colors.accentMint }]}>{savingsRate}%</Text>
+                <Text style={[styles.savingsLabel, { color: colors.accentMint + 'AA' }]}>Saved</Text>
               </View>
             </View>
-            <View style={[styles.summaryStats, { borderTopColor: colors.border }]}>
+
+            <View style={[styles.summaryDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+
+            <View style={styles.summaryStats}>
               <View style={styles.summaryStat}>
-                <Ionicons name="receipt-outline" size={16} color={colors.textSecondary} />
+                <View style={[styles.statIconWrap, { backgroundColor: colors.accentBlueDim }]}>
+                  <Ionicons name="receipt-outline" size={16} color={colors.accentBlue} />
+                </View>
                 <Text style={[styles.summaryStatValue, { color: colors.text }]}>{monthTxs.length}</Text>
                 <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Transactions</Text>
               </View>
               <View style={styles.summaryStat}>
-                <Ionicons name="trending-down" size={16} color={colors.textSecondary} />
+                <View style={[styles.statIconWrap, { backgroundColor: colors.accentDim }]}>
+                  <Ionicons name="trending-down" size={16} color={colors.accent} />
+                </View>
                 <Text style={[styles.summaryStatValue, { color: colors.text }]}>
                   {monthTxs.length > 0 ? formatCurrency(Math.round(totalSpent / Math.max(1, new Date().getDate()))) : '0'}
                 </Text>
                 <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Daily Avg</Text>
               </View>
               <View style={styles.summaryStat}>
-                <Ionicons name="pricetag-outline" size={16} color={colors.textSecondary} />
+                <View style={[styles.statIconWrap, { backgroundColor: colors.accentMintDim }]}>
+                  <Ionicons name="pricetag-outline" size={16} color={colors.accentMint} />
+                </View>
                 <Text style={[styles.summaryStatValue, { color: colors.text }]}>{breakdown.length}</Text>
                 <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Categories</Text>
               </View>
@@ -176,7 +197,12 @@ export default function ReportsScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(300).duration(500) : undefined}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Category Breakdown</Text>
-          <View style={[styles.catCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.dataCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {breakdown.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No transactions this month</Text>
+              </View>
+            )}
             {breakdown.map((item, idx) => (
               <React.Fragment key={item.category}>
                 <CategoryBar
@@ -187,7 +213,7 @@ export default function ReportsScreen() {
                   colors={colors}
                   isDark={isDark}
                 />
-                {idx < breakdown.length - 1 && <View style={[styles.catDivider, { backgroundColor: colors.border }]} />}
+                {idx < breakdown.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
               </React.Fragment>
             ))}
           </View>
@@ -195,14 +221,19 @@ export default function ReportsScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(400).duration(500) : undefined}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Merchants</Text>
-          <View style={[styles.catCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.dataCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {merchantTotals.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No merchants this month</Text>
+              </View>
+            )}
             {merchantTotals.map(([merchant, data], idx) => {
               const cat = CATEGORIES[data.category];
               return (
                 <React.Fragment key={merchant}>
                   <View style={styles.merchantRow}>
-                    <View style={[styles.merchantIcon, { backgroundColor: cat.color + '18' }]}>
-                      <Ionicons name={cat.icon as any} size={16} color={cat.color} />
+                    <View style={[styles.merchantIcon, { backgroundColor: cat.color + '15' }]}>
+                      <Ionicons name={cat.icon as any} size={18} color={cat.color} />
                     </View>
                     <View style={styles.merchantInfo}>
                       <Text style={[styles.merchantName, { color: colors.text }]}>{merchant}</Text>
@@ -210,7 +241,7 @@ export default function ReportsScreen() {
                     </View>
                     <Text style={[styles.merchantAmount, { color: colors.text }]}>{formatCurrency(data.total)}</Text>
                   </View>
-                  {idx < merchantTotals.length - 1 && <View style={[styles.catDivider, { backgroundColor: colors.border }]} />}
+                  {idx < merchantTotals.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
                 </React.Fragment>
               );
             })}
@@ -234,17 +265,23 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 28,
-    marginBottom: 20,
+    fontSize: 30,
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  screenSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    marginBottom: 24,
   },
   monthRow: {
     gap: 8,
-    marginBottom: 24,
+    marginBottom: 28,
   },
   monthChip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
   },
   monthChipDisabled: {
@@ -255,57 +292,70 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   summaryCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
-    marginBottom: 28,
+    marginBottom: 32,
     borderWidth: 1,
   },
   summaryTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   summaryLabel: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+    fontSize: 12,
     textTransform: 'uppercase' as const,
-    letterSpacing: 1,
-    marginBottom: 4,
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   summaryAmount: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 36,
+    fontSize: 32,
+    letterSpacing: -0.5,
   },
   savingsCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   savingsValue: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 18,
+    fontSize: 20,
   },
   savingsLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
+    marginTop: 1,
+  },
+  summaryDivider: {
+    height: 1,
+    borderRadius: 1,
   },
   summaryStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingTop: 16,
-    borderTopWidth: 1,
+    paddingTop: 18,
   },
   summaryStat: {
     alignItems: 'center',
     gap: 6,
   },
+  statIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
   summaryStatValue: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 17,
   },
   summaryStatLabel: {
     fontFamily: 'Inter_400Regular',
@@ -313,19 +363,21 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 17,
+    fontSize: 18,
     marginBottom: 14,
+    letterSpacing: -0.2,
   },
-  catCard: {
-    borderRadius: 16,
-    padding: 4,
-    marginBottom: 24,
+  dataCard: {
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 28,
+    borderWidth: 1,
   },
   catBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 14,
   },
   catBarLeft: {
@@ -334,76 +386,84 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   catBarIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   catBarInfo: {
     flex: 1,
   },
   catBarName: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+    fontSize: 14,
   },
   catBarPercent: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 3,
   },
   catBarRight: {
     flex: 1,
     alignItems: 'flex-end',
-    gap: 6,
+    gap: 8,
   },
   catBarTrack: {
-    width: '80%',
-    height: 4,
-    borderRadius: 2,
+    width: '85%',
+    height: 6,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   catBarFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 3,
   },
   catBarAmount: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
   },
-  catDivider: {
+  divider: {
     height: 1,
     marginHorizontal: 14,
   },
   merchantRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 14,
   },
   merchantIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   merchantInfo: {
     flex: 1,
   },
   merchantName: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
+    fontSize: 15,
   },
   merchantCount: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 3,
   },
   merchantAmount: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+  },
+  emptyState: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
   },
 });

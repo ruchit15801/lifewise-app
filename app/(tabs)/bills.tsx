@@ -55,7 +55,7 @@ const CATEGORY_OPTIONS: { key: CategoryType; label: string }[] = [
 function getUrgencyColor(days: number, colors: ThemeColors): string {
   if (days <= 1) return colors.danger;
   if (days <= 5) return colors.warning;
-  return colors.accent;
+  return colors.accentMint;
 }
 
 function ReminderCard({
@@ -73,11 +73,11 @@ function ReminderCard({
   onDelete: () => void;
   index: number;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [showActions, setShowActions] = useState(false);
   const effectiveDate = (bill.status === 'snoozed' && bill.snoozedUntil) ? bill.snoozedUntil : bill.dueDate;
   const daysLeft = getDaysUntil(effectiveDate);
-  const urgencyColor = bill.status === 'paid' ? colors.accent : bill.status === 'snoozed' ? colors.accentBlue : getUrgencyColor(daysLeft, colors);
+  const urgencyColor = bill.status === 'paid' ? colors.accentMint : bill.status === 'snoozed' ? colors.accentBlue : getUrgencyColor(daysLeft, colors);
   const dueDate = new Date(bill.dueDate);
   const typeConfig = REMINDER_TYPE_CONFIG[bill.reminderType];
   const isPaid = bill.status === 'paid' || bill.isPaid;
@@ -89,22 +89,17 @@ function ReminderCard({
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(150 + index * 60).duration(400) : undefined}>
       <View style={[styles.reminderCard, { backgroundColor: colors.card, borderColor: colors.border }, isPaid && styles.reminderCardPaid]}>
         <View style={styles.reminderTop}>
-          <View style={[styles.reminderIcon, { backgroundColor: urgencyColor + '18' }]}>
-            <Ionicons name={bill.icon as any} size={20} color={urgencyColor} />
+          <View style={[styles.reminderIcon, { backgroundColor: urgencyColor + '15' }]}>
+            <Ionicons name={bill.icon as any} size={22} color={urgencyColor} />
           </View>
           <View style={styles.reminderInfo}>
-            <View style={styles.reminderNameRow}>
-              <Text style={[styles.reminderName, { color: colors.text }, isPaid && { textDecorationLine: 'line-through' as const, color: colors.textTertiary }]} numberOfLines={1}>
-                {bill.name}
-              </Text>
-              <View style={[styles.typeBadge, { backgroundColor: typeConfig.color + '18' }]}>
+            <Text style={[styles.reminderName, { color: colors.text }, isPaid && { textDecorationLine: 'line-through' as const, color: colors.textTertiary }]} numberOfLines={1}>
+              {bill.name}
+            </Text>
+            <View style={styles.reminderMetaRow}>
+              <View style={[styles.typeBadge, { backgroundColor: typeConfig.color + '15' }]}>
                 <Text style={[styles.typeBadgeText, { color: typeConfig.color }]}>{typeConfig.label}</Text>
               </View>
-            </View>
-            <View style={styles.reminderMetaRow}>
-              <Text style={[styles.reminderDue, { color: colors.textSecondary }]}>
-                {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
-              </Text>
               {repeatLabel !== 'One-time' && (
                 <View style={styles.repeatBadge}>
                   <Ionicons name="refresh" size={10} color={colors.textTertiary} />
@@ -112,68 +107,66 @@ function ReminderCard({
                 </View>
               )}
             </View>
-            <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
-              {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            <Text style={[styles.reminderDue, { color: urgencyColor }]}>
+              {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
+              <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
+                {'  '}
+                {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </Text>
             </Text>
           </View>
           <View style={styles.reminderRight}>
             <Text style={[styles.reminderAmount, { color: colors.text }, isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const }]}>
               {formatCurrency(bill.amount)}
             </Text>
-            <Pressable
-              onPress={() => {
-                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-                setShowActions(!showActions);
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              testID={`reminder-menu-${bill.id}`}
-            >
-              <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
-            </Pressable>
           </View>
         </View>
 
-        {showActions && (
-          <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+        <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
+          <Pressable
+            onPress={() => {
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              onMarkPaid();
+            }}
+            style={[styles.cardActionBtn, { backgroundColor: isPaid ? colors.warningDim : colors.accentMintDim }]}
+            testID={`mark-paid-${bill.id}`}
+          >
+            <Ionicons name={isPaid ? 'close' : 'checkmark'} size={18} color={isPaid ? colors.warning : colors.accentMint} />
+          </Pressable>
+          {!isPaid && (
             <Pressable
-              style={[styles.actionBtn, { backgroundColor: colors.accent + '18' }]}
-              onPress={() => { onMarkPaid(); setShowActions(false); }}
-              testID={`mark-paid-${bill.id}`}
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                onSnooze();
+              }}
+              style={[styles.cardActionBtn, { backgroundColor: colors.accentBlueDim }]}
             >
-              <Ionicons name={isPaid ? 'close' : 'checkmark'} size={16} color={colors.accent} />
-              <Text style={[styles.actionText, { color: colors.accent }]}>
-                {isPaid ? 'Unpay' : 'Paid'}
-              </Text>
+              <Ionicons name="time" size={18} color={colors.accentBlue} />
             </Pressable>
-            {!isPaid && (
-              <Pressable
-                style={[styles.actionBtn, { backgroundColor: colors.accentBlue + '18' }]}
-                onPress={() => { onSnooze(); setShowActions(false); }}
-              >
-                <Ionicons name="time" size={16} color={colors.accentBlue} />
-                <Text style={[styles.actionText, { color: colors.accentBlue }]}>Snooze</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: colors.warning + '18' }]}
-              onPress={() => { onEdit(); setShowActions(false); }}
-            >
-              <Ionicons name="pencil" size={16} color={colors.warning} />
-              <Text style={[styles.actionText, { color: colors.warning }]}>Edit</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: colors.danger + '18' }]}
-              onPress={() => { onDelete(); setShowActions(false); }}
-              testID={`delete-${bill.id}`}
-            >
-              <Ionicons name="trash" size={16} color={colors.danger} />
-              <Text style={[styles.actionText, { color: colors.danger }]}>Delete</Text>
-            </Pressable>
-          </View>
-        )}
+          )}
+          <Pressable
+            onPress={() => {
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              onEdit();
+            }}
+            style={[styles.cardActionBtn, { backgroundColor: colors.accentDim }]}
+          >
+            <Ionicons name="pencil" size={16} color={colors.accent} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              onDelete();
+            }}
+            style={[styles.cardActionBtn, { backgroundColor: colors.dangerDim }]}
+            testID={`delete-${bill.id}`}
+          >
+            <Ionicons name="trash" size={16} color={colors.danger} />
+          </Pressable>
+        </View>
 
         {isSnoozed && bill.snoozedUntil && (
-          <View style={[styles.snoozeInfo, { borderTopColor: colors.border }]}>
+          <View style={[styles.snoozeInfo, { backgroundColor: colors.accentBlueDim }]}>
             <Ionicons name="time" size={12} color={colors.accentBlue} />
             <Text style={[styles.snoozeInfoText, { color: colors.accentBlue }]}>
               Snoozed until {new Date(bill.snoozedUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
@@ -269,16 +262,18 @@ function AddEditModal({
     onClose();
   };
 
+  const canSave = name.trim() && amount.trim();
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContainer, { backgroundColor: colors.bgSecondary, paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20) }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.card, paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20) }]}>
           <View style={[styles.modalGrabber, { backgroundColor: colors.textTertiary }]} />
 
           <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>{editBill ? 'Edit Reminder' : 'Add Reminder'}</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{editBill ? 'Edit Reminder' : 'New Reminder'}</Text>
             <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
             </Pressable>
           </View>
 
@@ -292,7 +287,7 @@ function AddEditModal({
                   <Pressable
                     key={type}
                     onPress={() => setReminderType(type)}
-                    style={[styles.typeChip, { backgroundColor: colors.card, borderColor: colors.border }, isActive && { backgroundColor: config.color + '20', borderColor: config.color + '50' }]}
+                    style={[styles.typeChip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, isActive && { backgroundColor: config.color + '18', borderColor: config.color + '40' }]}
                   >
                     <Ionicons name={config.icon as any} size={16} color={isActive ? config.color : colors.textTertiary} />
                     <Text style={[styles.typeChipText, { color: colors.textTertiary }, isActive && { color: config.color }]}>{config.label}</Text>
@@ -303,7 +298,7 @@ function AddEditModal({
 
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
               value={name}
               onChangeText={setName}
               placeholder="e.g., Electricity Bill"
@@ -314,7 +309,7 @@ function AddEditModal({
               <View style={styles.halfField}>
                 <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Amount</Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                  style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
                   value={amount}
                   onChangeText={setAmount}
                   placeholder="0"
@@ -325,7 +320,7 @@ function AddEditModal({
               <View style={styles.halfField}>
                 <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due in (days)</Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                  style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
                   value={daysOffset}
                   onChangeText={setDaysOffset}
                   placeholder="7"
@@ -336,14 +331,14 @@ function AddEditModal({
             </View>
 
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Repeat</Text>
-            <View style={styles.repeatRow}>
+            <View style={styles.chipRow}>
               {REPEAT_OPTIONS.map(opt => (
                 <Pressable
                   key={opt.key}
                   onPress={() => setRepeatType(opt.key)}
-                  style={[styles.repeatChip, { backgroundColor: colors.card, borderColor: colors.border }, repeatType === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '50' }]}
+                  style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, repeatType === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
                 >
-                  <Text style={[styles.repeatChipText, { color: colors.textTertiary }, repeatType === opt.key && { color: colors.accent }]}>
+                  <Text style={[styles.chipText, { color: colors.textTertiary }, repeatType === opt.key && { color: colors.accent }]}>
                     {opt.label}
                   </Text>
                 </Pressable>
@@ -351,14 +346,14 @@ function AddEditModal({
             </View>
 
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Category</Text>
-            <View style={styles.repeatRow}>
+            <View style={styles.chipRow}>
               {CATEGORY_OPTIONS.map(opt => (
                 <Pressable
                   key={opt.key}
                   onPress={() => setCategory(opt.key)}
-                  style={[styles.repeatChip, { backgroundColor: colors.card, borderColor: colors.border }, category === opt.key && { backgroundColor: CATEGORIES[opt.key].color + '20', borderColor: CATEGORIES[opt.key].color + '50' }]}
+                  style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, category === opt.key && { backgroundColor: CATEGORIES[opt.key].color + '15', borderColor: CATEGORIES[opt.key].color + '40' }]}
                 >
-                  <Text style={[styles.repeatChipText, { color: colors.textTertiary }, category === opt.key && { color: CATEGORIES[opt.key].color }]}>
+                  <Text style={[styles.chipText, { color: colors.textTertiary }, category === opt.key && { color: CATEGORIES[opt.key].color }]}>
                     {opt.label}
                   </Text>
                 </Pressable>
@@ -366,8 +361,8 @@ function AddEditModal({
             </View>
 
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Icon</Text>
-            <Pressable onPress={() => setShowIconPicker(!showIconPicker)} style={[styles.iconPickerToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={[styles.selectedIconWrap, { backgroundColor: colors.accent + '18' }]}>
+            <Pressable onPress={() => setShowIconPicker(!showIconPicker)} style={[styles.iconPickerToggle, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+              <View style={[styles.selectedIconWrap, { backgroundColor: colors.accent + '15' }]}>
                 <Ionicons name={selectedIcon as any} size={20} color={colors.accent} />
               </View>
               <Text style={[styles.iconPickerText, { color: colors.textSecondary }]}>Tap to change icon</Text>
@@ -380,7 +375,7 @@ function AddEditModal({
                   <Pressable
                     key={icon}
                     onPress={() => { setSelectedIcon(icon); setShowIconPicker(false); }}
-                    style={[styles.iconOption, { backgroundColor: colors.card, borderColor: colors.border }, selectedIcon === icon && { backgroundColor: colors.accentDim, borderColor: colors.accent + '50' }]}
+                    style={[styles.iconOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, selectedIcon === icon && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
                   >
                     <Ionicons name={icon as any} size={22} color={selectedIcon === icon ? colors.accent : colors.textSecondary} />
                   </Pressable>
@@ -391,18 +386,18 @@ function AddEditModal({
 
           <Pressable
             onPress={handleSave}
-            style={[styles.saveBtn, (!name.trim() || !amount.trim()) && styles.saveBtnDisabled]}
-            disabled={!name.trim() || !amount.trim()}
+            style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+            disabled={!canSave}
             testID="save-reminder-btn"
           >
             <LinearGradient
-              colors={name.trim() && amount.trim() ? (isDark ? [colors.accent, '#00B87A'] : [colors.accent, '#00A86B']) : [colors.cardElevated, colors.cardElevated]}
+              colors={canSave ? (colors.buttonGradient as unknown as [string, string]) : [colors.cardElevated, colors.cardElevated]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.saveBtnGradient}
             >
-              <Ionicons name={editBill ? 'checkmark' : 'add'} size={20} color={name.trim() && amount.trim() ? colors.bg : colors.textTertiary} />
-              <Text style={[styles.saveBtnText, { color: colors.bg }, (!name.trim() || !amount.trim()) && { color: colors.textTertiary }]}>
+              <Ionicons name={editBill ? 'checkmark' : 'add'} size={20} color={canSave ? '#FFFFFF' : colors.textTertiary} />
+              <Text style={[styles.saveBtnText, { color: '#FFFFFF' }, !canSave && { color: colors.textTertiary }]}>
                 {editBill ? 'Save Changes' : 'Add Reminder'}
               </Text>
             </LinearGradient>
@@ -416,26 +411,30 @@ function AddEditModal({
 function SnoozeModal({ visible, onClose, onSnooze }: { visible: boolean; onClose: () => void; onSnooze: (days: number) => void }) {
   const { colors } = useTheme();
   const SNOOZE_OPTIONS = [
-    { days: 1, label: '1 Day' },
-    { days: 2, label: '2 Days' },
-    { days: 3, label: '3 Days' },
-    { days: 7, label: '1 Week' },
+    { days: 1, label: '1 Day', icon: 'sunny' as const },
+    { days: 2, label: '2 Days', icon: 'partly-sunny' as const },
+    { days: 3, label: '3 Days', icon: 'cloud' as const },
+    { days: 7, label: '1 Week', icon: 'calendar' as const },
   ];
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <Pressable style={styles.snoozeOverlay} onPress={onClose}>
-        <View style={[styles.snoozeSheet, { backgroundColor: colors.bgSecondary }]}>
+        <View style={[styles.snoozeSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalGrabberCentered, { backgroundColor: colors.textTertiary }]} />
           <Text style={[styles.snoozeTitle, { color: colors.text }]}>Snooze Reminder</Text>
           <Text style={[styles.snoozeSubtitle, { color: colors.textSecondary }]}>Remind me again in...</Text>
           {SNOOZE_OPTIONS.map(opt => (
             <Pressable
               key={opt.days}
               onPress={() => { onSnooze(opt.days); onClose(); }}
-              style={[styles.snoozeOption, { borderTopColor: colors.border }]}
+              style={[styles.snoozeOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
             >
-              <Ionicons name="time" size={18} color={colors.accentBlue} />
+              <View style={[styles.snoozeOptionIcon, { backgroundColor: colors.accentBlueDim }]}>
+                <Ionicons name={opt.icon} size={18} color={colors.accentBlue} />
+              </View>
               <Text style={[styles.snoozeOptionText, { color: colors.text }]}>{opt.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
             </Pressable>
           ))}
         </View>
@@ -456,6 +455,7 @@ function SettingsModal({
   onSave: (s: { soundEnabled: boolean; vibrationEnabled: boolean; defaultReminderDays: number[] }) => void;
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [sound, setSound] = useState(settings.soundEnabled);
   const [vibration, setVibration] = useState(settings.vibrationEnabled);
   const [days, setDays] = useState<number[]>(settings.defaultReminderDays);
@@ -473,12 +473,12 @@ function SettingsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
-        <View style={[styles.settingsContainer, { backgroundColor: colors.bgSecondary }]}>
+        <View style={[styles.settingsContainer, { backgroundColor: colors.card, paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20) }]}>
           <View style={[styles.modalGrabber, { backgroundColor: colors.textTertiary }]} />
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Reminder Settings</Text>
             <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
             </Pressable>
           </View>
 
@@ -489,9 +489,9 @@ function SettingsModal({
                 <Pressable
                   key={d}
                   onPress={() => toggleDay(d)}
-                  style={[styles.dayChip, { backgroundColor: colors.card, borderColor: colors.border }, days.includes(d) && { backgroundColor: colors.accentDim, borderColor: colors.accent + '50' }]}
+                  style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, days.includes(d) && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
                 >
-                  <Text style={[styles.dayChipText, { color: colors.textTertiary }, days.includes(d) && { color: colors.accent }]}>
+                  <Text style={[styles.chipText, { color: colors.textTertiary }, days.includes(d) && { color: colors.accent }]}>
                     {d === 0 ? 'Due day' : `${d}d before`}
                   </Text>
                 </Pressable>
@@ -500,36 +500,48 @@ function SettingsModal({
 
             <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
               <View style={styles.settingInfo}>
-                <Ionicons name="volume-high" size={20} color={colors.textSecondary} />
+                <View style={[styles.settingIconWrap, { backgroundColor: colors.accentDim }]}>
+                  <Ionicons name="volume-high" size={18} color={colors.accent} />
+                </View>
                 <Text style={[styles.settingLabel, { color: colors.text }]}>Sound</Text>
               </View>
               <Switch
                 value={sound}
                 onValueChange={setSound}
-                trackColor={{ false: '#333', true: colors.accent + '50' }}
-                thumbColor={sound ? colors.accent : '#666'}
+                trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
+                thumbColor={sound ? colors.accent : colors.textTertiary}
               />
             </View>
 
             <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
               <View style={styles.settingInfo}>
-                <Ionicons name="phone-portrait" size={20} color={colors.textSecondary} />
+                <View style={[styles.settingIconWrap, { backgroundColor: colors.accentBlueDim }]}>
+                  <Ionicons name="phone-portrait" size={18} color={colors.accentBlue} />
+                </View>
                 <Text style={[styles.settingLabel, { color: colors.text }]}>Vibration</Text>
               </View>
               <Switch
                 value={vibration}
                 onValueChange={setVibration}
-                trackColor={{ false: '#333', true: colors.accent + '50' }}
-                thumbColor={vibration ? colors.accent : '#666'}
+                trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
+                thumbColor={vibration ? colors.accent : colors.textTertiary}
               />
             </View>
           </View>
 
           <Pressable
             onPress={() => { onSave({ soundEnabled: sound, vibrationEnabled: vibration, defaultReminderDays: days }); onClose(); }}
-            style={[styles.settingsSaveBtn, { backgroundColor: colors.accent }]}
+            style={styles.saveBtn}
           >
-            <Text style={[styles.settingsSaveBtnText, { color: colors.bg }]}>Save Settings</Text>
+            <LinearGradient
+              colors={colors.buttonGradient as unknown as [string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.saveBtnGradient}
+            >
+              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+              <Text style={[styles.saveBtnText, { color: '#FFFFFF' }]}>Save Settings</Text>
+            </LinearGradient>
           </Pressable>
         </View>
       </View>
@@ -617,20 +629,26 @@ export default function BillsScreen() {
             <View style={styles.headerActions}>
               <Pressable
                 onPress={() => setShowSettingsModal(true)}
-                style={[styles.headerIconBtn, { backgroundColor: colors.card }]}
+                style={[styles.headerIconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 testID="settings-btn"
                 accessibilityLabel="Settings"
               >
-                <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+                <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
               </Pressable>
               <Pressable
                 onPress={() => { setEditBill(null); setShowAddModal(true); }}
-                style={[styles.addBtn, { backgroundColor: colors.accent }]}
                 testID="add-reminder-btn"
                 accessibilityLabel="Add reminder"
               >
-                <Ionicons name="add" size={22} color={colors.bg} />
+                <LinearGradient
+                  colors={colors.buttonGradient as unknown as [string, string]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.addBtnGradient}
+                >
+                  <Ionicons name="add" size={22} color="#FFFFFF" />
+                </LinearGradient>
               </Pressable>
             </View>
           </View>
@@ -638,24 +656,29 @@ export default function BillsScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(80).duration(500) : undefined}>
           <LinearGradient
-            colors={isDark ? ['#1A1A0F', '#17140D', '#1A100D'] : ['#FFF8E1', '#FFF3E0', '#FFEBEE']}
+            colors={colors.heroGradient as unknown as [string, string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.overviewCard, { borderColor: colors.warning + '20' }]}
+            style={[styles.overviewCard, { borderColor: colors.border }]}
           >
             <View style={styles.overviewRow}>
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Pending</Text>
                 <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatCurrency(totalPending)}</Text>
               </View>
-              <View style={[styles.overviewDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]} />
+              <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Urgent</Text>
-                <Text style={[styles.overviewAmount, { color: colors.text }, urgentCount > 0 && { color: colors.danger }]}>
-                  {urgentCount}
-                </Text>
+                <View style={styles.urgentWrap}>
+                  <Text style={[styles.overviewAmountLarge, { color: colors.text }, urgentCount > 0 && { color: colors.danger }]}>
+                    {urgentCount}
+                  </Text>
+                  {urgentCount > 0 && (
+                    <View style={[styles.urgentDot, { backgroundColor: colors.danger }]} />
+                  )}
+                </View>
               </View>
-              <View style={[styles.overviewDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]} />
+              <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Subs</Text>
                 <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatCurrency(subscriptionTotal)}</Text>
@@ -674,7 +697,7 @@ export default function BillsScreen() {
               >
                 <Ionicons
                   name={tab.icon as any}
-                  size={16}
+                  size={15}
                   color={activeFilter === tab.key ? colors.accent : colors.textTertiary}
                 />
                 <Text style={[styles.filterTabText, { color: colors.textTertiary }, activeFilter === tab.key && { color: colors.accent }]}>
@@ -706,7 +729,7 @@ export default function BillsScreen() {
 
         {paidBills.length > 0 && (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 24 }]}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 28 }]}>
               Completed ({paidBills.length})
             </Text>
             {paidBills.map((bill, idx) => (
@@ -725,7 +748,9 @@ export default function BillsScreen() {
 
         {filteredBills.length === 0 && (
           <View style={styles.emptyState}>
-            <Ionicons name="notifications-off" size={48} color={colors.textTertiary} />
+            <View style={[styles.emptyIconWrap, { backgroundColor: colors.accentDim }]}>
+              <Ionicons name="notifications-off" size={32} color={colors.accent} />
+            </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               {activeFilter === 'all' ? 'No reminders yet' : `No ${activeFilter} reminders`}
             </Text>
@@ -758,23 +783,28 @@ export default function BillsScreen() {
 
       <Modal visible={!!deleteConfirmId} animationType="fade" transparent>
         <Pressable style={styles.snoozeOverlay} onPress={() => setDeleteConfirmId(null)}>
-          <View style={[styles.snoozeSheet, { backgroundColor: colors.bgSecondary }]}>
+          <View style={[styles.snoozeSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalGrabberCentered, { backgroundColor: colors.textTertiary }]} />
+            <View style={[styles.deleteIconWrap, { backgroundColor: colors.dangerDim }]}>
+              <Ionicons name="warning" size={28} color={colors.danger} />
+            </View>
             <Text style={[styles.snoozeTitle, { color: colors.text }]}>Delete Reminder</Text>
-            <Text style={[styles.snoozeSubtitle, { color: colors.textSecondary }]}>Are you sure you want to delete this reminder?</Text>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+            <Text style={[styles.snoozeSubtitle, { color: colors.textSecondary }]}>Are you sure you want to delete this reminder? This action cannot be undone.</Text>
+            <View style={styles.deleteActions}>
               <Pressable
                 onPress={() => setDeleteConfirmId(null)}
-                style={[styles.actionBtn, { flex: 1, backgroundColor: colors.card, paddingVertical: 14 }]}
+                style={[styles.deleteActionBtn, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
               >
-                <Text style={[styles.actionText, { color: colors.textSecondary, fontSize: 14 }]}>Cancel</Text>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+                <Text style={[styles.deleteActionText, { color: colors.textSecondary }]}>Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={() => { if (deleteConfirmId) deleteReminder(deleteConfirmId); setDeleteConfirmId(null); }}
-                style={[styles.actionBtn, { flex: 1, backgroundColor: colors.danger + '18', paddingVertical: 14 }]}
+                style={[styles.deleteActionBtn, { backgroundColor: colors.dangerDim, borderColor: colors.danger + '30' }]}
                 testID="confirm-delete-btn"
               >
-                <Ionicons name="trash" size={16} color={colors.danger} />
-                <Text style={[styles.actionText, { color: colors.danger, fontSize: 14 }]}>Delete</Text>
+                <Ionicons name="trash" size={18} color={colors.danger} />
+                <Text style={[styles.deleteActionText, { color: colors.danger }]}>Delete</Text>
               </Pressable>
             </View>
           </View>
@@ -803,7 +833,8 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 28,
+    fontSize: 30,
+    letterSpacing: -0.5,
   },
   screenSubtitle: {
     fontFamily: 'Inter_400Regular',
@@ -813,24 +844,25 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   headerIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
-  addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  addBtnGradient: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   overviewCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 24,
     marginBottom: 20,
     borderWidth: 1,
@@ -845,18 +877,32 @@ const styles = StyleSheet.create({
   },
   overviewDivider: {
     width: 1,
-    height: 36,
+    height: 40,
   },
   overviewLabel: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     fontSize: 11,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    letterSpacing: 0.8,
+    marginBottom: 8,
   },
   overviewAmount: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 20,
+    fontSize: 18,
+  },
+  overviewAmountLarge: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 24,
+  },
+  urgentWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  urgentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   filterRow: {
     flexDirection: 'row',
@@ -868,76 +914,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
   },
   filterTabText: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    marginBottom: 12,
+    fontSize: 13,
+    marginBottom: 14,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   reminderCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 10,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 12,
     borderWidth: 1,
   },
   reminderCardPaid: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
   reminderTop: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   reminderIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   reminderInfo: {
     flex: 1,
   },
-  reminderNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
   reminderName: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    flex: 1,
+    fontSize: 16,
+    marginBottom: 5,
   },
   typeBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   typeBadgeText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 9,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
   },
   reminderMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   reminderDue: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     fontSize: 12,
   },
   repeatBadge: {
@@ -955,48 +995,52 @@ const styles = StyleSheet.create({
   },
   reminderRight: {
     alignItems: 'flex-end',
-    gap: 8,
+    marginLeft: 8,
   },
   reminderAmount: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 17,
+    fontSize: 20,
+    letterSpacing: -0.3,
   },
-  actionsRow: {
+  cardActions: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 14,
-    paddingTop: 12,
+    paddingTop: 14,
     borderTopWidth: 1,
   },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
+  cardActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  actionText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
   },
   snoozeInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
   },
   snoozeInfoText: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     fontSize: 11,
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
     gap: 12,
+  },
+  emptyIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   emptyTitle: {
     fontFamily: 'Inter_600SemiBold',
@@ -1008,7 +1052,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   modalContainer: {
@@ -1017,12 +1061,19 @@ const styles = StyleSheet.create({
     maxHeight: '90%',
   },
   modalGrabber: {
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 8,
+  },
+  modalGrabberCentered: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1033,7 +1084,8 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 20,
+    fontSize: 22,
+    letterSpacing: -0.3,
   },
   modalScroll: {
     paddingHorizontal: 20,
@@ -1041,11 +1093,11 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: 11,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     marginBottom: 8,
-    marginTop: 16,
+    marginTop: 18,
   },
   typeRow: {
     flexDirection: 'row',
@@ -1058,7 +1110,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
   },
   typeChipText: {
@@ -1066,7 +1118,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   input: {
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontFamily: 'Inter_400Regular',
@@ -1080,18 +1132,18 @@ const styles = StyleSheet.create({
   halfField: {
     flex: 1,
   },
-  repeatRow: {
+  chipRow: {
     flexDirection: 'row',
     gap: 8,
     flexWrap: 'wrap',
   },
-  repeatChip: {
+  chip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 9,
+    borderRadius: 20,
     borderWidth: 1,
   },
-  repeatChipText: {
+  chipText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
   },
@@ -1099,14 +1151,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
     borderWidth: 1,
   },
   selectedIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1122,9 +1174,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   iconOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 46,
+    height: 46,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -1132,11 +1184,11 @@ const styles = StyleSheet.create({
   saveBtn: {
     marginHorizontal: 20,
     marginBottom: 8,
-    borderRadius: 14,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   saveBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   saveBtnGradient: {
     flexDirection: 'row',
@@ -1151,51 +1203,63 @@ const styles = StyleSheet.create({
   },
   snoozeOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: 32,
   },
   snoozeSheet: {
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
     width: '100%',
-    maxWidth: 320,
+    maxWidth: 340,
   },
   snoozeTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 18,
+    fontSize: 20,
     marginBottom: 4,
+    textAlign: 'center',
   },
   snoozeSubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     marginBottom: 20,
+    textAlign: 'center',
   },
   snoozeOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     paddingVertical: 14,
-    borderTopWidth: 1,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  snoozeOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   snoozeOptionText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 15,
+    flex: 1,
   },
   settingsContainer: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: 40,
   },
   settingsContent: {
     paddingHorizontal: 20,
   },
   settingsSectionTitle: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
+    fontSize: 11,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     marginBottom: 12,
     marginTop: 8,
   },
@@ -1205,21 +1269,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginBottom: 24,
   },
-  dayChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  dayChipText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderTopWidth: 1,
   },
   settingInfo: {
@@ -1227,19 +1281,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  settingIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   settingLabel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 15,
   },
-  settingsSaveBtn: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    borderRadius: 14,
-    paddingVertical: 16,
+  deleteIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
   },
-  settingsSaveBtnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 16,
+  deleteActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  deleteActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  deleteActionText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
 });

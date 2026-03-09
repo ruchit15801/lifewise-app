@@ -7,6 +7,7 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,33 +24,50 @@ import {
 } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
 
-const FILTER_OPTIONS: { key: string; label: string }[] = [
+const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'food', label: 'Food' },
-  { key: 'shopping', label: 'Shopping' },
-  { key: 'transport', label: 'Transport' },
-  { key: 'entertainment', label: 'Fun' },
-  { key: 'bills', label: 'Bills' },
-  { key: 'healthcare', label: 'Health' },
-  { key: 'education', label: 'Edu' },
-  { key: 'investment', label: 'Invest' },
-  { key: 'others', label: 'Others' },
+  { key: 'food', label: 'Food', icon: 'fast-food' },
+  { key: 'shopping', label: 'Shopping', icon: 'cart' },
+  { key: 'transport', label: 'Transport', icon: 'car' },
+  { key: 'entertainment', label: 'Fun', icon: 'film' },
+  { key: 'bills', label: 'Bills', icon: 'flash' },
+  { key: 'healthcare', label: 'Health', icon: 'medkit' },
+  { key: 'education', label: 'Edu', icon: 'book' },
+  { key: 'investment', label: 'Invest', icon: 'trending-up' },
+  { key: 'others', label: 'Others', icon: 'ellipsis-horizontal' },
 ];
 
-function TransactionItem({ item, colors }: { item: Transaction; colors: ThemeColors }) {
+function TransactionItem({ item, colors, isDark }: { item: Transaction; colors: ThemeColors; isDark: boolean }) {
   const cat = CATEGORIES[item.category];
   return (
-    <View style={[styles.txRow, { backgroundColor: colors.card }]}>
-      <View style={[styles.txIcon, { backgroundColor: cat.color + '15' }]}>
-        <Ionicons name={cat.icon as any} size={18} color={cat.color} />
+    <View
+      style={[
+        styles.txCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          shadowColor: isDark ? '#000' : 'rgba(15, 23, 42, 0.08)',
+        },
+      ]}
+    >
+      <View style={[styles.txIconWrap, { backgroundColor: cat.color + '18' }]}>
+        <Ionicons name={cat.icon as any} size={20} color={cat.color} />
       </View>
       <View style={styles.txInfo}>
-        <Text style={[styles.txMerchant, { color: colors.text }]}>{item.merchant}</Text>
-        <Text style={[styles.txUpi, { color: colors.textTertiary }]}>{item.upiId}</Text>
+        <Text style={[styles.txMerchant, { color: colors.text }]} numberOfLines={1}>
+          {item.merchant}
+        </Text>
+        <Text style={[styles.txUpi, { color: colors.textTertiary }]} numberOfLines={1}>
+          {item.upiId}
+        </Text>
       </View>
       <View style={styles.txRight}>
-        <Text style={[styles.txAmount, { color: colors.danger }]}>- {formatCurrency(item.amount)}</Text>
-        <Text style={[styles.txTimeText, { color: colors.textTertiary }]}>{formatTime(item.date)}</Text>
+        <Text style={[styles.txAmount, { color: colors.danger }]}>
+          -{formatCurrency(item.amount)}
+        </Text>
+        <Text style={[styles.txTime, { color: colors.textTertiary }]}>
+          {formatTime(item.date)}
+        </Text>
       </View>
     </View>
   );
@@ -57,7 +75,7 @@ function TransactionItem({ item, colors }: { item: Transaction; colors: ThemeCol
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { transactions, isLoading } = useExpenses();
   const [activeFilter, setActiveFilter] = useState('all');
 
@@ -83,6 +101,7 @@ export default function TransactionsScreen() {
   }, [filtered]);
 
   const totalFiltered = filtered.reduce((s, tx) => s + tx.amount, 0);
+  const txCount = filtered.length;
 
   if (isLoading) {
     return (
@@ -94,51 +113,91 @@ export default function TransactionsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.headerArea, { paddingTop: topInset + 16 }]}>
+      <View style={[styles.headerArea, { paddingTop: topInset + 20 }]}>
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
           <Text style={[styles.screenTitle, { color: colors.text }]}>Activity</Text>
-          <Text style={[styles.totalText, { color: colors.textSecondary }]}>
-            Total: <Text style={[styles.totalAmount, { color: colors.accent }]}>{formatCurrency(totalFiltered)}</Text>
-          </Text>
+
+          <View
+            style={[
+              styles.summaryCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                shadowColor: isDark ? '#000' : 'rgba(15, 23, 42, 0.06)',
+              },
+            ]}
+          >
+            <View style={styles.summaryLeft}>
+              <Text style={[styles.summaryLabel, { color: colors.textTertiary }]}>
+                Total Spent
+              </Text>
+              <Text style={[styles.summaryAmount, { color: colors.text }]}>
+                {formatCurrency(totalFiltered)}
+              </Text>
+            </View>
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.summaryRight}>
+              <Text style={[styles.summaryLabel, { color: colors.textTertiary }]}>
+                Transactions
+              </Text>
+              <Text style={[styles.summaryCount, { color: colors.accent }]}>
+                {txCount}
+              </Text>
+            </View>
+          </View>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}>
-          <View style={styles.filterRow}>
-            {FILTER_OPTIONS.map(opt => (
-              <Pressable
-                key={opt.key}
-                onPress={() => setActiveFilter(opt.key)}
-                style={[
-                  styles.filterChip,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  activeFilter === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '50' },
-                ]}
-              >
-                <Text
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
+            {FILTER_OPTIONS.map(opt => {
+              const isActive = activeFilter === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setActiveFilter(opt.key)}
                   style={[
-                    styles.filterChipText,
-                    { color: colors.textSecondary },
-                    activeFilter === opt.key && { color: colors.accent },
+                    styles.filterChip,
+                    {
+                      backgroundColor: isActive ? colors.accent : colors.card,
+                      borderColor: isActive ? colors.accent : colors.border,
+                    },
                   ]}
                 >
-                  {opt.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      {
+                        color: isActive ? '#FFFFFF' : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </Animated.View>
       </View>
 
       <SectionList
         sections={sections}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <TransactionItem item={item} colors={colors} />}
+        renderItem={({ item }) => <TransactionItem item={item} colors={colors} isDark={isDark} />}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{section.title}</Text>
-            <Text style={[styles.sectionTotal, { color: colors.textTertiary }]}>
-              {formatCurrency((section as any).total)}
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+              {section.title}
             </Text>
+            <View style={[styles.sectionBadge, { backgroundColor: colors.surfaceGlow }]}>
+              <Text style={[styles.sectionTotal, { color: colors.accent }]}>
+                {formatCurrency((section as any).total)}
+              </Text>
+            </View>
           </View>
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -148,6 +207,17 @@ export default function TransactionsScreen() {
         }}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="receipt-outline" size={48} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No transactions found
+            </Text>
+            <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>
+              Try adjusting your filters
+            </Text>
+          </View>
+        }
       />
     </View>
   );
@@ -163,90 +233,156 @@ const styles = StyleSheet.create({
   },
   headerArea: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   screenTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 28,
-  },
-  totalText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    marginTop: 4,
+    fontSize: 32,
+    letterSpacing: -0.5,
     marginBottom: 16,
   },
-  totalAmount: {
-    fontFamily: 'Inter_600SemiBold',
-  },
-  filterRow: {
+  summaryCard: {
     flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  summaryLeft: {
+    flex: 1,
+  },
+  summaryRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  summaryDivider: {
+    width: 1,
+    height: 40,
+    marginHorizontal: 16,
+  },
+  summaryLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
+    marginBottom: 6,
+  },
+  summaryAmount: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 24,
+    letterSpacing: -0.5,
+  },
+  summaryCount: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 24,
+    letterSpacing: -0.5,
+  },
+  filterScroll: {
     gap: 8,
-    flexWrap: 'wrap',
+    paddingBottom: 12,
   },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
   },
   filterChipText: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
+    letterSpacing: 0.2,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
-    marginTop: 8,
+    paddingTop: 24,
+    paddingBottom: 12,
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
+  },
+  sectionBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   sectionTotal: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
   },
-  txRow: {
+  txCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  txIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+  txIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   txInfo: {
     flex: 1,
+    marginRight: 8,
   },
   txMerchant: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
+    fontSize: 16,
+    letterSpacing: -0.2,
   },
   txUpi: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    marginTop: 3,
+    fontSize: 12,
+    marginTop: 4,
+    letterSpacing: 0.1,
   },
   txRight: {
     alignItems: 'flex-end',
   },
   txAmount: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 17,
+    letterSpacing: -0.3,
   },
-  txTimeText: {
+  txTime: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    marginTop: 3,
+    marginTop: 4,
+    letterSpacing: 0.2,
   },
   separator: {
-    height: 8,
+    height: 10,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+    gap: 8,
+  },
+  emptyText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+    marginTop: 8,
+  },
+  emptySubtext: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
   },
 });

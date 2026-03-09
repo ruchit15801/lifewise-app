@@ -25,21 +25,25 @@ import { StatusBar } from "expo-status-bar";
 SplashScreen.preventAutoHideAsync();
 
 function AnimatedSplash() {
-  const { colors } = useTheme();
   return (
-    <View style={[splashStyles.container, { backgroundColor: '#06060E' }]}>
+    <LinearGradient
+      colors={['#0F172A', '#1E1B4B', '#0F172A']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={splashStyles.container}
+    >
       <View style={splashStyles.content}>
         <LinearGradient
-          colors={['#00E5A0', '#00B87A']}
+          colors={['#8B5CF6', '#7C3AED']}
           style={splashStyles.iconCircle}
         >
-          <Ionicons name="wallet" size={40} color="#06060E" />
+          <Ionicons name="wallet" size={40} color="#FFFFFF" />
         </LinearGradient>
         <Text style={splashStyles.title}>SpendIQ</Text>
-        <Text style={splashStyles.subtitle}>Smart Expense Intelligence</Text>
-        <ActivityIndicator color="#00E5A0" style={{ marginTop: 40 }} />
+        <Text style={splashStyles.subtitle}>Your Intelligent Life Companion</Text>
+        <ActivityIndicator color="#8B5CF6" style={{ marginTop: 40 }} />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 

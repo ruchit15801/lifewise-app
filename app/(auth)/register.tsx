@@ -134,13 +134,13 @@ export default function RegisterScreen() {
             testID="register-submit"
           >
             <LinearGradient
-              colors={[colors.accent, '#00B87A']}
+              colors={[...colors.buttonGradient] as [string, string]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.submitBtn}
             >
               {isSubmitting ? (
-                <ActivityIndicator color="#06060E" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.submitBtnText}>Create Account</Text>
               )}
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 16,
-    color: '#06060E',
+    color: '#FFFFFF',
   },
   dividerRow: {
     flexDirection: 'row',

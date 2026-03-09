@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   settingsGroup: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 24,

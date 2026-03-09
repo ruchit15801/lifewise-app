@@ -23,19 +23,19 @@ const SLIDES = [
     icon: 'analytics' as const,
     title: 'Smart Spending Insights',
     description: 'Track every UPI transaction and get intelligent analysis of your spending patterns across categories.',
-    color: '#00E5A0',
+    color: '#8B5CF6',
   },
   {
     icon: 'water' as const,
     title: 'Detect Money Leaks',
     description: 'Automatically identify recurring expenses draining your wallet and get actionable savings suggestions.',
-    color: '#4E7CFF',
+    color: '#3B82F6',
   },
   {
     icon: 'notifications' as const,
     title: 'Never Miss a Payment',
     description: 'Smart reminders for bills, subscriptions, and custom payments. Snooze, track, and stay organized.',
-    color: '#FFBE0B',
+    color: '#F59E0B',
   },
 ];
 
@@ -126,7 +126,7 @@ export default function OnboardingScreen() {
 
         <Pressable onPress={handleNext} style={styles.nextBtnWrap}>
           <LinearGradient
-            colors={[colors.accent, '#00B87A']}
+            colors={[...colors.buttonGradient] as [string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.nextBtn}
@@ -134,7 +134,7 @@ export default function OnboardingScreen() {
             <Text style={styles.nextBtnText}>
               {currentIndex === SLIDES.length - 1 ? 'Get Started' : 'Next'}
             </Text>
-            <Ionicons name="arrow-forward" size={20} color="#06060E" />
+            <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
           </LinearGradient>
         </Pressable>
       </View>
@@ -223,6 +223,6 @@ const styles = StyleSheet.create({
   nextBtnText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 17,
-    color: '#06060E',
+    color: '#FFFFFF',
   },
 });
