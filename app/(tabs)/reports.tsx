@@ -12,7 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import Colors from '@/constants/colors';
+import Colors, { ThemeColors } from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { useExpenses } from '@/lib/expense-context';
 import {
   CATEGORIES,
@@ -23,7 +24,7 @@ import {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function CategoryBar({ category, total, percentage, maxPercentage }: { category: CategoryType; total: number; percentage: number; maxPercentage: number }) {
+function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean }) {
   const cat = CATEGORIES[category];
   const barWidth = maxPercentage > 0 ? (percentage / maxPercentage) * 100 : 0;
 
@@ -34,12 +35,12 @@ function CategoryBar({ category, total, percentage, maxPercentage }: { category:
           <Ionicons name={cat.icon as any} size={16} color={cat.color} />
         </View>
         <View style={styles.catBarInfo}>
-          <Text style={styles.catBarName}>{cat.label}</Text>
-          <Text style={styles.catBarPercent}>{Math.round(percentage)}%</Text>
+          <Text style={[styles.catBarName, { color: colors.text }]}>{cat.label}</Text>
+          <Text style={[styles.catBarPercent, { color: colors.textTertiary }]}>{Math.round(percentage)}%</Text>
         </View>
       </View>
       <View style={styles.catBarRight}>
-        <View style={styles.catBarTrack}>
+        <View style={[styles.catBarTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
           <View style={[styles.catBarFill, { width: `${barWidth}%` as any, backgroundColor: cat.color }]} />
         </View>
         <Text style={[styles.catBarAmount, { color: cat.color }]}>{formatCurrency(total)}</Text>
@@ -50,6 +51,7 @@ function CategoryBar({ category, total, percentage, maxPercentage }: { category:
 
 export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const { transactions, isLoading, monthlyBudget } = useExpenses();
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
@@ -87,14 +89,16 @@ export default function ReportsScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={Colors.dark.accent} />
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
+  const gradientColors: [string, string] = isDark ? ['#111133', '#0D0D2B'] : ['#E8ECF4', '#DEE4F0'];
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -103,7 +107,7 @@ export default function ReportsScreen() {
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
-          <Text style={styles.screenTitle}>Monthly Report</Text>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Monthly Report</Text>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}>
@@ -114,15 +118,17 @@ export default function ReportsScreen() {
                 onPress={() => setSelectedMonth(idx)}
                 style={[
                   styles.monthChip,
-                  selectedMonth === idx && styles.monthChipActive,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  selectedMonth === idx && { backgroundColor: colors.accentBlueDim, borderColor: colors.accentBlue + '50' },
                   idx > now.getMonth() && styles.monthChipDisabled,
                 ]}
                 disabled={idx > now.getMonth()}
               >
                 <Text style={[
                   styles.monthChipText,
-                  selectedMonth === idx && styles.monthChipTextActive,
-                  idx > now.getMonth() && styles.monthChipTextDisabled,
+                  { color: colors.textSecondary },
+                  selectedMonth === idx && { color: colors.accentBlue },
+                  idx > now.getMonth() && { color: colors.textTertiary },
                 ]}>
                   {m}
                 </Text>
@@ -133,44 +139,44 @@ export default function ReportsScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
           <LinearGradient
-            colors={['#111133', '#0D0D2B']}
-            style={styles.summaryCard}
+            colors={gradientColors}
+            style={[styles.summaryCard, { borderColor: colors.accentBlue + '20' }]}
           >
             <View style={styles.summaryTop}>
               <View>
-                <Text style={styles.summaryLabel}>Total Spent</Text>
-                <Text style={styles.summaryAmount}>{formatCurrency(totalSpent)}</Text>
+                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total Spent</Text>
+                <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatCurrency(totalSpent)}</Text>
               </View>
-              <View style={styles.savingsCircle}>
-                <Text style={styles.savingsValue}>{savingsRate}%</Text>
-                <Text style={styles.savingsLabel}>Saved</Text>
+              <View style={[styles.savingsCircle, { borderColor: colors.accent }]}>
+                <Text style={[styles.savingsValue, { color: colors.accent }]}>{savingsRate}%</Text>
+                <Text style={[styles.savingsLabel, { color: colors.textTertiary }]}>Saved</Text>
               </View>
             </View>
-            <View style={styles.summaryStats}>
+            <View style={[styles.summaryStats, { borderTopColor: colors.border }]}>
               <View style={styles.summaryStat}>
-                <Ionicons name="receipt-outline" size={16} color={Colors.dark.textSecondary} />
-                <Text style={styles.summaryStatValue}>{monthTxs.length}</Text>
-                <Text style={styles.summaryStatLabel}>Transactions</Text>
+                <Ionicons name="receipt-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.summaryStatValue, { color: colors.text }]}>{monthTxs.length}</Text>
+                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Transactions</Text>
               </View>
               <View style={styles.summaryStat}>
-                <Ionicons name="trending-down" size={16} color={Colors.dark.textSecondary} />
-                <Text style={styles.summaryStatValue}>
+                <Ionicons name="trending-down" size={16} color={colors.textSecondary} />
+                <Text style={[styles.summaryStatValue, { color: colors.text }]}>
                   {monthTxs.length > 0 ? formatCurrency(Math.round(totalSpent / Math.max(1, new Date().getDate()))) : '0'}
                 </Text>
-                <Text style={styles.summaryStatLabel}>Daily Avg</Text>
+                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Daily Avg</Text>
               </View>
               <View style={styles.summaryStat}>
-                <Ionicons name="pricetag-outline" size={16} color={Colors.dark.textSecondary} />
-                <Text style={styles.summaryStatValue}>{breakdown.length}</Text>
-                <Text style={styles.summaryStatLabel}>Categories</Text>
+                <Ionicons name="pricetag-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.summaryStatValue, { color: colors.text }]}>{breakdown.length}</Text>
+                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Categories</Text>
               </View>
             </View>
           </LinearGradient>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(300).duration(500) : undefined}>
-          <Text style={styles.sectionTitle}>Category Breakdown</Text>
-          <View style={styles.catCard}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Category Breakdown</Text>
+          <View style={[styles.catCard, { backgroundColor: colors.card }]}>
             {breakdown.map((item, idx) => (
               <React.Fragment key={item.category}>
                 <CategoryBar
@@ -178,16 +184,18 @@ export default function ReportsScreen() {
                   total={item.total}
                   percentage={item.percentage}
                   maxPercentage={maxPercentage}
+                  colors={colors}
+                  isDark={isDark}
                 />
-                {idx < breakdown.length - 1 && <View style={styles.catDivider} />}
+                {idx < breakdown.length - 1 && <View style={[styles.catDivider, { backgroundColor: colors.border }]} />}
               </React.Fragment>
             ))}
           </View>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(400).duration(500) : undefined}>
-          <Text style={styles.sectionTitle}>Top Merchants</Text>
-          <View style={styles.catCard}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Merchants</Text>
+          <View style={[styles.catCard, { backgroundColor: colors.card }]}>
             {merchantTotals.map(([merchant, data], idx) => {
               const cat = CATEGORIES[data.category];
               return (
@@ -197,12 +205,12 @@ export default function ReportsScreen() {
                       <Ionicons name={cat.icon as any} size={16} color={cat.color} />
                     </View>
                     <View style={styles.merchantInfo}>
-                      <Text style={styles.merchantName}>{merchant}</Text>
-                      <Text style={styles.merchantCount}>{data.count} transactions</Text>
+                      <Text style={[styles.merchantName, { color: colors.text }]}>{merchant}</Text>
+                      <Text style={[styles.merchantCount, { color: colors.textTertiary }]}>{data.count} transactions</Text>
                     </View>
-                    <Text style={styles.merchantAmount}>{formatCurrency(data.total)}</Text>
+                    <Text style={[styles.merchantAmount, { color: colors.text }]}>{formatCurrency(data.total)}</Text>
                   </View>
-                  {idx < merchantTotals.length - 1 && <View style={styles.catDivider} />}
+                  {idx < merchantTotals.length - 1 && <View style={[styles.catDivider, { backgroundColor: colors.border }]} />}
                 </React.Fragment>
               );
             })}
@@ -216,7 +224,6 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.dark.bg,
   },
   centered: {
     justifyContent: 'center',
@@ -228,7 +235,6 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontFamily: 'Inter_700Bold',
     fontSize: 28,
-    color: Colors.dark.text,
     marginBottom: 20,
   },
   monthRow: {
@@ -239,13 +245,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: Colors.dark.card,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  monthChipActive: {
-    backgroundColor: Colors.dark.accentBlueDim,
-    borderColor: Colors.dark.accentBlue + '50',
   },
   monthChipDisabled: {
     opacity: 0.3,
@@ -253,20 +253,12 @@ const styles = StyleSheet.create({
   monthChipText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
-    color: Colors.dark.textSecondary,
-  },
-  monthChipTextActive: {
-    color: Colors.dark.accentBlue,
-  },
-  monthChipTextDisabled: {
-    color: Colors.dark.textTertiary,
   },
   summaryCard: {
     borderRadius: 20,
     padding: 24,
     marginBottom: 28,
     borderWidth: 1,
-    borderColor: Colors.dark.accentBlue + '20',
   },
   summaryTop: {
     flexDirection: 'row',
@@ -277,7 +269,6 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
-    color: Colors.dark.textSecondary,
     textTransform: 'uppercase' as const,
     letterSpacing: 1,
     marginBottom: 4,
@@ -285,33 +276,28 @@ const styles = StyleSheet.create({
   summaryAmount: {
     fontFamily: 'Inter_700Bold',
     fontSize: 36,
-    color: Colors.dark.text,
   },
   savingsCircle: {
     width: 72,
     height: 72,
     borderRadius: 36,
     borderWidth: 3,
-    borderColor: Colors.dark.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   savingsValue: {
     fontFamily: 'Inter_700Bold',
     fontSize: 18,
-    color: Colors.dark.accent,
   },
   savingsLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
-    color: Colors.dark.textTertiary,
   },
   summaryStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
   },
   summaryStat: {
     alignItems: 'center',
@@ -320,21 +306,17 @@ const styles = StyleSheet.create({
   summaryStatValue: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
-    color: Colors.dark.text,
   },
   summaryStatLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    color: Colors.dark.textTertiary,
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 17,
-    color: Colors.dark.text,
     marginBottom: 14,
   },
   catCard: {
-    backgroundColor: Colors.dark.card,
     borderRadius: 16,
     padding: 4,
     marginBottom: 24,
@@ -365,12 +347,10 @@ const styles = StyleSheet.create({
   catBarName: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
-    color: Colors.dark.text,
   },
   catBarPercent: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    color: Colors.dark.textTertiary,
     marginTop: 2,
   },
   catBarRight: {
@@ -381,7 +361,6 @@ const styles = StyleSheet.create({
   catBarTrack: {
     width: '80%',
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -395,7 +374,6 @@ const styles = StyleSheet.create({
   },
   catDivider: {
     height: 1,
-    backgroundColor: Colors.dark.border,
     marginHorizontal: 14,
   },
   merchantRow: {
@@ -418,17 +396,14 @@ const styles = StyleSheet.create({
   merchantName: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
-    color: Colors.dark.text,
   },
   merchantCount: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    color: Colors.dark.textTertiary,
     marginTop: 2,
   },
   merchantAmount: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: Colors.dark.text,
   },
 });

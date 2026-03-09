@@ -11,38 +11,39 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { useExpenses } from '@/lib/expense-context';
 import { CATEGORIES, formatCurrency, MoneyLeak } from '@/lib/data';
+import { ThemeColors } from '@/constants/colors';
 
-function LeakCard({ leak, index }: { leak: MoneyLeak; index: number }) {
+function LeakCard({ leak, index, colors }: { leak: MoneyLeak; index: number; colors: ThemeColors }) {
   const cat = CATEGORIES[leak.category];
 
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200 + index * 100).duration(500) : undefined}>
-      <View style={styles.leakCard}>
+      <View style={[styles.leakCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.leakHeader}>
           <View style={[styles.leakIcon, { backgroundColor: cat.color + '18' }]}>
             <Ionicons name={cat.icon as any} size={20} color={cat.color} />
           </View>
           <View style={styles.leakInfo}>
-            <Text style={styles.leakMerchant}>{leak.merchant}</Text>
+            <Text style={[styles.leakMerchant, { color: colors.text }]}>{leak.merchant}</Text>
             <View style={styles.leakMeta}>
-              <View style={[styles.freqBadge, { backgroundColor: Colors.dark.dangerDim }]}>
-                <Text style={styles.freqText}>{leak.frequency}</Text>
+              <View style={[styles.freqBadge, { backgroundColor: colors.dangerDim }]}>
+                <Text style={[styles.freqText, { color: colors.danger }]}>{leak.frequency}</Text>
               </View>
-              <Text style={styles.leakCount}>{leak.transactionCount} times this month</Text>
+              <Text style={[styles.leakCount, { color: colors.textTertiary }]}>{leak.transactionCount} times this month</Text>
             </View>
           </View>
           <View style={styles.leakAmountBox}>
-            <Text style={styles.leakAmount}>{formatCurrency(leak.monthlyEstimate)}</Text>
-            <Text style={styles.leakAmountLabel}>/month</Text>
+            <Text style={[styles.leakAmount, { color: colors.text }]}>{formatCurrency(leak.monthlyEstimate)}</Text>
+            <Text style={[styles.leakAmountLabel, { color: colors.textTertiary }]}>/month</Text>
           </View>
         </View>
 
-        <View style={styles.suggestionBox}>
-          <Ionicons name="bulb" size={14} color={Colors.dark.warning} />
-          <Text style={styles.suggestionText}>{leak.suggestion}</Text>
+        <View style={[styles.suggestionBox, { borderTopColor: colors.border }]}>
+          <Ionicons name="bulb" size={14} color={colors.warning} />
+          <Text style={[styles.suggestionText, { color: colors.warning }]}>{leak.suggestion}</Text>
         </View>
       </View>
     </Animated.View>
@@ -52,21 +53,26 @@ function LeakCard({ leak, index }: { leak: MoneyLeak; index: number }) {
 export default function LeaksScreen() {
   const insets = useSafeAreaInsets();
   const { leaks, isLoading } = useExpenses();
+  const { colors, isDark } = useTheme();
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
   const potentialYearlySavings = totalLeaks * 12;
 
+  const gradientColors: [string, string, string] = isDark
+    ? ['#2D1117', '#1A0A0F', '#110D1A']
+    : ['#FFF0F0', '#FFF5F0', '#F8F0FF'];
+
   if (isLoading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={Colors.dark.accent} />
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -75,26 +81,26 @@ export default function LeaksScreen() {
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
-          <Text style={styles.screenTitle}>Money Leaks</Text>
-          <Text style={styles.screenSubtitle}>Recurring expenses draining your wallet</Text>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Money Leaks</Text>
+          <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>Recurring expenses draining your wallet</Text>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}>
           <LinearGradient
-            colors={['#2D1117', '#1A0A0F', '#110D1A']}
+            colors={gradientColors}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.savingsCard}
+            style={[styles.savingsCard, { borderColor: colors.danger + '25' }]}
           >
-            <View style={styles.savingsIconWrap}>
-              <Ionicons name="water" size={28} color={Colors.dark.danger} />
+            <View style={[styles.savingsIconWrap, { backgroundColor: colors.dangerDim }]}>
+              <Ionicons name="water" size={28} color={colors.danger} />
             </View>
             <View style={styles.savingsContent}>
-              <Text style={styles.savingsLabel}>Potential Monthly Savings</Text>
-              <Text style={styles.savingsAmount}>{formatCurrency(totalLeaks)}</Text>
+              <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Potential Monthly Savings</Text>
+              <Text style={[styles.savingsAmount, { color: colors.danger }]}>{formatCurrency(totalLeaks)}</Text>
               <View style={styles.yearlyRow}>
-                <Ionicons name="trending-up" size={14} color={Colors.dark.accent} />
-                <Text style={styles.yearlyText}>
+                <Ionicons name="trending-up" size={14} color={colors.accent} />
+                <Text style={[styles.yearlyText, { color: colors.accent }]}>
                   That's {formatCurrency(potentialYearlySavings)} per year
                 </Text>
               </View>
@@ -102,19 +108,19 @@ export default function LeaksScreen() {
           </LinearGradient>
         </Animated.View>
 
-        <Text style={styles.sectionTitle}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
           {leaks.length} leak{leaks.length !== 1 ? 's' : ''} detected
         </Text>
 
         {leaks.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="shield-checkmark" size={48} color={Colors.dark.accent} />
-            <Text style={styles.emptyTitle}>No leaks detected</Text>
-            <Text style={styles.emptySubtitle}>Your spending looks healthy</Text>
+            <Ionicons name="shield-checkmark" size={48} color={colors.accent} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No leaks detected</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Your spending looks healthy</Text>
           </View>
         ) : (
           leaks.map((leak, idx) => (
-            <LeakCard key={leak.id} leak={leak} index={idx} />
+            <LeakCard key={leak.id} leak={leak} index={idx} colors={colors} />
           ))
         )}
       </ScrollView>
@@ -125,7 +131,6 @@ export default function LeaksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.dark.bg,
   },
   centered: {
     justifyContent: 'center',
@@ -137,12 +142,10 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontFamily: 'Inter_700Bold',
     fontSize: 28,
-    color: Colors.dark.text,
   },
   screenSubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    color: Colors.dark.textSecondary,
     marginTop: 4,
     marginBottom: 24,
   },
@@ -151,7 +154,6 @@ const styles = StyleSheet.create({
     padding: 24,
     marginBottom: 28,
     borderWidth: 1,
-    borderColor: Colors.dark.danger + '25',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
@@ -160,7 +162,6 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 16,
-    backgroundColor: Colors.dark.dangerDim,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -170,14 +171,12 @@ const styles = StyleSheet.create({
   savingsLabel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
-    color: Colors.dark.textSecondary,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.8,
   },
   savingsAmount: {
     fontFamily: 'Inter_700Bold',
     fontSize: 32,
-    color: Colors.dark.danger,
     marginVertical: 4,
   },
   yearlyRow: {
@@ -188,23 +187,19 @@ const styles = StyleSheet.create({
   yearlyText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
-    color: Colors.dark.accent,
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: Colors.dark.textSecondary,
     marginBottom: 14,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
   leakCard: {
-    backgroundColor: Colors.dark.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
   },
   leakHeader: {
     flexDirection: 'row',
@@ -224,7 +219,6 @@ const styles = StyleSheet.create({
   leakMerchant: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: Colors.dark.text,
     marginBottom: 6,
   },
   leakMeta: {
@@ -240,14 +234,12 @@ const styles = StyleSheet.create({
   freqText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 10,
-    color: Colors.dark.danger,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
   leakCount: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    color: Colors.dark.textTertiary,
   },
   leakAmountBox: {
     alignItems: 'flex-end',
@@ -255,12 +247,10 @@ const styles = StyleSheet.create({
   leakAmount: {
     fontFamily: 'Inter_700Bold',
     fontSize: 18,
-    color: Colors.dark.text,
   },
   leakAmountLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
-    color: Colors.dark.textTertiary,
   },
   suggestionBox: {
     flexDirection: 'row',
@@ -269,12 +259,10 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
   },
   suggestionText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
-    color: Colors.dark.warning,
     flex: 1,
   },
   emptyState: {
@@ -285,11 +273,9 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 18,
-    color: Colors.dark.text,
   },
   emptySubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    color: Colors.dark.textSecondary,
   },
 });

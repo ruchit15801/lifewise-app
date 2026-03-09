@@ -5,7 +5,7 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import Colors from "@/constants/colors";
+import { useTheme } from "@/lib/theme-context";
 
 function NativeTabLayout() {
   return (
@@ -35,6 +35,7 @@ function NativeTabLayout() {
 }
 
 function ClassicTabLayout() {
+  const { colors, isDark } = useTheme();
   const isWeb = Platform.OS === "web";
   const isIOS = Platform.OS === "ios";
 
@@ -42,13 +43,13 @@ function ClassicTabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.dark.accent,
-        tabBarInactiveTintColor: Colors.dark.tabIconDefault,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarStyle: {
           position: "absolute" as const,
-          backgroundColor: isIOS ? "transparent" : '#0A0A16',
+          backgroundColor: isIOS ? "transparent" : colors.tabBarBg,
           borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: Colors.dark.border,
+          borderTopColor: colors.border,
           elevation: 0,
           ...(isWeb ? { height: 84 } : {}),
         },
@@ -56,11 +57,11 @@ function ClassicTabLayout() {
           isIOS ? (
             <BlurView
               intensity={80}
-              tint="dark"
+              tint={colors.blurTint}
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0A0A16' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.tabBarBg }]} />
           ) : null,
         tabBarLabelStyle: {
           fontFamily: 'Inter_500Medium',

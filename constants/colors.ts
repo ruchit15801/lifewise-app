@@ -19,6 +19,37 @@ const Colors = {
     tint: '#00E5A0',
     tabIconDefault: 'rgba(255,255,255,0.35)',
     tabIconSelected: '#00E5A0',
+    inputBg: '#111122',
+    inputBorder: 'rgba(255,255,255,0.1)',
+    statusBarStyle: 'light' as const,
+    tabBarBg: '#0A0A16',
+    blurTint: 'dark' as const,
+  },
+  light: {
+    bg: '#F5F7FA',
+    bgSecondary: '#FFFFFF',
+    card: '#FFFFFF',
+    cardElevated: '#F0F2F5',
+    accent: '#00C48C',
+    accentDim: 'rgba(0, 196, 140, 0.10)',
+    accentBlue: '#4E7CFF',
+    accentBlueDim: 'rgba(78, 124, 255, 0.08)',
+    danger: '#FF4757',
+    dangerDim: 'rgba(255, 71, 87, 0.08)',
+    warning: '#F5A623',
+    warningDim: 'rgba(245, 166, 35, 0.08)',
+    text: '#1A1A2E',
+    textSecondary: 'rgba(26,26,46,0.6)',
+    textTertiary: 'rgba(26,26,46,0.35)',
+    border: 'rgba(0,0,0,0.06)',
+    tint: '#00C48C',
+    tabIconDefault: 'rgba(26,26,46,0.35)',
+    tabIconSelected: '#00C48C',
+    inputBg: '#F0F2F5',
+    inputBorder: 'rgba(0,0,0,0.08)',
+    statusBarStyle: 'dark' as const,
+    tabBarBg: '#FFFFFF',
+    blurTint: 'light' as const,
   },
   categories: {
     food: '#FF6B6B',
@@ -31,13 +62,8 @@ const Colors = {
     investment: '#E8A87C',
     others: '#AEB6BF',
   },
-  light: {
-    text: '#000',
-    background: '#fff',
-    tint: '#00E5A0',
-    tabIconDefault: '#ccc',
-    tabIconSelected: '#00E5A0',
-  },
 };
+
+export type ThemeColors = typeof Colors.dark;
 
 export default Colors;
