@@ -1,12 +1,43 @@
-// template
-const tintColorLight = "#2f95dc";
-
-export default {
+const Colors = {
+  dark: {
+    bg: '#06060E',
+    bgSecondary: '#0D0D1A',
+    card: '#111122',
+    cardElevated: '#1A1A2E',
+    accent: '#00E5A0',
+    accentDim: 'rgba(0, 229, 160, 0.12)',
+    accentBlue: '#4E7CFF',
+    accentBlueDim: 'rgba(78, 124, 255, 0.12)',
+    danger: '#FF4757',
+    dangerDim: 'rgba(255, 71, 87, 0.12)',
+    warning: '#FFBE0B',
+    warningDim: 'rgba(255, 190, 11, 0.12)',
+    text: '#FFFFFF',
+    textSecondary: 'rgba(255,255,255,0.6)',
+    textTertiary: 'rgba(255,255,255,0.3)',
+    border: 'rgba(255,255,255,0.06)',
+    tint: '#00E5A0',
+    tabIconDefault: 'rgba(255,255,255,0.35)',
+    tabIconSelected: '#00E5A0',
+  },
+  categories: {
+    food: '#FF6B6B',
+    shopping: '#4ECDC4',
+    transport: '#45B7D1',
+    entertainment: '#F7DC6F',
+    bills: '#BB8FCE',
+    healthcare: '#82E0AA',
+    education: '#85C1E9',
+    investment: '#E8A87C',
+    others: '#AEB6BF',
+  },
   light: {
-    text: "#000",
-    background: "#fff",
-    tint: tintColorLight,
-    tabIconDefault: "#ccc",
-    tabIconSelected: tintColorLight,
+    text: '#000',
+    background: '#fff',
+    tint: '#00E5A0',
+    tabIconDefault: '#ccc',
+    tabIconSelected: '#00E5A0',
   },
 };
+
+export default Colors;
