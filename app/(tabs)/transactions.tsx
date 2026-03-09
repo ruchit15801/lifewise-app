@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { useExpenses } from '@/lib/expense-context';
 import {
   CATEGORIES,
@@ -21,6 +21,7 @@ import {
   CategoryType,
   Transaction,
 } from '@/lib/data';
+import { ThemeColors } from '@/constants/colors';
 
 const FILTER_OPTIONS: { key: string; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -35,20 +36,20 @@ const FILTER_OPTIONS: { key: string; label: string }[] = [
   { key: 'others', label: 'Others' },
 ];
 
-function TransactionItem({ item }: { item: Transaction }) {
+function TransactionItem({ item, colors }: { item: Transaction; colors: ThemeColors }) {
   const cat = CATEGORIES[item.category];
   return (
-    <View style={styles.txRow}>
+    <View style={[styles.txRow, { backgroundColor: colors.card }]}>
       <View style={[styles.txIcon, { backgroundColor: cat.color + '15' }]}>
         <Ionicons name={cat.icon as any} size={18} color={cat.color} />
       </View>
       <View style={styles.txInfo}>
-        <Text style={styles.txMerchant}>{item.merchant}</Text>
-        <Text style={styles.txUpi}>{item.upiId}</Text>
+        <Text style={[styles.txMerchant, { color: colors.text }]}>{item.merchant}</Text>
+        <Text style={[styles.txUpi, { color: colors.textTertiary }]}>{item.upiId}</Text>
       </View>
       <View style={styles.txRight}>
-        <Text style={styles.txAmount}>- {formatCurrency(item.amount)}</Text>
-        <Text style={styles.txTimeText}>{formatTime(item.date)}</Text>
+        <Text style={[styles.txAmount, { color: colors.danger }]}>- {formatCurrency(item.amount)}</Text>
+        <Text style={[styles.txTimeText, { color: colors.textTertiary }]}>{formatTime(item.date)}</Text>
       </View>
     </View>
   );
@@ -56,6 +57,7 @@ function TransactionItem({ item }: { item: Transaction }) {
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const { transactions, isLoading } = useExpenses();
   const [activeFilter, setActiveFilter] = useState('all');
 
@@ -84,19 +86,19 @@ export default function TransactionsScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={Colors.dark.accent} />
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.headerArea, { paddingTop: topInset + 16 }]}>
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
-          <Text style={styles.screenTitle}>Activity</Text>
-          <Text style={styles.totalText}>
-            Total: <Text style={styles.totalAmount}>{formatCurrency(totalFiltered)}</Text>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Activity</Text>
+          <Text style={[styles.totalText, { color: colors.textSecondary }]}>
+            Total: <Text style={[styles.totalAmount, { color: colors.accent }]}>{formatCurrency(totalFiltered)}</Text>
           </Text>
         </Animated.View>
 
@@ -108,13 +110,15 @@ export default function TransactionsScreen() {
                 onPress={() => setActiveFilter(opt.key)}
                 style={[
                   styles.filterChip,
-                  activeFilter === opt.key && styles.filterChipActive,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  activeFilter === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '50' },
                 ]}
               >
                 <Text
                   style={[
                     styles.filterChipText,
-                    activeFilter === opt.key && styles.filterChipTextActive,
+                    { color: colors.textSecondary },
+                    activeFilter === opt.key && { color: colors.accent },
                   ]}
                 >
                   {opt.label}
@@ -128,11 +132,11 @@ export default function TransactionsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <TransactionItem item={item} />}
+        renderItem={({ item }) => <TransactionItem item={item} colors={colors} />}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.sectionTotal}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{section.title}</Text>
+            <Text style={[styles.sectionTotal, { color: colors.textTertiary }]}>
               {formatCurrency((section as any).total)}
             </Text>
           </View>
@@ -152,7 +156,6 @@ export default function TransactionsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.dark.bg,
   },
   centered: {
     justifyContent: 'center',
@@ -165,18 +168,15 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontFamily: 'Inter_700Bold',
     fontSize: 28,
-    color: Colors.dark.text,
   },
   totalText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    color: Colors.dark.textSecondary,
     marginTop: 4,
     marginBottom: 16,
   },
   totalAmount: {
     fontFamily: 'Inter_600SemiBold',
-    color: Colors.dark.accent,
   },
   filterRow: {
     flexDirection: 'row',
@@ -187,21 +187,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: Colors.dark.card,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.dark.accentDim,
-    borderColor: Colors.dark.accent + '50',
   },
   filterChipText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
-    color: Colors.dark.textSecondary,
-  },
-  filterChipTextActive: {
-    color: Colors.dark.accent,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -213,17 +203,14 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
-    color: Colors.dark.textSecondary,
   },
   sectionTotal: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
-    color: Colors.dark.textTertiary,
   },
   txRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.dark.card,
     borderRadius: 14,
     padding: 14,
   },
@@ -241,12 +228,10 @@ const styles = StyleSheet.create({
   txMerchant: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: Colors.dark.text,
   },
   txUpi: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    color: Colors.dark.textTertiary,
     marginTop: 3,
   },
   txRight: {
@@ -255,12 +240,10 @@ const styles = StyleSheet.create({
   txAmount: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: Colors.dark.danger,
   },
   txTimeText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
-    color: Colors.dark.textTertiary,
     marginTop: 3,
   },
   separator: {
