@@ -1,0 +1,231 @@
+Feature Name
+
+Smart Payment Reminder System
+
+1️⃣ Feature Overview
+
+The Smart Payment Reminder System helps users remember upcoming bills, subscriptions, and payments automatically.
+
+The system detects recurring expenses and sends reminders before the payment due date.
+
+This ensures users avoid:
+
+• late fees
+• missed payments
+• subscription renewals they forgot.
+
+2️⃣ Core Purpose
+
+The reminder feature improves:
+
+• user engagement
+• financial awareness
+• daily app usage
+
+Users will receive notifications such as:
+
+Electricity bill due tomorrow
+Amount: ₹1,280
+3️⃣ Reminder Types
+
+The system supports three types of reminders.
+
+3.1 Bill Reminder
+
+Detect bills such as:
+
+• electricity
+• internet
+• mobile recharge
+• rent
+
+Example:
+
+Electricity bill due in 2 days
+Amount ₹1350
+
+Reminder timing:
+
+• 3 days before
+• 1 day before
+• due date
+
+3.2 Subscription Reminder
+
+Detect recurring payments.
+
+Examples:
+
+• Netflix
+• Spotify
+• Google Play subscriptions
+• Amazon Prime
+
+Example:
+
+Netflix subscription renews tomorrow
+Amount ₹649
+
+User can tap:
+
+• Pay
+• Cancel
+• Remind later
+
+3.3 Custom Reminder
+
+Users can manually add reminders.
+
+Example:
+
+Pay house rent
+Date: 1st of every month
+
+Recurring options:
+
+• daily
+• weekly
+• monthly
+• yearly
+
+4️⃣ Reminder Notification Flow
+
+When reminder triggers:
+
+User receives push notification.
+
+Example:
+
+Reminder: Internet bill due today
+Amount ₹799
+
+Actions available:
+
+• Mark Paid
+• Snooze
+• Pay Now
+
+5️⃣ Reminder Management Screen
+
+Users can manage reminders in Reminder Center.
+
+Information displayed:
+
+• reminder title
+• due date
+• amount
+• category
+
+Example list:
+
+Electricity bill – 24 March
+Internet – 28 March
+Netflix – 30 March
+
+Options:
+
+• Edit reminder
+• Delete reminder
+• Mark paid
+
+6️⃣ Automatic Reminder Detection
+
+The system analyzes SMS transactions.
+
+Example SMS:
+
+Your electricity bill of ₹1280 is due on 24 March
+
+System extracts:
+
+• bill name
+• amount
+• due date
+
+Reminder created automatically.
+
+7️⃣ Reminder Settings
+
+Users can configure:
+
+• reminder time
+• notification frequency
+• sound/vibration
+
+Example options:
+
+• remind 3 days before
+• remind 1 day before
+• remind on due date
+
+8️⃣ Reminder Database Structure
+
+Collection name:
+
+reminders
+
+Fields:
+
+Field	Description
+reminder_id	unique id
+user_id	linked user
+title	reminder name
+amount	bill amount
+category	bill/subscription/custom
+due_date	payment date
+repeat_type	daily/weekly/monthly
+status	active / completed
+9️⃣ Backend Logic
+
+Reminder scheduler runs every hour.
+
+Steps:
+
+1️⃣ check reminders due soon
+2️⃣ send push notification
+3️⃣ update reminder status
+
+🔟 UI Placement
+
+Reminder section will appear in:
+
+Home Dashboard
+
+Card example:
+
+Upcoming Bills
+
+Electricity – tomorrow
+Netflix – 2 days
+1️⃣1️⃣ User Benefits
+
+The reminder feature helps users:
+
+• avoid late fees
+• manage recurring payments
+• stay financially organized
+
+1️⃣2️⃣ Engagement Impact
+
+Reminder notifications increase:
+
+• daily app opens
+• user retention
+• app usefulness
+
+1️⃣3️⃣ Future Expansion
+
+Later versions can include:
+
+• automatic bill payment
+• subscription cancellation
+• smart budget reminders
+
+Final Summary
+
+This reminder system will:
+
+✔ detect bills automatically
+✔ notify users before due date
+✔ allow manual reminders
+✔ improve daily engagement

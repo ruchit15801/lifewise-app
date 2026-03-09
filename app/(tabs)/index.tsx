@@ -85,7 +85,8 @@ export default function HomeScreen() {
     .slice(0, 6);
 
   const recentTxs = transactions.slice(0, 5);
-  const unpaidBills = bills.filter(b => !b.isPaid).length;
+  const unpaidBills = bills.filter(b => b.status !== 'paid' && !b.isPaid).length;
+  const subscriptions = bills.filter(b => b.reminderType === 'subscription' && b.status !== 'paid' && !b.isPaid);
   const totalLeakAmount = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
 
   return (
@@ -168,9 +169,9 @@ export default function HomeScreen() {
               <Text style={styles.insightLabel}>Money Leaks</Text>
             </View>
             <View style={[styles.insightCard, { borderLeftColor: Colors.dark.warning }]}>
-              <Ionicons name="calendar" size={20} color={Colors.dark.warning} />
+              <Ionicons name="notifications" size={20} color={Colors.dark.warning} />
               <Text style={styles.insightValue}>{unpaidBills}</Text>
-              <Text style={styles.insightLabel}>Pending Bills</Text>
+              <Text style={styles.insightLabel}>Due Reminders</Text>
             </View>
             <View style={[styles.insightCard, { borderLeftColor: Colors.dark.accentBlue }]}>
               <Ionicons name="trending-down" size={20} color={Colors.dark.accentBlue} />
