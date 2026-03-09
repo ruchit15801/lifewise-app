@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,12 +8,15 @@ import {
   Platform,
   Switch,
   Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { useCurrency, CURRENCIES, CurrencyOption } from '@/lib/currency-context';
 
 function SettingRow({
   icon,
@@ -53,9 +56,23 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { colors, mode, toggleTheme, isDark } = useTheme();
+  const { currentCurrency, setCurrency } = useCurrency();
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [seniorMode, setSeniorMode] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@spendiq_senior_mode').then(v => {
+      if (v === 'true') setSeniorMode(true);
+    }).catch(() => {});
+  }, []);
+
+  const toggleSeniorMode = (val: boolean) => {
+    setSeniorMode(val);
+    AsyncStorage.setItem('@spendiq_senior_mode', val ? 'true' : 'false');
+  };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -115,6 +132,37 @@ export default function SettingsScreen() {
               />
             }
           />
+          <SettingRow
+            icon="accessibility"
+            label="Senior Mode"
+            colors={colors}
+            rightElement={
+              <Switch
+                value={seniorMode}
+                onValueChange={toggleSeniorMode}
+                trackColor={{ false: colors.inputBorder, true: colors.accent + '50' }}
+                thumbColor={seniorMode ? colors.accent : '#ccc'}
+              />
+            }
+          />
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Preferences</Text>
+        <View style={[styles.settingsGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <SettingRow
+            icon="cash"
+            label="Currency"
+            colors={colors}
+            onPress={() => setShowCurrencyPicker(true)}
+            rightElement={
+              <Pressable onPress={() => setShowCurrencyPicker(true)} style={styles.currencyBadge}>
+                <Text style={[styles.currencyBadgeText, { color: colors.accent }]}>
+                  {currentCurrency.symbol} {currentCurrency.code}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </Pressable>
+            }
+          />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>General</Text>
@@ -131,6 +179,38 @@ export default function SettingsScreen() {
 
         <Text style={[styles.versionText, { color: colors.textTertiary }]}>SpendIQ v1.0.0</Text>
       </ScrollView>
+
+      <Modal visible={showCurrencyPicker} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.grabber, { backgroundColor: colors.textTertiary }]} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Select Currency</Text>
+            {CURRENCIES.map(curr => (
+              <Pressable
+                key={curr.code}
+                onPress={() => { setCurrency(curr.code); setShowCurrencyPicker(false); }}
+                style={[
+                  styles.currencyRow,
+                  { borderBottomColor: colors.border },
+                  curr.code === currentCurrency.code && { backgroundColor: colors.accentDim },
+                ]}
+              >
+                <Text style={[styles.currencySymbol, { color: colors.accent }]}>{curr.symbol}</Text>
+                <View style={styles.currencyInfo}>
+                  <Text style={[styles.currencyCode, { color: colors.text }]}>{curr.code}</Text>
+                  <Text style={[styles.currencyName, { color: colors.textSecondary }]}>{curr.name}</Text>
+                </View>
+                {curr.code === currentCurrency.code && (
+                  <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
+                )}
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setShowCurrencyPicker(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+              <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -211,10 +291,30 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 15,
   },
+  currencyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  currencyBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
   versionText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 8,
   },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContainer: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  modalTitle: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center', marginBottom: 20 },
+  currencyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderRadius: 12, gap: 14, marginBottom: 2 },
+  currencySymbol: { fontFamily: 'Inter_700Bold', fontSize: 22, width: 32, textAlign: 'center' },
+  currencyInfo: { flex: 1 },
+  currencyCode: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  currencyName: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  cancelBtn: { marginTop: 12, borderRadius: 14, borderWidth: 1, paddingVertical: 16, alignItems: 'center' },
+  cancelBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
 });

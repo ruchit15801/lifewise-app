@@ -19,9 +19,9 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
+import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import {
-  formatCurrency,
   Bill,
   ReminderType,
   RepeatType,
@@ -74,6 +74,7 @@ function ReminderCard({
   index: number;
 }) {
   const { colors, isDark } = useTheme();
+  const { formatAmount } = useCurrency();
   const [showActions, setShowActions] = useState(false);
   const effectiveDate = (bill.status === 'snoozed' && bill.snoozedUntil) ? bill.snoozedUntil : bill.dueDate;
   const daysLeft = getDaysUntil(effectiveDate);
@@ -117,7 +118,7 @@ function ReminderCard({
           </View>
           <View style={styles.reminderRight}>
             <Text style={[styles.reminderAmount, { color: colors.text }, isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const }]}>
-              {formatCurrency(bill.amount)}
+              {formatAmount(bill.amount)}
             </Text>
           </View>
         </View>
@@ -551,6 +552,7 @@ function SettingsModal({
 
 export default function BillsScreen() {
   const { colors, isDark } = useTheme();
+  const { formatAmount } = useCurrency();
   const insets = useSafeAreaInsets();
   const {
     bills, isLoading, toggleBillPaid, addReminder, editReminder, deleteReminder,
@@ -664,7 +666,7 @@ export default function BillsScreen() {
             <View style={styles.overviewRow}>
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Pending</Text>
-                <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatCurrency(totalPending)}</Text>
+                <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatAmount(totalPending)}</Text>
               </View>
               <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
               <View style={styles.overviewStat}>
@@ -681,7 +683,7 @@ export default function BillsScreen() {
               <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Subs</Text>
-                <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatCurrency(subscriptionTotal)}</Text>
+                <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatAmount(subscriptionTotal)}</Text>
               </View>
             </View>
           </LinearGradient>

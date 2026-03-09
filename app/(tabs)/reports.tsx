@@ -14,17 +14,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
+import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import {
   CATEGORIES,
-  formatCurrency,
   getCategoryBreakdown,
   CategoryType,
 } from '@/lib/data';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean }) {
+function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark, formatAmount }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
   const cat = CATEGORIES[category];
   const barWidth = maxPercentage > 0 ? (percentage / maxPercentage) * 100 : 0;
 
@@ -48,7 +48,7 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
             style={[styles.catBarFill, { width: `${barWidth}%` as any }]}
           />
         </View>
-        <Text style={[styles.catBarAmount, { color: colors.text }]}>{formatCurrency(total)}</Text>
+        <Text style={[styles.catBarAmount, { color: colors.text }]}>{formatAmount(total)}</Text>
       </View>
     </View>
   );
@@ -57,6 +57,7 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
 export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { formatAmount } = useCurrency();
   const { transactions, isLoading, monthlyBudget } = useExpenses();
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
@@ -157,7 +158,7 @@ export default function ReportsScreen() {
             <View style={styles.summaryTop}>
               <View>
                 <Text style={[styles.summaryLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }]}>Total Spent</Text>
-                <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatCurrency(totalSpent)}</Text>
+                <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatAmount(totalSpent)}</Text>
               </View>
               <View style={[styles.savingsCircle, { borderColor: colors.accentMint, backgroundColor: colors.accentMintDim }]}>
                 <Text style={[styles.savingsValue, { color: colors.accentMint }]}>{savingsRate}%</Text>
@@ -180,7 +181,7 @@ export default function ReportsScreen() {
                   <Ionicons name="trending-down" size={16} color={colors.accent} />
                 </View>
                 <Text style={[styles.summaryStatValue, { color: colors.text }]}>
-                  {monthTxs.length > 0 ? formatCurrency(Math.round(totalSpent / Math.max(1, new Date().getDate()))) : '0'}
+                  {monthTxs.length > 0 ? formatAmount(Math.round(totalSpent / Math.max(1, new Date().getDate()))) : '0'}
                 </Text>
                 <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Daily Avg</Text>
               </View>
@@ -212,6 +213,7 @@ export default function ReportsScreen() {
                   maxPercentage={maxPercentage}
                   colors={colors}
                   isDark={isDark}
+                  formatAmount={formatAmount}
                 />
                 {idx < breakdown.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
               </React.Fragment>
@@ -239,7 +241,7 @@ export default function ReportsScreen() {
                       <Text style={[styles.merchantName, { color: colors.text }]}>{merchant}</Text>
                       <Text style={[styles.merchantCount, { color: colors.textTertiary }]}>{data.count} transactions</Text>
                     </View>
-                    <Text style={[styles.merchantAmount, { color: colors.text }]}>{formatCurrency(data.total)}</Text>
+                    <Text style={[styles.merchantAmount, { color: colors.text }]}>{formatAmount(data.total)}</Text>
                   </View>
                   {idx < merchantTotals.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
                 </React.Fragment>

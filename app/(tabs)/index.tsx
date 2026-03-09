@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,18 +7,21 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
+  Modal,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useExpenses } from '@/lib/expense-context';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { useCurrency } from '@/lib/currency-context';
 import {
   CATEGORIES,
-  formatCurrency,
   getTodaySpending,
   getMonthlySpending,
   getGreeting,
@@ -26,19 +29,19 @@ import {
   CategoryType,
 } from '@/lib/data';
 
-function SpendingScoreRing({ score, colors, isDark }: { score: number; colors: any; isDark: boolean }) {
+function SpendingScoreRing({ score, colors, isDark, onPress }: { score: number; colors: any; isDark: boolean; onPress?: () => void }) {
   const clampedScore = Math.min(100, Math.max(0, score));
   const scoreColor = clampedScore >= 70 ? colors.accentMint : clampedScore >= 40 ? colors.warning : colors.danger;
 
   return (
-    <View style={ringStyles.container}>
+    <Pressable onPress={onPress} style={ringStyles.container}>
       <View style={[ringStyles.outerRing, { borderColor: scoreColor + '25' }]}>
         <View style={[ringStyles.innerRing, { borderColor: scoreColor + '60' }]}>
           <Text style={[ringStyles.scoreValue, { color: colors.text }]}>{clampedScore}</Text>
           <Text style={[ringStyles.scoreLabel, { color: colors.textTertiary }]}>SCORE</Text>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -79,7 +82,7 @@ function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors 
   );
 }
 
-function CategoryPill({ category, total, index, colors }: { category: CategoryType; total: number; index: number; colors: any }) {
+function CategoryPill({ category, total, index, colors, formatAmount }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string }) {
   const cat = CATEGORIES[category];
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInRight.delay(index * 80).springify() : undefined}>
@@ -89,14 +92,14 @@ function CategoryPill({ category, total, index, colors }: { category: CategoryTy
         </View>
         <View style={styles.catTextWrap}>
           <Text style={[styles.categoryPillLabel, { color: colors.textSecondary }]}>{cat.label}</Text>
-          <Text style={[styles.categoryPillAmount, { color: colors.text }]}>{formatCurrency(total)}</Text>
+          <Text style={[styles.categoryPillAmount, { color: colors.text }]}>{formatAmount(total)}</Text>
         </View>
       </View>
     </Animated.View>
   );
 }
 
-function TransactionRow({ merchant, amount, category, date, colors }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any }) {
+function TransactionRow({ merchant, amount, category, date, colors, formatAmount }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string }) {
   const cat = CATEGORIES[category];
   return (
     <View style={styles.txRow}>
@@ -107,8 +110,31 @@ function TransactionRow({ merchant, amount, category, date, colors }: { merchant
         <Text style={[styles.txMerchant, { color: colors.text }]}>{merchant}</Text>
         <Text style={[styles.txTime, { color: colors.textTertiary }]}>{formatTime(date)}</Text>
       </View>
-      <Text style={[styles.txAmount, { color: colors.danger }]}>- {formatCurrency(amount)}</Text>
+      <Text style={[styles.txAmount, { color: colors.danger }]}>- {formatAmount(amount)}</Text>
     </View>
+  );
+}
+
+function ActionButton({ icon, label, color, onPress, colors }: { icon: string; label: string; color: string; onPress: () => void; colors: any }) {
+  return (
+    <Pressable onPress={onPress} style={styles.actionBtnWrap}>
+      <View style={[styles.actionBtnCircle, { backgroundColor: color + '15', borderColor: color + '25' }]}>
+        <Ionicons name={icon as any} size={24} color={color} />
+      </View>
+      <Text style={[styles.actionBtnLabel, { color: colors.textSecondary }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function QuickAccessCard({ icon, label, subtitle, color, onPress, colors }: { icon: string; label: string; subtitle: string; color: string; onPress: () => void; colors: any }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.quickCardIcon, { backgroundColor: color + '12' }]}>
+        <Ionicons name={icon as any} size={20} color={color} />
+      </View>
+      <Text style={[styles.quickCardLabel, { color: colors.text }]}>{label}</Text>
+      <Text style={[styles.quickCardSubtitle, { color: colors.textTertiary }]}>{subtitle}</Text>
+    </Pressable>
   );
 }
 
@@ -117,8 +143,19 @@ export default function HomeScreen() {
   const { transactions, bills, leaks, isLoading, monthlyBudget } = useExpenses();
   const { user } = useAuth();
   const { colors, isDark } = useTheme();
+  const { formatAmount } = useCurrency();
+  const [seniorMode, setSeniorMode] = useState(false);
+  const [showScoreDetail, setShowScoreDetail] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem('@spendiq_senior_mode').then(v => {
+        setSeniorMode(v === 'true');
+      }).catch(() => {});
+    }, [])
+  );
 
   if (isLoading) {
     return (
@@ -155,6 +192,73 @@ export default function HomeScreen() {
     (totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0)
   );
 
+  const upcomingBills = bills.filter(b => !b.isPaid && b.status !== 'paid').slice(0, 3);
+
+  const showComingSoon = () => {
+    if (Platform.OS === 'web') {
+      alert('Coming soon!');
+    } else {
+      Alert.alert('Coming Soon', 'This feature will be available in a future update.');
+    }
+  };
+
+  if (seniorMode) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 }]}
+        >
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
+              <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
+            </View>
+            <Pressable
+              onPress={() => router.push('/settings')}
+              style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              testID="home-settings-btn"
+            >
+              <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <View style={[styles.seniorHeroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>Balance Left</Text>
+            <Text style={[styles.seniorHeroAmount, { color: colors.text }]}>{formatAmount(Math.max(0, monthlyBudget - monthlySpend))}</Text>
+          </View>
+
+          <View style={styles.seniorGrid}>
+            <Pressable onPress={() => router.push('/(tabs)/transactions')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.seniorBtnIcon, { backgroundColor: colors.accentDim }]}>
+                <Ionicons name="wallet" size={32} color={colors.accent} />
+              </View>
+              <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Money</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/family')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.seniorBtnIcon, { backgroundColor: '#10B981' + '12' }]}>
+                <Ionicons name="medkit" size={32} color="#10B981" />
+              </View>
+              <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Health</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/family')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.seniorBtnIcon, { backgroundColor: '#EC4899' + '12' }]}>
+                <Ionicons name="people" size={32} color="#EC4899" />
+              </View>
+              <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Family</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/(tabs)/bills')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.seniorBtnIcon, { backgroundColor: '#F59E0B' + '12' }]}>
+                <Ionicons name="notifications" size={32} color="#F59E0B" />
+              </View>
+              <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Reminders</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
@@ -190,7 +294,7 @@ export default function HomeScreen() {
             <View style={styles.heroTop}>
               <View style={styles.heroLeft}>
                 <Text style={[styles.heroLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(15,23,42,0.45)' }]}>This Month</Text>
-                <Text style={[styles.heroAmount, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{formatCurrency(monthlySpend)}</Text>
+                <Text style={[styles.heroAmount, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{formatAmount(monthlySpend)}</Text>
                 <View style={styles.budgetSection}>
                   <View style={[styles.budgetTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }]}>
                     <LinearGradient
@@ -201,35 +305,60 @@ export default function HomeScreen() {
                     />
                   </View>
                   <Text style={[styles.budgetText, { color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(15,23,42,0.35)' }]}>
-                    {Math.round(budgetUsed)}% of {formatCurrency(monthlyBudget)}
+                    {Math.round(budgetUsed)}% of {formatAmount(monthlyBudget)}
                   </Text>
                 </View>
               </View>
-              <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} />
+              <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} />
             </View>
             <View style={[styles.heroDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
             <View style={styles.heroStats}>
               <View style={styles.heroStat}>
                 <Text style={[styles.heroStatLabel, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }]}>Today</Text>
-                <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{formatCurrency(todaySpend)}</Text>
+                <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{formatAmount(todaySpend)}</Text>
               </View>
               <View style={[styles.heroStatDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
               <View style={styles.heroStat}>
                 <Text style={[styles.heroStatLabel, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }]}>Daily Avg</Text>
                 <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
-                  {formatCurrency(Math.round(monthlySpend / Math.max(new Date().getDate(), 1)))}
+                  {formatAmount(Math.round(monthlySpend / Math.max(new Date().getDate(), 1)))}
                 </Text>
               </View>
               <View style={[styles.heroStatDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
               <View style={styles.heroStat}>
                 <Text style={[styles.heroStatLabel, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }]}>Remaining</Text>
                 <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }, monthlyBudget - monthlySpend < 0 ? { color: colors.danger } : {}]}>
-                  {formatCurrency(Math.max(0, monthlyBudget - monthlySpend))}
+                  {formatAmount(Math.max(0, monthlyBudget - monthlySpend))}
                 </Text>
               </View>
             </View>
           </LinearGradient>
         </Animated.View>
+
+        {upcomingBills.length > 0 && (
+          <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Reminders</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
+              {upcomingBills.map((bill) => {
+                const dueDate = new Date(bill.dueDate);
+                return (
+                  <View key={bill.id} style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={[styles.reminderPillIcon, { backgroundColor: colors.warningDim }]}>
+                      <Ionicons name={bill.icon as any} size={18} color={colors.warning} />
+                    </View>
+                    <View style={styles.reminderPillInfo}>
+                      <Text style={[styles.reminderPillName, { color: colors.text }]} numberOfLines={1}>{bill.name}</Text>
+                      <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>
+                        {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </Text>
+                    </View>
+                    <Text style={[styles.reminderPillAmount, { color: colors.accent }]}>{formatAmount(bill.amount)}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
+        )}
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(160).duration(500) : undefined}>
           <View style={styles.insightsRow}>
@@ -238,7 +367,7 @@ export default function HomeScreen() {
               iconColor={colors.danger}
               bgColor={colors.dangerDim}
               title="Leaks"
-              value={formatCurrency(totalLeakAmount)}
+              value={formatAmount(totalLeakAmount)}
               subtitle="/month"
               colors={colors}
             />
@@ -263,6 +392,15 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
 
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Access</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
+            <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
+            <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
+            <QuickAccessCard icon="chatbubble-ellipses" label="Assistant" subtitle="Smart Advice" color="#3B82F6" onPress={() => router.push('/assistant')} colors={colors} />
+          </ScrollView>
+        </Animated.View>
+
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(240).duration(500) : undefined}>
           <View style={[styles.lifeInsightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.lifeInsightIconWrap, { backgroundColor: colors.accentDim }]}>
@@ -272,8 +410,8 @@ export default function HomeScreen() {
               <Text style={[styles.lifeInsightTitle, { color: colors.text }]}>Spending Insight</Text>
               <Text style={[styles.lifeInsightText, { color: colors.textSecondary }]}>
                 {todaySpend > 500
-                  ? `You've spent ${formatCurrency(todaySpend)} today. Consider slowing down to stay within your daily average.`
-                  : `Great discipline today! You've only spent ${formatCurrency(todaySpend)} so far.`}
+                  ? `You've spent ${formatAmount(todaySpend)} today. Consider slowing down to stay within your daily average.`
+                  : `Great discipline today! You've only spent ${formatAmount(todaySpend)} so far.`}
               </Text>
             </View>
           </View>
@@ -283,7 +421,7 @@ export default function HomeScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Spending by Category</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
             {sortedCategories.map(([cat, total], idx) => (
-              <CategoryPill key={cat} category={cat as CategoryType} total={total as number} index={idx} colors={colors} />
+              <CategoryPill key={cat} category={cat as CategoryType} total={total as number} index={idx} colors={colors} formatAmount={formatAmount} />
             ))}
           </ScrollView>
         </Animated.View>
@@ -293,13 +431,73 @@ export default function HomeScreen() {
           <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {recentTxs.map((tx, idx) => (
               <React.Fragment key={tx.id}>
-                <TransactionRow merchant={tx.merchant} amount={tx.amount} category={tx.category} date={tx.date} colors={colors} />
+                <TransactionRow merchant={tx.merchant} amount={tx.amount} category={tx.category} date={tx.date} colors={colors} formatAmount={formatAmount} />
                 {idx < recentTxs.length - 1 && <View style={[styles.txDivider, { backgroundColor: colors.border }]} />}
               </React.Fragment>
             ))}
           </View>
         </Animated.View>
+
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(480).duration(500) : undefined}>
+          <View style={styles.actionButtonsRow}>
+            <ActionButton icon="add-circle" label="Quick Add" color={colors.accent} onPress={showComingSoon} colors={colors} />
+            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={showComingSoon} colors={colors} />
+            <ActionButton icon="flash" label="Auto Track" color="#F59E0B" onPress={showComingSoon} colors={colors} />
+          </View>
+        </Animated.View>
       </ScrollView>
+
+      <Modal visible={showScoreDetail} transparent animationType="fade">
+        <Pressable style={styles.scoreOverlay} onPress={() => setShowScoreDetail(false)}>
+          <View style={[styles.scoreDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Life Score Breakdown</Text>
+              <Pressable onPress={() => setShowScoreDetail(false)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.textTertiary} />
+              </Pressable>
+            </View>
+
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+              <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} />
+            </View>
+
+            <View style={styles.scoreBreakdown}>
+              <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
+                <View style={styles.scoreRowLeft}>
+                  <View style={[styles.scoreRowDot, { backgroundColor: colors.accentMint }]} />
+                  <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Budget Control</Text>
+                </View>
+                <Text style={[styles.scoreRowValue, { color: colors.accentMint }]}>
+                  {Math.round(Math.max(0, Math.min(100, 100 - budgetUsed)) * 0.5)}/50
+                </Text>
+              </View>
+              <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
+                <View style={styles.scoreRowLeft}>
+                  <View style={[styles.scoreRowDot, { backgroundColor: colors.accentBlue }]} />
+                  <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Bills Paid</Text>
+                </View>
+                <Text style={[styles.scoreRowValue, { color: colors.accentBlue }]}>
+                  {Math.round(billsPaidRatio * 30)}/30
+                </Text>
+              </View>
+              <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
+                <View style={styles.scoreRowLeft}>
+                  <View style={[styles.scoreRowDot, { backgroundColor: colors.warning }]} />
+                  <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Leak Detection</Text>
+                </View>
+                <Text style={[styles.scoreRowValue, { color: colors.warning }]}>
+                  {totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0}/20
+                </Text>
+              </View>
+            </View>
+
+            <Pressable onPress={() => { setShowScoreDetail(false); showComingSoon(); }} style={[styles.shareBtn, { backgroundColor: colors.accentDim }]}>
+              <Ionicons name="share-outline" size={18} color={colors.accent} />
+              <Text style={[styles.shareBtnText, { color: colors.accent }]}>Share Score Card</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -340,12 +538,25 @@ const styles = StyleSheet.create({
   heroStatDivider: { width: 1, height: 28 },
   heroStatLabel: { fontFamily: 'Inter_400Regular', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 },
   heroStatValue: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  sectionTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 17, marginBottom: 14 },
+  remindersScroll: { gap: 10, paddingBottom: 20 },
+  reminderPill: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, gap: 10, minWidth: 200 },
+  reminderPillIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  reminderPillInfo: { flex: 1, gap: 2 },
+  reminderPillName: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  reminderPillDue: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  reminderPillAmount: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   insightsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   insightCard: { flex: 1, borderRadius: 18, padding: 14, gap: 6, borderWidth: 1 },
   insightIconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   insightTitle: { fontFamily: 'Inter_500Medium', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
   insightValue: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   insightSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 10 },
+  quickAccessScroll: { gap: 10, paddingBottom: 20 },
+  quickCard: { borderRadius: 18, padding: 16, borderWidth: 1, width: 130, gap: 8 },
+  quickCardIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  quickCardLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  quickCardSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 11 },
   lifeInsightCard: {
     flexDirection: 'row',
     borderRadius: 18,
@@ -359,7 +570,6 @@ const styles = StyleSheet.create({
   lifeInsightContent: { flex: 1, gap: 4 },
   lifeInsightTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   lifeInsightText: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
-  sectionTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 17, marginBottom: 14 },
   categoryScroll: { paddingBottom: 24, gap: 10 },
   categoryPill: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   catIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
@@ -374,4 +584,27 @@ const styles = StyleSheet.create({
   txTime: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
   txAmount: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   txDivider: { height: 1, marginHorizontal: 14 },
+  actionButtonsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 20 },
+  actionBtnWrap: { alignItems: 'center', gap: 8 },
+  actionBtnCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  actionBtnLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  seniorHeroCard: { borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', marginBottom: 28, gap: 8 },
+  seniorHeroLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },
+  seniorHeroAmount: { fontFamily: 'Inter_700Bold', fontSize: 42, letterSpacing: -1 },
+  seniorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  seniorBtn: { width: '47%' as any, borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', gap: 14 },
+  seniorBtnIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  seniorBtnLabel: { fontFamily: 'Inter_700Bold', fontSize: 18 },
+  scoreOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  scoreDetailCard: { borderRadius: 24, padding: 24, borderWidth: 1, width: '100%', maxWidth: 360 },
+  scoreDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16, borderBottomWidth: 1, marginBottom: 4 },
+  scoreDetailTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
+  scoreBreakdown: { gap: 4, marginBottom: 16 },
+  scoreRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1 },
+  scoreRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  scoreRowDot: { width: 10, height: 10, borderRadius: 5 },
+  scoreRowLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },
+  scoreRowValue: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  shareBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14 },
+  shareBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 });

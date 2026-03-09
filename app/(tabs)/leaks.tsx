@@ -12,11 +12,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
+import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
-import { CATEGORIES, formatCurrency, MoneyLeak } from '@/lib/data';
+import { CATEGORIES, MoneyLeak } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
 
-function LeakCard({ leak, index, colors }: { leak: MoneyLeak; index: number; colors: ThemeColors }) {
+function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; index: number; colors: ThemeColors; formatAmount: (n: number) => string }) {
   const cat = CATEGORIES[leak.category];
 
   return (
@@ -37,7 +38,7 @@ function LeakCard({ leak, index, colors }: { leak: MoneyLeak; index: number; col
             </View>
           </View>
           <View style={styles.leakAmountBox}>
-            <Text style={[styles.leakAmount, { color: colors.danger }]}>{formatCurrency(leak.monthlyEstimate)}</Text>
+            <Text style={[styles.leakAmount, { color: colors.danger }]}>{formatAmount(leak.monthlyEstimate)}</Text>
             <Text style={[styles.leakAmountLabel, { color: colors.textTertiary }]}>per month</Text>
           </View>
         </View>
@@ -45,7 +46,7 @@ function LeakCard({ leak, index, colors }: { leak: MoneyLeak; index: number; col
         <View style={[styles.savingsPotentialRow, { backgroundColor: colors.accentMintDim }]}>
           <Ionicons name="leaf-outline" size={14} color={colors.accentMint} />
           <Text style={[styles.savingsPotentialText, { color: colors.accentMint }]}>
-            Save up to {formatCurrency(leak.monthlyEstimate * 12)}/year
+            Save up to {formatAmount(leak.monthlyEstimate * 12)}/year
           </Text>
         </View>
 
@@ -64,6 +65,7 @@ export default function LeaksScreen() {
   const insets = useSafeAreaInsets();
   const { leaks, isLoading } = useExpenses();
   const { colors } = useTheme();
+  const { formatAmount } = useCurrency();
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
@@ -107,7 +109,7 @@ export default function LeaksScreen() {
               <View style={styles.savingsContent}>
                 <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Potential Savings</Text>
                 <Text style={[styles.savingsAmount, { color: colors.accentMint }]}>
-                  {formatCurrency(totalLeaks)}
+                  {formatAmount(totalLeaks)}
                 </Text>
                 <Text style={[styles.savingsAmountSuffix, { color: colors.textTertiary }]}>per month</Text>
               </View>
@@ -116,7 +118,7 @@ export default function LeaksScreen() {
             <View style={[styles.yearlySavingsRow, { backgroundColor: colors.surfaceGlow }]}>
               <Ionicons name="trending-up" size={16} color={colors.accentMint} />
               <Text style={[styles.yearlyText, { color: colors.accentMint }]}>
-                {formatCurrency(potentialYearlySavings)} potential yearly savings
+                {formatAmount(potentialYearlySavings)} potential yearly savings
               </Text>
             </View>
           </LinearGradient>
@@ -146,7 +148,7 @@ export default function LeaksScreen() {
           </View>
         ) : (
           leaks.map((leak, idx) => (
-            <LeakCard key={leak.id} leak={leak} index={idx} colors={colors} />
+            <LeakCard key={leak.id} leak={leak} index={idx} colors={colors} formatAmount={formatAmount} />
           ))
         )}
       </ScrollView>
