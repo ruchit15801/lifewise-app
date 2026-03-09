@@ -2,6 +2,10 @@ import Colors from '@/constants/colors';
 
 export type CategoryType = 'food' | 'shopping' | 'transport' | 'entertainment' | 'bills' | 'healthcare' | 'education' | 'investment' | 'others';
 
+export type ReminderType = 'bill' | 'subscription' | 'custom';
+export type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type ReminderStatus = 'active' | 'paid' | 'snoozed';
+
 export interface Transaction {
   id: string;
   merchant: string;
@@ -21,6 +25,11 @@ export interface Bill {
   category: CategoryType;
   isPaid: boolean;
   icon: string;
+  reminderType: ReminderType;
+  repeatType: RepeatType;
+  status: ReminderStatus;
+  snoozedUntil?: string;
+  reminderDaysBefore: number[];
 }
 
 export interface MoneyLeak {
@@ -33,6 +42,18 @@ export interface MoneyLeak {
   suggestion: string;
 }
 
+export interface ReminderSettings {
+  defaultReminderDays: number[];
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+}
+
+export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
+  defaultReminderDays: [3, 1, 0],
+  soundEnabled: true,
+  vibrationEnabled: true,
+};
+
 export const CATEGORIES: Record<CategoryType, { label: string; color: string; icon: string }> = {
   food: { label: 'Food & Dining', color: Colors.categories.food, icon: 'fast-food' },
   shopping: { label: 'Shopping', color: Colors.categories.shopping, icon: 'cart' },
@@ -44,6 +65,26 @@ export const CATEGORIES: Record<CategoryType, { label: string; color: string; ic
   investment: { label: 'Investment', color: Colors.categories.investment, icon: 'trending-up' },
   others: { label: 'Others', color: Colors.categories.others, icon: 'ellipsis-horizontal' },
 };
+
+export const REMINDER_TYPE_CONFIG: Record<ReminderType, { label: string; icon: string; color: string }> = {
+  bill: { label: 'Bill', icon: 'receipt', color: Colors.categories.bills },
+  subscription: { label: 'Subscription', icon: 'refresh', color: Colors.categories.entertainment },
+  custom: { label: 'Custom', icon: 'create', color: Colors.dark.accentBlue },
+};
+
+export const REPEAT_OPTIONS: { key: RepeatType; label: string }[] = [
+  { key: 'none', label: 'One-time' },
+  { key: 'daily', label: 'Daily' },
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'yearly', label: 'Yearly' },
+];
+
+export const ICON_OPTIONS = [
+  'flash', 'wifi', 'phone-portrait', 'home', 'play', 'musical-notes',
+  'barbell', 'shield-checkmark', 'card', 'water', 'car', 'cart',
+  'film', 'book', 'medkit', 'game-controller', 'newspaper', 'globe',
+];
 
 const MERCHANTS: { name: string; category: CategoryType; upiId: string; minAmount: number; maxAmount: number }[] = [
   { name: 'Swiggy', category: 'food', upiId: 'swiggy@axisbank', minAmount: 150, maxAmount: 800 },
@@ -74,7 +115,7 @@ function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function generateId(): string {
+export function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
 }
 
@@ -116,14 +157,16 @@ export function generateTransactions(days: number = 30): Transaction[] {
 export function generateBills(): Bill[] {
   const now = new Date();
   return [
-    { id: 'b1', name: 'Electricity Bill', amount: 2450, dueDate: addDays(now, 3).toISOString(), category: 'bills', isPaid: false, icon: 'flash' },
-    { id: 'b2', name: 'WiFi - Airtel', amount: 999, dueDate: addDays(now, 5).toISOString(), category: 'bills', isPaid: false, icon: 'wifi' },
-    { id: 'b3', name: 'Netflix Premium', amount: 649, dueDate: addDays(now, 8).toISOString(), category: 'entertainment', isPaid: false, icon: 'play' },
-    { id: 'b4', name: 'Mobile Recharge', amount: 299, dueDate: addDays(now, 1).toISOString(), category: 'bills', isPaid: false, icon: 'phone-portrait' },
-    { id: 'b5', name: 'Rent Payment', amount: 18000, dueDate: addDays(now, 12).toISOString(), category: 'bills', isPaid: false, icon: 'home' },
-    { id: 'b6', name: 'Spotify Family', amount: 179, dueDate: addDays(now, 15).toISOString(), category: 'entertainment', isPaid: false, icon: 'musical-notes' },
-    { id: 'b7', name: 'Gym Membership', amount: 2500, dueDate: addDays(now, 20).toISOString(), category: 'healthcare', isPaid: false, icon: 'barbell' },
-    { id: 'b8', name: 'Car Insurance EMI', amount: 3200, dueDate: addDays(now, 25).toISOString(), category: 'others', isPaid: false, icon: 'shield-checkmark' },
+    { id: 'b1', name: 'Electricity Bill', amount: 2450, dueDate: addDays(now, 3).toISOString(), category: 'bills', isPaid: false, icon: 'flash', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b2', name: 'WiFi - Airtel', amount: 999, dueDate: addDays(now, 5).toISOString(), category: 'bills', isPaid: false, icon: 'wifi', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b3', name: 'Netflix Premium', amount: 649, dueDate: addDays(now, 8).toISOString(), category: 'entertainment', isPaid: false, icon: 'play', reminderType: 'subscription', repeatType: 'monthly', status: 'active', reminderDaysBefore: [1, 0] },
+    { id: 'b4', name: 'Mobile Recharge', amount: 299, dueDate: addDays(now, 1).toISOString(), category: 'bills', isPaid: false, icon: 'phone-portrait', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b5', name: 'Rent Payment', amount: 18000, dueDate: addDays(now, 12).toISOString(), category: 'bills', isPaid: false, icon: 'home', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b6', name: 'Spotify Family', amount: 179, dueDate: addDays(now, 15).toISOString(), category: 'entertainment', isPaid: false, icon: 'musical-notes', reminderType: 'subscription', repeatType: 'monthly', status: 'active', reminderDaysBefore: [1, 0] },
+    { id: 'b7', name: 'Gym Membership', amount: 2500, dueDate: addDays(now, 20).toISOString(), category: 'healthcare', isPaid: false, icon: 'barbell', reminderType: 'subscription', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b8', name: 'Car Insurance EMI', amount: 3200, dueDate: addDays(now, 25).toISOString(), category: 'others', isPaid: false, icon: 'shield-checkmark', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b9', name: 'Amazon Prime', amount: 1499, dueDate: addDays(now, 18).toISOString(), category: 'entertainment', isPaid: false, icon: 'cart', reminderType: 'subscription', repeatType: 'yearly', status: 'active', reminderDaysBefore: [3, 1, 0] },
+    { id: 'b10', name: 'Google One Storage', amount: 130, dueDate: addDays(now, 22).toISOString(), category: 'others', isPaid: false, icon: 'globe', reminderType: 'subscription', repeatType: 'monthly', status: 'active', reminderDaysBefore: [1, 0] },
   ];
 }
 
@@ -268,4 +311,11 @@ export function getGreeting(): string {
   if (hour < 12) return 'Good Morning';
   if (hour < 17) return 'Good Afternoon';
   return 'Good Evening';
+}
+
+export function getDaysUntil(dateStr: string): number {
+  const now = new Date();
+  const due = new Date(dateStr);
+  const diff = due.getTime() - now.getTime();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
