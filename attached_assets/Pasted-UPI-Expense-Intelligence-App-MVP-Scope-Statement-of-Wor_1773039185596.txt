@@ -1,0 +1,70 @@
+UPI Expense Intelligence App
+MVP Scope & Statement of Work (SOW)
+This document outlines the complete MVP plan, feature breakdown, technical architecture, UI/UX
+direction, and development scope for the proposed India-first personal finance app that
+automatically analyzes UPI and SMS transactions to provide powerful spending insights.
+1. Product Vision
+The goal is to build a mobile app that automatically detects user spending through UPI and SMS
+messages, then converts that data into easy-to-understand daily insights, money leak detection, bill
+alerts, and monthly financial summaries.
+Core Value Proposition:
+• Automatic expense detection (no manual entry).
+• Daily spending summary notifications.
+• Monthly financial insights and spending trends.
+• Bill reminders and payment alerts.
+• Shareable money insights for social engagement.
+2. MVP Feature Scope
+Feature Description
+SMS Expense Detection Automatically parse bank and UPI SMS messages to detect transactions.
+Daily Spend Summary Display daily total spending with category insights.
+Monthly Money Report Generate monthly reports with spending categories.
+Money Leak Detector Highlight unnecessary recurring expenses.
+Bill Reminder System Detect upcoming bills and notify users.
+Shareable Insight Cards Users can share spending insights as images.
+Basic Budget Insight System calculates estimated monthly spending capacity.
+3. UI/UX Design Direction
+• Modern fintech design similar to apps like Jupiter, CRED, and Fi.
+• Clean dark/light mode with strong typography.
+• Large financial cards for insights.
+• Minimal input required from users.
+• Color-coded spending categories for clarity.
+• Smooth animations and intuitive navigation.
+4. Key Screens in MVP
+• Onboarding & Permission Screen (SMS access explanation).
+• Home Dashboard (daily spend summary and insights).
+• Transaction Timeline Screen.
+• Monthly Report Screen.
+• Money Leak Detector Screen.
+• Bill Reminder Screen.
+5. Technical Architecture
+• Mobile App: React Native
+• Backend: Node.js (Express framework)
+• Database: MongoDB
+• Push Notifications: Firebase Cloud Messaging
+• SMS Parsing Engine: Regex + classification logic
+• Analytics: Basic usage analytics tracking
+6. Monetization Strategy
+• Affiliate commissions for credit cards and financial products.
+• Premium subscription for advanced financial insights.
+• Ad integration through AdMob.
+• Financial partnerships with lending platforms.
+7. Development Timeline (MVP)
+Phase Estimated Time
+Product Design 2 weeks
+App Development 6 weeks
+Backend Development 4 weeks
+Testing & QA 2 weeks
+Beta Launch 1 week
+8. Estimated MVP Cost
+Component Estimated Cost (INR)
+Mobile App Development ■40,000
+Backend Development ■20,000
+UI/UX Design ■10,000
+Server & Infrastructure ■10,000
+Testing & Misc ■10,000
+9. Future Roadmap (Post MVP)
+• AI-based spending recommendations.
+• Automatic subscription cancellation insights.
+• Credit score integration.
+• Financial goal planning system.
+• UPI payment integration within app.
