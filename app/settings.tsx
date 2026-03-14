@@ -64,14 +64,14 @@ export default function SettingsScreen() {
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
   useEffect(() => {
-    AsyncStorage.getItem('@spendiq_senior_mode').then(v => {
+    AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
       if (v === 'true') setSeniorMode(true);
     }).catch(() => {});
   }, []);
 
   const toggleSeniorMode = (val: boolean) => {
     setSeniorMode(val);
-    AsyncStorage.setItem('@spendiq_senior_mode', val ? 'true' : 'false');
+    AsyncStorage.setItem('@lifewise_senior_mode', val ? 'true' : 'false');
   };
 
   const handleBack = () => {
@@ -177,7 +177,7 @@ export default function SettingsScreen() {
           <SettingRow icon="log-out-outline" label="Logout" onPress={handleLogout} danger colors={colors} />
         </View>
 
-        <Text style={[styles.versionText, { color: colors.textTertiary }]}>SpendIQ v1.0.0</Text>
+        <Text style={[styles.versionText, { color: colors.textTertiary }]}>LifeWise v1.0.0</Text>
       </ScrollView>
 
       <Modal visible={showCurrencyPicker} transparent animationType="slide">

@@ -3,13 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiUrl } from '@/lib/query-client';
 
 interface User {
-  id: number;
+  id: string;
   email: string;
   name: string;
+  phone?: string | null;
+  phoneVerified?: boolean;
 }
 
 interface AuthContextValue {
   user: User | null;
+  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -22,13 +25,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEYS = {
-  USER: '@spendiq_user',
-  TOKEN: '@spendiq_token',
-  ONBOARDED: '@spendiq_onboarded',
+  USER: '@lifewise_user',
+  TOKEN: '@lifewise_token',
+  ONBOARDED: '@lifewise_onboarded',
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasOnboarded, setHasOnboarded] = useState(false);
 
@@ -38,17 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadState = async () => {
     try {
-      const [storedUser, storedOnboarded] = await Promise.all([
+      const [storedUser, storedToken, storedOnboarded] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.USER),
+        AsyncStorage.getItem(STORAGE_KEYS.TOKEN),
         AsyncStorage.getItem(STORAGE_KEYS.ONBOARDED),
       ]);
-
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
-      }
-      if (storedOnboarded === 'true') {
-        setHasOnboarded(true);
-      }
+      if (storedUser) setUser(JSON.parse(storedUser));
+      if (storedToken) setToken(storedToken);
+      if (storedOnboarded === 'true') setHasOnboarded(true);
     } catch {
     } finally {
       setIsLoading(false);
@@ -69,13 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: data.message || 'Login failed' };
       }
       setUser(data.user);
+      setToken(data.token);
       await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
-      if (data.token) {
-        await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
-      }
+      await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
       return { success: true };
     } catch {
-      return { success: false, error: 'Network error. Please try again.' };
+      return { success: false, error: 'Network error. Check backend is running and EXPO_PUBLIC_DOMAIN (e.g. 127.0.0.1:5000 or your PC IP).' };
     }
   }, []);
 
@@ -93,18 +93,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: data.message || 'Registration failed' };
       }
       setUser(data.user);
+      setToken(data.token);
       await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
-      if (data.token) {
-        await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
-      }
+      await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
       return { success: true };
-    } catch {
-      return { success: false, error: 'Network error. Please try again.' };
+    } catch (e) {
+      return { success: false, error: 'Network error. Check backend is running and EXPO_PUBLIC_DOMAIN (e.g. 127.0.0.1:5000 or your PC IP).' };
     }
   }, []);
 
   const logout = useCallback(async () => {
     setUser(null);
+    setToken(null);
     await Promise.all([
       AsyncStorage.removeItem(STORAGE_KEYS.USER),
       AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
@@ -118,14 +118,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({
     user,
+    token,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user && !!token,
     login,
     register,
     logout,
     hasOnboarded,
     completeOnboarding,
-  }), [user, isLoading, hasOnboarded, login, register, logout, completeOnboarding]);
+  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding]);
 
   return (
     <AuthContext.Provider value={value}>

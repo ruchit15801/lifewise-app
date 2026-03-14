@@ -29,10 +29,13 @@ function setupCors(app: express.Application) {
 
     const origin = req.header("origin");
 
-    // Allow localhost origins for Expo web development (any port)
+    // Allow localhost and LAN IPs for Expo (web + device)
     const isLocalhost =
       origin?.startsWith("http://localhost:") ||
-      origin?.startsWith("http://127.0.0.1:");
+      origin?.startsWith("http://127.0.0.1:") ||
+      origin?.startsWith("http://192.168.") ||
+      origin?.startsWith("http://10.0.") ||
+      /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.0\.\d+\.\d+)(:\d+)?$/.test(origin || "");
 
     if (origin && (origins.has(origin) || isLocalhost)) {
       res.header("Access-Control-Allow-Origin", origin);
@@ -40,7 +43,7 @@ function setupCors(app: express.Application) {
         "Access-Control-Allow-Methods",
         "GET, POST, PUT, DELETE, OPTIONS",
       );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
+      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
       res.header("Access-Control-Allow-Credentials", "true");
     }
 
@@ -237,14 +240,18 @@ function setupErrorHandler(app: express.Application) {
   setupErrorHandler(app);
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`express server serving on port ${port}`);
-    },
-  );
+  const tryHost = process.env.HOST || "0.0.0.0";
+  function onListen() {
+    log(`LifeWise backend: http://127.0.0.1:${port}`);
+    if (tryHost === "0.0.0.0") log("  (Phone/emulator: set EXPO_PUBLIC_DOMAIN to your PC IP, e.g. 192.168.1.5:5000)");
+  }
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if ((err.code === "ENOTSUP" || err.code === "EAFNOSUPPORT") && tryHost === "0.0.0.0") {
+      log("Binding to 0.0.0.0 not supported, using 127.0.0.1");
+      server.listen(port, "127.0.0.1", onListen);
+    } else {
+      throw err;
+    }
+  });
+  server.listen(port, tryHost, onListen);
 })();

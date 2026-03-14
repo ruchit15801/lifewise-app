@@ -27,7 +27,7 @@ interface CurrencyContextValue {
 
 const CurrencyContext = createContext<CurrencyContextValue | null>(null);
 
-const STORAGE_KEY = '@spendiq_currency';
+const STORAGE_KEY = '@lifewise_currency';
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [code, setCode] = useState('INR');

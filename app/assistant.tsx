@@ -50,7 +50,7 @@ export default function AssistantScreen() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
-      text: 'Hi! I\'m your SpendIQ Assistant. I can help you make smarter financial decisions. Ask me anything about your spending!',
+      text: 'Hi! I\'m your LifeWise Assistant. I can help you make smarter financial decisions. Ask me anything about your spending!',
       isUser: false,
     },
   ]);

@@ -1,4 +1,4 @@
-# SpendIQ - AI Life Assistant / Smart Expense Intelligence App
+# LifeWise - AI Life Assistant / Smart Expense Intelligence App
 
 ## Overview
 A premium luxury fintech-style mobile app that acts as an intelligent life companion for managing spending, bills, and financial health. Features smart spending analysis, money leak detection, payment reminders, spending health score, family hub with medicine reminders, decision assistant, life memory insights, and senior mode.
@@ -68,7 +68,7 @@ server/
 - Calm, intelligent feel — no clutter
 
 ## Auth Flow
-1. **Splash** - Midnight blue gradient with purple SpendIQ logo (1.2s)
+1. **Splash** - Midnight blue gradient with purple LifeWise logo (1.2s)
 2. **Onboarding** - 3 slides (Smart Insights, Money Leaks, Payment Reminders)
 3. **Login/Register** - Email/password with purple gradient buttons
 4. **Main Tabs** - 5-tab premium dashboard
@@ -89,7 +89,7 @@ server/
 
 ## Data Model
 - **Users table** (PostgreSQL): id, email, password_hash, name, created_at
-- Storage keys: `@spendiq_user`, `@spendiq_token`, `@spendiq_onboarded`, `@spendiq_theme`, `@spendiq_currency`, `@spendiq_family`, `@spendiq_senior_mode`
+- Storage keys: `@lifewise_user`, `@lifewise_token`, `@lifewise_onboarded`, `@lifewise_theme`, `@lifewise_currency`, `@lifewise_family`, `@lifewise_senior_mode`
 - Bills use `_v2` storage key suffix
 
 ## Environment

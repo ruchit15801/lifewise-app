@@ -1,33 +1,31 @@
 {
   "expo": {
-    "name": "SpendIQ",
-    "slug": "spendiq",
+    "name": "LifeWise",
+    "slug": "lifewise",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "spendiq",
+    "icon": "./logo.png",
+    "scheme": "lifewise",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#06060E"
+      "backgroundColor": "#1E1B4B"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.spendiq"
+      "bundleIdentifier": "com.lifewise"
     },
     "android": {
-      "package": "com.spendiq",
+      "package": "com.lifewise",
       "adaptiveIcon": {
-        "backgroundColor": "#06060E",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#1E1B4B",
+        "foregroundImage": "./logo.png"
       }
     },
     "web": {
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./logo.png"
     },
     "plugins": [
       [

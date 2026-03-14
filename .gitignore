@@ -7,6 +7,7 @@ node_modules/
 .expo/
 dist/
 web-build/
+static-build/
 expo-env.d.ts
 
 # Native
@@ -19,6 +20,9 @@ android/
 *.key
 *.mobileprovision
 
+# Server build
+server_dist/
+
 # Metro
 .metro-health-check*
 
@@ -26,16 +30,27 @@ android/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
 # macOS
 .DS_Store
 *.pem
 
-# local env files
+# local env and secrets (never commit)
+.env
 .env*.local
+.env.development
+.env.production
 
-# typescript
+# TypeScript / IDE
 *.tsbuildinfo
 .vercel
+.idea/
 
-.env
+# Local / editor
+.local/
+.config/
+
+# Optional: uncomment to ignore Cursor/VSCode workspace
+# .cursor/
+# .vscode/

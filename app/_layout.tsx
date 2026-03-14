@@ -28,21 +28,21 @@ SplashScreen.preventAutoHideAsync();
 function AnimatedSplash() {
   return (
     <LinearGradient
-      colors={['#0F172A', '#1E1B4B', '#0F172A']}
+      colors={['#1E1B4B', '#312E81', '#4C1D95', '#1E1B4B']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={splashStyles.container}
     >
       <View style={splashStyles.content}>
         <LinearGradient
-          colors={['#8B5CF6', '#7C3AED']}
+          colors={['#EC4899', '#8B5CF6', '#6366F1']}
           style={splashStyles.iconCircle}
         >
-          <Ionicons name="wallet" size={40} color="#FFFFFF" />
+          <Ionicons name="heart" size={40} color="#FFFFFF" />
         </LinearGradient>
-        <Text style={splashStyles.title}>SpendIQ</Text>
+        <Text style={splashStyles.title}>LifeWise</Text>
         <Text style={splashStyles.subtitle}>Your Intelligent Life Companion</Text>
-        <ActivityIndicator color="#8B5CF6" style={{ marginTop: 40 }} />
+        <ActivityIndicator color="#EC4899" style={{ marginTop: 40 }} />
       </View>
     </LinearGradient>
   );

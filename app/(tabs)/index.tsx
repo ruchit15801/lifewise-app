@@ -9,11 +9,12 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInRight, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useExpenses } from '@/lib/expense-context';
@@ -115,6 +116,31 @@ function TransactionRow({ merchant, amount, category, date, colors, formatAmount
   );
 }
 
+function SyncingSmsOverlay({ colors }: { colors: any }) {
+  const rotation = useSharedValue(0);
+  React.useEffect(() => {
+    rotation.value = withRepeat(withTiming(360, { duration: 1500 }), -1, true);
+  }, [rotation]);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+  return (
+    <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
+      <LinearGradient
+        colors={[colors.accentDim, colors.bgSecondary || colors.card]}
+        style={styles.syncOverlayCard}
+      >
+        <Animated.View style={[styles.syncIconWrap, { backgroundColor: colors.accentDim }, animatedStyle]}>
+          <Ionicons name="sync" size={40} color={colors.accent} />
+        </Animated.View>
+        <Text style={[styles.syncTitle, { color: colors.text }]}>Syncing SMS</Text>
+        <Text style={[styles.syncSubtitle, { color: colors.textSecondary }]}>Fetching your transactions…</Text>
+        <ActivityIndicator color={colors.accent} style={{ marginTop: 16 }} />
+      </LinearGradient>
+    </View>
+  );
+}
+
 function ActionButton({ icon, label, color, onPress, colors }: { icon: string; label: string; color: string; onPress: () => void; colors: any }) {
   return (
     <Pressable onPress={onPress} style={styles.actionBtnWrap}>
@@ -140,29 +166,31 @@ function QuickAccessCard({ icon, label, subtitle, color, onPress, colors }: { ic
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { transactions, bills, leaks, isLoading, monthlyBudget } = useExpenses();
+  const { transactions, bills, leaks, isLoading, isSyncingSms, monthlyBudget, refreshData } = useExpenses();
   const { user } = useAuth();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const [seniorMode, setSeniorMode] = useState(false);
   const [showScoreDetail, setShowScoreDetail] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  }, [refreshData]);
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem('@spendiq_senior_mode').then(v => {
+      AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
         setSeniorMode(v === 'true');
       }).catch(() => {});
     }, [])
   );
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
+  if (isLoading || isSyncingSms) {
+    return <SyncingSmsOverlay colors={colors} />;
   }
 
   const todaySpend = getTodaySpending(transactions);
@@ -263,6 +291,15 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.accent]}
+            tintColor={colors.accent}
+            title="Syncing SMS…"
+          />
+        }
         contentContainerStyle={[
           styles.scrollContent,
           { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
@@ -505,6 +542,10 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { justifyContent: 'center', alignItems: 'center' },
+  syncOverlayCard: { padding: 32, borderRadius: 24, alignItems: 'center', minWidth: 260 },
+  syncIconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  syncTitle: { fontFamily: 'Inter_700Bold', fontSize: 22, marginBottom: 8 },
+  syncSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 14 },
   scrollContent: { paddingHorizontal: 20, gap: 4 },
   header: {
     flexDirection: 'row',

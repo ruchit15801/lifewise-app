@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 
-const STORAGE_KEY = '@spendiq_family';
+const STORAGE_KEY = '@lifewise_family';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
