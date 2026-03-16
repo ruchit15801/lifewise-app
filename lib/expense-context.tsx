@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert, Platform } from 'react-native';
 import {
   Transaction,
   Bill,
@@ -9,7 +10,7 @@ import {
 } from './data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
-import { readSmsFromDevice } from './sms-reader';
+import { readSmsFromDevice, requestSmsPermission } from './sms-reader';
 import { parseSmsToTransactions } from './parse-sms';
 
 const STORAGE_KEYS = {
@@ -23,6 +24,7 @@ interface ExpenseContextValue {
   leaks: MoneyLeak[];
   isLoading: boolean;
   isSyncingSms: boolean;
+  lastSmsSyncCount: number | null;
   toggleBillPaid: (billId: string) => void;
   refreshData: () => void;
   syncSmsFromDevice: () => Promise<void>;
@@ -55,6 +57,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [leaks, setLeaks] = useState<MoneyLeak[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingSms, setIsSyncingSms] = useState(false);
+  const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
   const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
 
@@ -104,7 +107,20 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const syncSmsFromDevice = useCallback(async () => {
     if (!token) return;
     setIsSyncingSms(true);
+    setLastSmsSyncCount(null);
     try {
+      if (Platform.OS !== 'android') {
+        Alert.alert('SMS sync not supported', 'Auto Track via SMS only works on Android phones.');
+        await loadData();
+        return;
+      }
+
+      const granted = await requestSmsPermission();
+      if (!granted) {
+        Alert.alert('Permission needed', 'Please allow SMS permission to enable Auto Track.');
+        await loadData();
+        return;
+      }
       const rawSms = await readSmsFromDevice(200);
       const parsed = parseSmsToTransactions(rawSms);
       if (parsed.length > 0) {
@@ -123,7 +139,17 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
             })),
           }),
         });
-        if (res.ok) await loadData();
+        if (res.ok) {
+          try {
+            const json = await res.json();
+            setLastSmsSyncCount(typeof json.synced === 'number' ? json.synced : 0);
+          } catch {
+            setLastSmsSyncCount(0);
+          }
+          await loadData();
+        } else {
+          setLastSmsSyncCount(0);
+        }
       } else {
         await loadData();
       }
@@ -279,6 +305,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       leaks,
       isLoading,
       isSyncingSms,
+      lastSmsSyncCount,
       toggleBillPaid,
       refreshData,
       syncSmsFromDevice,
@@ -298,6 +325,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       leaks,
       isLoading,
       isSyncingSms,
+      lastSmsSyncCount,
       monthlyBudget,
       reminderSettings,
       toggleBillPaid,

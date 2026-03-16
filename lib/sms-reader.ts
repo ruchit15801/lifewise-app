@@ -4,7 +4,7 @@
  * For Android inbox: add react-native-get-sms-android and use dev build.
  */
 
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 
 export interface RawSms {
   body: string;
@@ -17,12 +17,18 @@ export interface RawSms {
 export async function requestSmsPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional native module
-    const mod = require('@maniac-tech/react-native-expo-read-sms');
-    if (mod.requestReadSMSPermission) return await mod.requestReadSMSPermission();
-    if (mod.checkIfHasSMSPermission) return await mod.checkIfHasSMSPermission();
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+      {
+        title: 'Allow LifeWise to read SMS for auto tracking',
+        message: 'We use SMS messages from your bank to auto-detect transactions. No messages are stored on our servers beyond transaction info.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Deny',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
   } catch {
-    // Permission can still be requested by the get-sms-android flow
+    // Permission request failed
   }
   return false;
 }

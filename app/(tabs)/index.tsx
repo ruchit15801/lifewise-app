@@ -175,6 +175,7 @@ export default function HomeScreen() {
     leaks,
     isLoading,
     isSyncingSms,
+    lastSmsSyncCount,
     monthlyBudget,
     refreshData,
     syncSmsFromDevice,
@@ -222,7 +223,7 @@ export default function HomeScreen() {
     }, [])
   );
 
-  if (isLoading || isSyncingSms) {
+  if (isLoading && !transactions.length && !bills.length && !leaks.length) {
     return <SyncingSmsOverlay colors={colors} />;
   }
 
@@ -415,6 +416,21 @@ export default function HomeScreen() {
             </View>
           </View>
         </Animated.View>
+
+        {isSyncingSms && (
+          <View style={[styles.syncBanner, { backgroundColor: colors.accentDim }]}>
+            <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 8 }} />
+            <Text style={[styles.syncBannerText, { color: colors.text }]}>Syncing SMS…</Text>
+          </View>
+        )}
+        {!isSyncingSms && lastSmsSyncCount != null && (
+          <View style={[styles.syncBanner, { backgroundColor: colors.card }]}>
+            <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6 }} />
+            <Text style={[styles.syncBannerText, { color: colors.textSecondary }]}>
+              Synced {lastSmsSyncCount} SMS transaction{lastSmsSyncCount === 1 ? '' : 's'}.
+            </Text>
+          </View>
+        )}
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(80).duration(500) : undefined}>
           <LinearGradient
@@ -881,4 +897,17 @@ const styles = StyleSheet.create({
   scoreRowValue: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   shareBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14 },
   shareBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  syncBannerText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+  },
 });
