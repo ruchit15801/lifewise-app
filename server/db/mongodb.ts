@@ -32,7 +32,9 @@ async function ensureIndexes(database: Db) {
   await database.collection('users').createIndex({ email: 1 }, { unique: true });
   await database.collection('users').createIndex({ phone: 1 });
   await database.collection('transactions').createIndex({ userId: 1, date: -1 });
-  await database.collection('bills').createIndex({ userId: 1 });
+  await database.collection('bills').createIndex({ userId: 1, dueDate: 1 });
+  await database.collection('notifications').createIndex({ userId: 1, createdAt: -1 });
+  await database.collection('reminder_logs').createIndex({ userId: 1, billId: 1, channel: 1, dayOffset: 1 }, { unique: true });
 }
 
 export function getDb(): Db | ReturnType<typeof getMemoryDb> {
@@ -47,3 +49,4 @@ export async function closeMongo(): Promise<void> {
     db = null;
   }
 }
+

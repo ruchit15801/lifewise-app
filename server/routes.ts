@@ -3,6 +3,8 @@ import { createServer, type Server } from 'node:http';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ObjectId } from 'mongodb';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { connectMongo, getDb } from './db/mongodb';
 
 function toId(id: string): ObjectId | string {
@@ -16,6 +18,17 @@ type ReminderStatus = 'active' | 'paid' | 'snoozed';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'lifewise-secret-change-in-production';
 const JWT_EXPIRY = '7d';
+
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-reply@lifewise.app>';
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
+
+const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
+const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
+  ? fs.readFileSync(reminderTemplatePath, 'utf-8')
+  : '';
+
+type ReminderChannel = 'email' | 'in_app';
 
 // SMS stub: logs OTP. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE for real SMS.
 async function sendSmsOtp(phone: string, otp: string): Promise<void> {
@@ -71,6 +84,72 @@ function authMiddleware(req: any, res: any, next: any) {
   }
 }
 
+function renderReminderEmailTemplate(params: {
+  userName: string;
+  reminderType: ReminderType;
+  daysLeft: number;
+  billName: string;
+  dueDateLabel: string;
+  category: string;
+  amount: number;
+  currency: string;
+  status: string;
+  reminderSchedule: string;
+  appUrl: string;
+}): string {
+  if (!REMINDER_EMAIL_TEMPLATE) return '';
+  const plural = params.daysLeft === 1 ? '' : 's';
+  return REMINDER_EMAIL_TEMPLATE
+    .replace(/{{USER_NAME}}/g, params.userName || 'there')
+    .replace(/{{REMINDER_TYPE}}/g, params.reminderType || 'bill')
+    .replace(/{{DAYS_LEFT}}/g, String(params.daysLeft))
+    .replace(/{{DAYS_LEFT_PLURAL}}/g, plural)
+    .replace(/{{BILL_NAME}}/g, params.billName)
+    .replace(/{{DUE_DATE}}/g, params.dueDateLabel)
+    .replace(/{{CATEGORY}}/g, params.category)
+    .replace(/{{CURRENCY}}/g, params.currency)
+    .replace(/{{AMOUNT}}/g, params.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 }))
+    .replace(/{{STATUS}}/g, params.status)
+    .replace(/{{REMINDER_SCHEDULE}}/g, params.reminderSchedule)
+    .replace(/{{APP_URL}}/g, params.appUrl);
+}
+
+async function sendReminderEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<void> {
+  if (!RESEND_API_KEY) {
+    console.log('[Reminder email] RESEND_API_KEY not set, skipping email send.');
+    return;
+  }
+  if (!opts.html) {
+    console.log('[Reminder email] Empty HTML, skipping email send.');
+    return;
+  }
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: REMINDER_EMAIL_FROM,
+        to: [opts.to],
+        subject: opts.subject,
+        html: opts.html,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('Resend email error:', err);
+    }
+  } catch (e) {
+    console.error('Reminder email send error:', e);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   await connectMongo();
   const db = getDb();
@@ -78,6 +157,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const transactions = db.collection('transactions');
   const bills = db.collection('bills');
   const otpStore = db.collection('otp_store');
+  const notifications = db.collection('notifications');
+  const reminderLogs = db.collection('reminder_logs');
 
   // ----- Auth -----
   app.post('/api/auth/register', async (req, res) => {
@@ -207,6 +288,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (err) {
       console.error('Me error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // ----- In-app notifications -----
+  app.get('/api/notifications', authMiddleware, async (req, res) => {
+    try {
+      const list = await notifications
+        .find({ userId: req.userId })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .toArray();
+      const out = list.map((n) => ({
+        id: n._id.toString(),
+        type: n.type || 'reminder',
+        title: n.title,
+        body: n.body,
+        read: !!n.read,
+        createdAt: n.createdAt,
+        meta: n.meta || {},
+      }));
+      return res.json(out);
+    } catch (err) {
+      console.error('Get notifications error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/notifications/mark-read', authMiddleware, async (req, res) => {
+    try {
+      const { ids } = req.body as { ids: string[] };
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.json({ updated: 0 });
+      }
+      const objectIds = ids.map((id) => toId(id));
+      const result = await notifications.updateMany(
+        { _id: { $in: objectIds }, userId: req.userId },
+        { $set: { read: true } },
+      );
+      return res.json({ updated: result.modifiedCount || 0 });
+    } catch (err) {
+      console.error('Mark notifications read error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
@@ -447,6 +570,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
+
+  // ----- Reminder scheduler (email + in-app) -----
+  const REMINDER_CHECK_INTERVAL_MS = 60_000;
+  const REMINDER_WINDOW_MINUTES = 5;
+
+  function startReminderScheduler() {
+    let running = false;
+    setInterval(async () => {
+      if (running) return;
+      running = true;
+      try {
+        const now = new Date();
+        const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MINUTES * 60 * 1000);
+
+        const activeBills = await bills
+          .find({
+            status: { $in: ['active', 'snoozed'] },
+            isPaid: { $ne: true },
+          })
+          .toArray();
+
+        for (const bill of activeBills) {
+          try {
+            const baseDate = bill.status === 'snoozed' && bill.snoozedUntil ? new Date(bill.snoozedUntil) : new Date(bill.dueDate);
+            if (Number.isNaN(baseDate.getTime())) continue;
+
+            const msDiff = baseDate.getTime() - now.getTime();
+            const daysLeftRaw = msDiff / (24 * 60 * 60 * 1000);
+            const daysLeft = Math.max(0, Math.round(daysLeftRaw));
+
+            const reminderDays: number[] = Array.isArray(bill.reminderDaysBefore) && bill.reminderDaysBefore.length
+              ? bill.reminderDaysBefore
+              : [3, 1, 0];
+
+            if (!reminderDays.includes(daysLeft)) continue;
+
+            const billTimeWithinWindow =
+              baseDate.getTime() >= now.getTime() - 60 * 1000 &&
+              baseDate.getTime() <= windowEnd.getTime();
+
+            if (!billTimeWithinWindow && daysLeft !== 0) {
+              continue;
+            }
+
+            const user = await users.findOne({ _id: bill.userId ? toId(bill.userId) : toId('' + bill.userId) });
+            if (!user || !user.email) continue;
+
+            const channels: ReminderChannel[] = ['email', 'in_app'];
+
+            for (const channel of channels) {
+              const already = await reminderLogs.findOne({
+                userId: user._id?.toString?.() ?? user._id,
+                billId: bill._id.toString(),
+                channel,
+                dayOffset: daysLeft,
+              });
+              if (already) continue;
+
+              if (channel === 'email') {
+                const html = renderReminderEmailTemplate({
+                  userName: user.name || user.email,
+                  reminderType: bill.reminderType || 'bill',
+                  daysLeft,
+                  billName: bill.name || 'Bill',
+                  dueDateLabel: baseDate.toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  }),
+                  category: bill.category || 'bills',
+                  amount: bill.amount || 0,
+                  currency: '₹',
+                  status: bill.status || 'active',
+                  reminderSchedule: (Array.isArray(reminderDays) ? reminderDays : [])
+                    .sort((a, b) => a - b)
+                    .map((d) => (d === 0 ? 'on due day' : `${d}d before`))
+                    .join(', '),
+                  appUrl: APP_BASE_URL,
+                });
+
+                await sendReminderEmail({
+                  to: user.email,
+                  subject: `Reminder: ${bill.name || 'Payment'} due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
+                  html,
+                });
+              } else if (channel === 'in_app') {
+                await notifications.insertOne({
+                  userId: user._id?.toString?.() ?? user._id,
+                  type: 'reminder',
+                  title: bill.name || 'Upcoming payment',
+                  body:
+                    daysLeft === 0
+                      ? `Your ${bill.name || 'payment'} is due today.`
+                      : `Your ${bill.name || 'payment'} is due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+                  read: false,
+                  createdAt: new Date(),
+                  meta: {
+                    billId: bill._id.toString(),
+                    amount: bill.amount || 0,
+                    dueDate: baseDate.toISOString(),
+                    reminderType: bill.reminderType || 'bill',
+                  },
+                });
+              }
+
+              await reminderLogs.insertOne({
+                userId: user._id?.toString?.() ?? user._id,
+                billId: bill._id.toString(),
+                channel,
+                dayOffset: daysLeft,
+                sentAt: new Date(),
+              });
+            }
+          } catch (err) {
+            console.error('Reminder scheduler per-bill error:', err);
+          }
+        }
+      } catch (err) {
+        console.error('Reminder scheduler error:', err);
+      } finally {
+        running = false;
+      }
+    }, REMINDER_CHECK_INTERVAL_MS);
+  }
+
+  startReminderScheduler();
 
   const httpServer = createServer(app);
   return httpServer;
