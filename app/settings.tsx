@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency, CURRENCIES, CurrencyOption } from '@/lib/currency-context';
+import { useExpenses } from '@/lib/expense-context';
 
 function SettingRow({
   icon,
@@ -56,8 +57,11 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { colors, mode, toggleTheme, isDark } = useTheme();
-  const { currentCurrency, setCurrency } = useCurrency();
+  const { currentCurrency, setCurrency, formatAmount } = useCurrency();
+  const { monthlyBudget, setMonthlyBudget } = useExpenses();
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [budgetInput, setBudgetInput] = useState(String(monthlyBudget || ''));
   const [seniorMode, setSeniorMode] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -167,6 +171,29 @@ export default function SettingsScreen() {
               </Pressable>
             }
           />
+          <SettingRow
+            icon="wallet-outline"
+            label="Monthly Budget"
+            colors={colors}
+            onPress={() => {
+              setBudgetInput(String(monthlyBudget || ''));
+              setShowBudgetModal(true);
+            }}
+            rightElement={
+              <Pressable
+                onPress={() => {
+                  setBudgetInput(String(monthlyBudget || ''));
+                  setShowBudgetModal(true);
+                }}
+                style={styles.currencyBadge}
+              >
+                <Text style={[styles.currencyBadgeText, { color: colors.accent }]}>
+                  {formatAmount(monthlyBudget || 0)}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </Pressable>
+            }
+          />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>General</Text>
@@ -210,6 +237,84 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
             <Pressable onPress={() => setShowCurrencyPicker(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+              <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showBudgetModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.grabber, { backgroundColor: colors.textTertiary }]} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Set Monthly Budget</Text>
+            <Text style={[styles.budgetHint, { color: colors.textSecondary }]}>
+              This amount is used for the home screen budget bar and remaining balance.
+            </Text>
+            <View
+              style={[
+                styles.budgetInputRow,
+                { borderColor: colors.inputBorder, backgroundColor: colors.inputBg },
+              ]}
+            >
+              <Text style={[styles.currencySymbol, { color: colors.accent }]}>{currentCurrency.symbol}</Text>
+              <Text
+                style={[
+                  styles.currencyCode,
+                  { color: colors.textSecondary, fontSize: 14, marginRight: 4 },
+                ]}
+              >
+                {currentCurrency.code}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.budgetInputBox,
+                { borderColor: colors.inputBorder, backgroundColor: colors.inputBg },
+              ]}
+            >
+              <Text
+                style={{
+                  fontFamily: 'Inter_600SemiBold',
+                  fontSize: 24,
+                  color: colors.text,
+                }}
+              >
+                {budgetInput || '0'}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
+              {[10000, 25000, 50000].map((preset) => (
+                <Pressable
+                  key={preset}
+                  onPress={() => setBudgetInput(String(preset))}
+                  style={[styles.budgetPreset, { borderColor: colors.border }]}
+                >
+                  <Text style={[styles.budgetPresetText, { color: colors.textSecondary }]}>
+                    {formatAmount(preset)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              onPress={async () => {
+                const value = parseInt(budgetInput.replace(/[^0-9]/g, ''), 10);
+                if (Number.isNaN(value) || value <= 0) {
+                  setBudgetInput(String(monthlyBudget || 0));
+                  setShowBudgetModal(false);
+                  return;
+                }
+                await setMonthlyBudget(value);
+                setShowBudgetModal(false);
+              }}
+              style={[styles.cancelBtn, { borderColor: colors.border, marginTop: 20, backgroundColor: colors.accent }]}
+            >
+              <Text style={[styles.cancelBtnText, { color: '#FFFFFF' }]}>Save Budget</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowBudgetModal(false)}
+              style={[styles.cancelBtn, { borderColor: colors.border }]}
+            >
               <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
           </View>
@@ -321,4 +426,38 @@ const styles = StyleSheet.create({
   currencyName: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
   cancelBtn: { marginTop: 12, borderRadius: 14, borderWidth: 1, paddingVertical: 16, alignItems: 'center' },
   cancelBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  budgetHint: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  budgetInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  budgetInputBox: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  budgetPreset: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  budgetPresetText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+  },
 });

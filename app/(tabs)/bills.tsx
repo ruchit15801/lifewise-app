@@ -184,11 +184,13 @@ function AddEditModal({
   onClose,
   onSave,
   editBill,
+  reminderSettings,
 }: {
   visible: boolean;
   onClose: () => void;
   onSave: (bill: Omit<Bill, 'id'> | Bill) => void;
   editBill: Bill | null;
+  reminderSettings: { soundEnabled: boolean; vibrationEnabled: boolean; defaultReminderDays: number[] };
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -220,7 +222,7 @@ function AddEditModal({
       setSelectedIcon('flash');
       setDaysOffset('7');
     }
-  }, [editBill, visible]);
+  }, [editBill, visible, reminderSettings]);
 
   const handleSave = () => {
     if (!name.trim() || !amount.trim()) return;
@@ -246,6 +248,12 @@ function AddEditModal({
         repeatType,
       });
     } else {
+      const effectiveReminderDays =
+        Array.isArray(reminderSettings.defaultReminderDays) &&
+        reminderSettings.defaultReminderDays.length > 0
+          ? reminderSettings.defaultReminderDays
+          : [3, 1, 0];
+
       onSave({
         name: name.trim(),
         amount: parsedAmount,
@@ -256,7 +264,7 @@ function AddEditModal({
         reminderType,
         repeatType,
         status: 'active' as const,
-        reminderDaysBefore: [3, 1, 0],
+        reminderDaysBefore: effectiveReminderDays,
       });
     }
 
@@ -766,6 +774,7 @@ export default function BillsScreen() {
         onClose={() => { setShowAddModal(false); setEditBill(null); }}
         onSave={handleSave}
         editBill={editBill}
+        reminderSettings={reminderSettings}
       />
 
       <SnoozeModal

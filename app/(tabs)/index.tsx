@@ -247,11 +247,16 @@ export default function HomeScreen() {
   const userName = user?.name?.split(' ')[0] || 'User';
 
   const billsPaidRatio = bills.length > 0 ? bills.filter(b => b.isPaid).length / bills.length : 0;
-  const budgetHealthScore = Math.round(
+  let budgetHealthScore = Math.round(
     Math.max(0, Math.min(100, 100 - budgetUsed)) * 0.5 +
     billsPaidRatio * 30 +
     (totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0)
   );
+
+  // If everything is effectively zero, keep score at 0 to avoid confusion.
+  if (monthlySpend === 0 && bills.length === 0 && totalLeakAmount === 0) {
+    budgetHealthScore = 0;
+  }
 
   const upcomingBills = bills.filter(b => !b.isPaid && b.status !== 'paid').slice(0, 3);
 
