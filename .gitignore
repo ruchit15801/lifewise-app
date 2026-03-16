@@ -54,3 +54,7 @@ yarn-error.*
 # Optional: uncomment to ignore Cursor/VSCode workspace
 # .cursor/
 # .vscode/
+
+
+firebase-service-account.json
+server/firebase-service-account.json
