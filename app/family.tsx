@@ -13,11 +13,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
-
-const STORAGE_KEY = '@lifewise_family';
+import { useAuth } from '@/lib/auth-context';
+import { apiRequest } from '@/lib/query-client';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
@@ -47,6 +46,7 @@ interface FamilyMember {
 export default function FamilyScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { token } = useAuth();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showAddMedicine, setShowAddMedicine] = useState<string | null>(null);
@@ -59,70 +59,98 @@ export default function FamilyScreen() {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(stored => {
-      if (stored) setMembers(JSON.parse(stored));
-    }).catch(() => {});
-  }, []);
+  const loadMembers = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await apiRequest('GET', '/api/family', undefined, token);
+      const data = await res.json();
+      setMembers(data as FamilyMember[]);
+    } catch (e) {
+      console.error('Load family error:', e);
+    }
+  }, [token]);
 
-  const save = useCallback((updated: FamilyMember[]) => {
-    setMembers(updated);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  }, []);
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
 
   const addMember = () => {
     if (!newName.trim()) return;
-    const member: FamilyMember = {
-      id: Date.now().toString(),
-      name: newName.trim(),
-      relationship: selectedRel,
-      medicines: [],
-    };
-    save([...members, member]);
-    setNewName('');
-    setSelectedRel('self');
-    setShowAddMember(false);
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await apiRequest(
+          'POST',
+          '/api/family',
+          { name: newName.trim(), relationship: selectedRel },
+          token,
+        );
+        const created = (await res.json()) as FamilyMember;
+        setMembers(prev => [...prev, created]);
+        setNewName('');
+        setSelectedRel('self');
+        setShowAddMember(false);
+      } catch (e) {
+        console.error('Add family member error:', e);
+      }
+    })();
   };
 
   const addMedicine = () => {
     if (!medName.trim() || !showAddMedicine) return;
-    const med: Medicine = {
-      id: Date.now().toString(),
-      name: medName.trim(),
-      time: medTime,
-      frequency: medFreq,
-      taken: false,
-      snoozed: false,
-    };
-    const updated = members.map(m =>
-      m.id === showAddMedicine ? { ...m, medicines: [...m.medicines, med] } : m
-    );
-    save(updated);
-    setMedName('');
-    setMedTime('8:00 AM');
-    setMedFreq('Daily');
-    setShowAddMedicine(null);
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await apiRequest(
+          'POST',
+          `/api/family/${showAddMedicine}/medicines`,
+          { name: medName.trim(), time: medTime, frequency: medFreq },
+          token,
+        );
+        const updatedMember = (await res.json()) as FamilyMember;
+        setMembers(prev =>
+          prev.map(m => (m.id === updatedMember.id ? updatedMember : m)),
+        );
+        setMedName('');
+        setMedTime('8:00 AM');
+        setMedFreq('Daily');
+        setShowAddMedicine(null);
+      } catch (e) {
+        console.error('Add medicine error:', e);
+      }
+    })();
   };
 
   const markMedicine = (memberId: string, medId: string, action: 'taken' | 'snooze' | 'skip') => {
-    const updated = members.map(m => {
-      if (m.id !== memberId) return m;
-      return {
-        ...m,
-        medicines: m.medicines.map(med => {
-          if (med.id !== medId) return med;
-          if (action === 'taken') return { ...med, taken: true, snoozed: false };
-          if (action === 'snooze') return { ...med, snoozed: true };
-          if (action === 'skip') return { ...med, taken: false, snoozed: false };
-          return med;
-        }),
-      };
-    });
-    save(updated);
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await apiRequest(
+          'PATCH',
+          `/api/family/${memberId}/medicines/${medId}`,
+          { action },
+          token,
+        );
+        const updatedMember = (await res.json()) as FamilyMember;
+        setMembers(prev =>
+          prev.map(m => (m.id === updatedMember.id ? updatedMember : m)),
+        );
+      } catch (e) {
+        console.error('Update medicine status error:', e);
+      }
+    })();
   };
 
   const deleteMember = (memberId: string) => {
-    save(members.filter(m => m.id !== memberId));
+    if (!token) return;
+    (async () => {
+      try {
+        await apiRequest('DELETE', `/api/family/${memberId}`, undefined, token);
+        setMembers(prev => prev.filter(m => m.id !== memberId));
+      } catch (e) {
+        console.error('Delete family member error:', e);
+      }
+    })();
   };
 
   const handleBack = () => {

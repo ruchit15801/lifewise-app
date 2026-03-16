@@ -17,6 +17,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useAuth } from '@/lib/auth-context';
+import { apiRequest } from '@/lib/query-client';
 import { CATEGORIES, CategoryType, getMonthlySpending } from '@/lib/data';
 
 interface Message {
@@ -47,6 +49,7 @@ export default function AssistantScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, bills, leaks, monthlyBudget } = useExpenses();
+  const { token } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -79,125 +82,60 @@ export default function AssistantScreen() {
     });
     return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 5);
   }, [transactions]);
+  const handleSend = useCallback(
+    async (text?: string) => {
+      const query = text || inputText.trim();
+      if (!query || !token) return;
 
-  const generateResponse = useCallback((query: string): { text: string; cards?: AnalysisCard[] } => {
-    const q = query.toLowerCase();
-
-    if (q.includes('afford') || q.includes('buy') || q.includes('can i')) {
-      const remaining = Math.max(0, monthlyBudget - monthlySpend);
-      const dailyBudget = remaining / Math.max(1, 30 - new Date().getDate());
-      return {
-        text: remaining > 5000
-          ? `You have ${formatAmount(remaining)} left in your budget this month. That's ${formatAmount(Math.round(dailyBudget))}/day. You're in a good position for a moderate purchase!`
-          : `You have ${formatAmount(remaining)} remaining this month. I'd suggest holding off on non-essential purchases to stay on track.`,
-        cards: [
-          { label: 'Budget Left', value: formatAmount(remaining), icon: 'wallet', color: '#10B981' },
-          { label: 'Daily Budget', value: formatAmount(Math.round(dailyBudget)), icon: 'today', color: '#3B82F6' },
-          { label: 'Budget Used', value: `${Math.round((monthlySpend / monthlyBudget) * 100)}%`, icon: 'pie-chart', color: '#8B5CF6' },
-        ],
+      const userMsg: Message = {
+        id: Date.now().toString(),
+        text: query,
+        isUser: true,
       };
-    }
 
-    if (q.includes('food') || q.includes('dining') || q.includes('eat')) {
-      const foodSpend = categoryTotals.food || 0;
-      const foodTxCount = transactions.filter(tx => tx.category === 'food').length;
-      return {
-        text: `You've spent ${formatAmount(foodSpend)} on food this month across ${foodTxCount} transactions. That's ${formatAmount(Math.round(foodSpend / Math.max(1, foodTxCount)))} per order on average.`,
-        cards: [
-          { label: 'Food Total', value: formatAmount(foodSpend), icon: 'fast-food', color: '#F97316' },
-          { label: 'Orders', value: String(foodTxCount), icon: 'receipt', color: '#EC4899' },
-          { label: 'Avg Order', value: formatAmount(Math.round(foodSpend / Math.max(1, foodTxCount))), icon: 'calculator', color: '#6366F1' },
-        ],
-      };
-    }
+      setMessages(prev => [...prev, userMsg]);
+      setInputText('');
 
-    if (q.includes('saving') || q.includes('save')) {
-      const savings = Math.max(0, monthlyBudget - monthlySpend);
-      const savingsRate = monthlyBudget > 0 ? Math.round((savings / monthlyBudget) * 100) : 0;
-      const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
-      return {
-        text: savingsRate > 20
-          ? `Great job! You're saving ${savingsRate}% of your budget (${formatAmount(savings)}). You could save even more by addressing ${leaks.length} spending leaks.`
-          : `Your savings rate is ${savingsRate}% (${formatAmount(savings)}). Try cutting back on recurring expenses to improve this.`,
-        cards: [
-          { label: 'Saved', value: formatAmount(savings), icon: 'shield-checkmark', color: '#10B981' },
-          { label: 'Savings Rate', value: `${savingsRate}%`, icon: 'trending-up', color: '#3B82F6' },
-          { label: 'Potential Savings', value: formatAmount(totalLeaks), icon: 'leaf', color: '#F59E0B' },
-        ],
-      };
-    }
+      try {
+        const payload = {
+          messages: messages
+            .map(m => ({
+              role: m.isUser ? 'user' as const : 'assistant' as const,
+              content: m.text,
+            }))
+            .concat([{ role: 'user' as const, content: query }]),
+        };
 
-    if (q.includes('trend') || q.includes('pattern')) {
-      const firstHalf = transactions.filter(tx => new Date(tx.date).getDate() <= 15 && tx.isDebit).reduce((s, tx) => s + tx.amount, 0);
-      const secondHalf = transactions.filter(tx => new Date(tx.date).getDate() > 15 && tx.isDebit).reduce((s, tx) => s + tx.amount, 0);
-      const dailyAvg = monthlySpend / Math.max(1, new Date().getDate());
-      return {
-        text: `Your spending this month: ${formatAmount(monthlySpend)}. ${firstHalf > secondHalf ? 'You spend more in the first half of the month.' : 'Your spending is fairly balanced.'} Daily average: ${formatAmount(Math.round(dailyAvg))}.`,
-        cards: [
-          { label: '1st Half', value: formatAmount(Math.round(firstHalf)), icon: 'arrow-up', color: '#EF4444' },
-          { label: '2nd Half', value: formatAmount(Math.round(secondHalf)), icon: 'arrow-down', color: '#10B981' },
-          { label: 'Daily Avg', value: formatAmount(Math.round(dailyAvg)), icon: 'analytics', color: '#8B5CF6' },
-        ],
-      };
-    }
+        const res = await apiRequest('POST', '/api/assistant/chat', payload, token);
+        const data = await res.json();
+        const replyText: string =
+          typeof data.reply === 'string'
+            ? data.reply
+            : 'Sorry, I could not generate a response right now.';
 
-    if (q.includes('merchant') || q.includes('store') || q.includes('shop') || q.includes('where')) {
-      const top3 = merchantTotals.slice(0, 3);
-      return {
-        text: `Your top merchants this month: ${top3.map(([m, v]) => `${m} (${formatAmount(v)})`).join(', ')}.`,
-        cards: top3.map(([merchant, total], idx) => ({
-          label: merchant,
-          value: formatAmount(total),
-          icon: idx === 0 ? 'trophy' : idx === 1 ? 'medal' : 'ribbon',
-          color: idx === 0 ? '#F59E0B' : idx === 1 ? '#64748B' : '#B45309',
-        })),
-      };
-    }
+        const botMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          text: replyText,
+          isUser: false,
+        };
 
-    if (q.includes('budget') || q.includes('limit')) {
-      const used = Math.round((monthlySpend / monthlyBudget) * 100);
-      const remaining = Math.max(0, monthlyBudget - monthlySpend);
-      return {
-        text: `You've used ${used}% of your monthly budget (${formatAmount(monthlyBudget)}). ${used > 80 ? 'Be careful - you\'re running low!' : 'You\'re on track!'}`,
-        cards: [
-          { label: 'Budget', value: formatAmount(monthlyBudget), icon: 'wallet', color: '#8B5CF6' },
-          { label: 'Spent', value: formatAmount(monthlySpend), icon: 'card', color: '#EF4444' },
-          { label: 'Remaining', value: formatAmount(remaining), icon: 'cash', color: '#10B981' },
-        ],
-      };
-    }
+        setMessages(prev => [...prev, botMsg]);
+      } catch (e) {
+        console.error('Assistant error', e);
+        const errorMsg: Message = {
+          id: (Date.now() + 2).toString(),
+          text: 'Network issue or assistant error. Please try again in a moment.',
+          isUser: false,
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
 
-    const topCat = Object.entries(categoryTotals).sort(([, a], [, b]) => (b as number) - (a as number))[0];
-    return {
-      text: `This month you've spent ${formatAmount(monthlySpend)} across ${transactions.length} transactions. ${topCat ? `Your biggest category is ${CATEGORIES[topCat[0] as CategoryType].label} at ${formatAmount(topCat[1] as number)}.` : ''} Try asking about specific areas like food spending, savings, or budget status!`,
-    };
-  }, [monthlySpend, monthlyBudget, categoryTotals, merchantTotals, transactions, leaks, formatAmount]);
-
-  const handleSend = useCallback((text?: string) => {
-    const query = text || inputText.trim();
-    if (!query) return;
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      text: query,
-      isUser: true,
-    };
-
-    const response = generateResponse(query);
-    const botMsg: Message = {
-      id: (Date.now() + 1).toString(),
-      text: response.text,
-      isUser: false,
-      cards: response.cards,
-    };
-
-    setMessages(prev => [...prev, userMsg, botMsg]);
-    setInputText('');
-
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  }, [inputText, generateResponse]);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    },
+    [inputText, token, messages],
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();

@@ -22,6 +22,8 @@ const JWT_EXPIRY = '7d';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-reply@lifewise.app>';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
 const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
 const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
@@ -156,6 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const users = db.collection('users');
   const transactions = db.collection('transactions');
   const bills = db.collection('bills');
+  const family = db.collection('family_members');
   const otpStore = db.collection('otp_store');
   const notifications = db.collection('notifications');
   const reminderLogs = db.collection('reminder_logs');
@@ -567,6 +570,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ ok: true });
     } catch (err) {
       console.error('Put settings error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // ----- AI Assistant (data-aware chat) -----
+  app.post('/api/assistant/chat', authMiddleware, async (req, res) => {
+    try {
+      if (!OPENAI_API_KEY) {
+        return res.status(500).json({ message: 'Assistant is not configured. Set OPENAI_API_KEY.' });
+      }
+
+      const body = req.body as {
+        messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+      };
+      const userMessages = Array.isArray(body.messages) ? body.messages : [];
+
+      const [userDoc, recentTx, recentBills, familyMembers] = await Promise.all([
+        users.findOne({ _id: toId(req.userId) }),
+        transactions.find({ userId: req.userId }).sort({ date: -1 }).limit(50).toArray(),
+        bills.find({ userId: req.userId }).limit(20).toArray(),
+        family.find({ userId: req.userId }).limit(10).toArray(),
+      ]);
+
+      const leakList = await transactions
+        .find({ userId: req.userId, isDebit: true })
+        .toArray();
+
+      const merchantFreq: Record<string, { count: number; total: number; category: CategoryType }> = {};
+      leakList.forEach((t) => {
+        if (!merchantFreq[t.merchant]) {
+          merchantFreq[t.merchant] = {
+            count: 0,
+            total: 0,
+            category: (t.category as CategoryType) || 'others',
+          };
+        }
+        merchantFreq[t.merchant].count++;
+        merchantFreq[t.merchant].total += t.amount;
+      });
+      const leaksSnapshot = Object.entries(merchantFreq)
+        .filter(([, data]) => data.count >= 3)
+        .map(([merchant, data]) => ({
+          merchant,
+          monthlyEstimate: data.total,
+          transactionCount: data.count,
+          category: data.category,
+        }));
+
+      const snapshot = {
+        user: {
+          id: req.userId,
+          name: (userDoc as any)?.name || undefined,
+          email: (userDoc as any)?.email || undefined,
+        },
+        transactions: recentTx.map((t: any) => ({
+          amount: t.amount,
+          category: t.category,
+          merchant: t.merchant,
+          date: t.date,
+          isDebit: t.isDebit !== false,
+        })),
+        bills: recentBills.map((b: any) => ({
+          name: b.name,
+          amount: b.amount,
+          dueDate: b.dueDate,
+          status: b.status || 'active',
+          reminderType: b.reminderType || 'bill',
+        })),
+        leaks: leaksSnapshot,
+        family: familyMembers.map((m: any) => ({
+          name: m.name,
+          relationship: m.relationship,
+          medicinesCount: Array.isArray(m.medicines) ? m.medicines.length : 0,
+        })),
+      };
+
+      const systemPrompt =
+        'You are LifeWise, a financial and life assistant for Indian users. ' +
+        'You MUST base advice on the provided JSON snapshot of the user data. ' +
+        'Explain in simple, friendly language (you can mix light Hinglish but keep it clear). ' +
+        'Never invent transactions or bills. Be concise and practical.';
+
+      const messagesForModel = [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'system',
+          content: `User data snapshot (JSON): ${JSON.stringify(snapshot)}`,
+        },
+        ...userMessages.filter((m) => m.role === 'user' || m.role === 'assistant'),
+      ];
+
+      const openAiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages: messagesForModel,
+          temperature: 0.4,
+        }),
+      });
+
+      if (!openAiRes.ok) {
+        const errText = await openAiRes.text();
+        console.error('OpenAI error:', errText);
+        return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+      }
+
+      const json = await openAiRes.json();
+      const reply =
+        json.choices?.[0]?.message?.content ||
+        'Sorry, I could not generate a response right now.';
+
+      return res.json({ reply });
+    } catch (err) {
+      console.error('Assistant chat error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // ----- Family Hub (members + medicines) -----
+  app.get('/api/family', authMiddleware, async (req, res) => {
+    try {
+      const list = await family.find({ userId: req.userId }).toArray();
+      const out = list.map((m) => ({
+        id: m._id.toString(),
+        name: m.name,
+        relationship: m.relationship || 'self',
+        medicines: Array.isArray(m.medicines) ? m.medicines : [],
+      }));
+      return res.json(out);
+    } catch (err) {
+      console.error('Get family error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/family', authMiddleware, async (req, res) => {
+    try {
+      const { name, relationship } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: 'Name is required' });
+      }
+      const doc = {
+        userId: req.userId,
+        name: String(name).trim(),
+        relationship: String(relationship || 'self'),
+        medicines: [] as unknown[],
+        createdAt: new Date(),
+      };
+      const result = await family.insertOne(doc);
+      return res.status(201).json({
+        id: result.insertedId.toString(),
+        name: doc.name,
+        relationship: doc.relationship,
+        medicines: [],
+      });
+    } catch (err) {
+      console.error('Post family error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.delete('/api/family/:id', authMiddleware, async (req, res) => {
+    try {
+      const result = await family.deleteOne({ _id: toId(req.params.id), userId: req.userId });
+      if (result.deletedCount === 0) {
+        return res.status(404).json({ message: 'Family member not found' });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Delete family error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/family/:id/medicines', authMiddleware, async (req, res) => {
+    try {
+      const memberId = req.params.id;
+      const { name, time, frequency } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: 'Medicine name is required' });
+      }
+      const medId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      const med = {
+        id: medId,
+        name: String(name).trim(),
+        time: String(time || '8:00 AM'),
+        frequency: String(frequency || 'Daily'),
+        taken: false,
+        snoozed: false,
+      };
+      const result = await family.updateOne(
+        { _id: toId(memberId), userId: req.userId },
+        { $push: { medicines: med } },
+      );
+      if (result.matchedCount === 0) {
+        return res.status(404).json({ message: 'Family member not found' });
+      }
+      const updated = await family.findOne({ _id: toId(memberId), userId: req.userId });
+      if (!updated) {
+        return res.status(500).json({ message: 'Failed to load updated member' });
+      }
+      return res.status(201).json({
+        id: updated._id.toString(),
+        name: updated.name,
+        relationship: updated.relationship,
+        medicines: updated.medicines || [],
+      });
+    } catch (err) {
+      console.error('Post family medicine error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.patch('/api/family/:memberId/medicines/:medId', authMiddleware, async (req, res) => {
+    try {
+      const { memberId, medId } = req.params;
+      const { action } = req.body as { action: 'taken' | 'snooze' | 'skip' };
+      const member = await family.findOne({ _id: toId(memberId), userId: req.userId });
+      if (!member) {
+        return res.status(404).json({ message: 'Family member not found' });
+      }
+      const meds = Array.isArray(member.medicines) ? member.medicines : [];
+      const updatedMeds = meds.map((m: any) => {
+        if (m.id !== medId) return m;
+        if (action === 'taken') return { ...m, taken: true, snoozed: false };
+        if (action === 'snooze') return { ...m, snoozed: true };
+        if (action === 'skip') return { ...m, taken: false, snoozed: false };
+        return m;
+      });
+      await family.updateOne(
+        { _id: toId(memberId), userId: req.userId },
+        { $set: { medicines: updatedMeds } },
+      );
+      const updated = await family.findOne({ _id: toId(memberId), userId: req.userId });
+      if (!updated) {
+        return res.status(500).json({ message: 'Failed to load updated member' });
+      }
+      return res.json({
+        id: updated._id.toString(),
+        name: updated.name,
+        relationship: updated.relationship,
+        medicines: updated.medicines || [],
+      });
+    } catch (err) {
+      console.error('Patch family medicine error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
