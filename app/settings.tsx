@@ -107,7 +107,10 @@ export default function SettingsScreen() {
           <View style={{ width: 24 }} />
         </View>
 
-        <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Pressable
+          onPress={() => router.push('/profile')}
+          style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
           <View style={[styles.avatarCircle, { backgroundColor: colors.accentDim }]}>
             <Ionicons name="person" size={28} color={colors.accent} />
           </View>
@@ -115,7 +118,8 @@ export default function SettingsScreen() {
             <Text style={[styles.profileName, { color: colors.text }]}>{user?.name || 'User'}</Text>
             <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email || 'user@email.com'}</Text>
           </View>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Appearance</Text>
         <View style={[styles.settingsGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -167,9 +171,9 @@ export default function SettingsScreen() {
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>General</Text>
         <View style={[styles.settingsGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="notifications-outline" label="Notifications" onPress={() => {}} colors={colors} />
-          <SettingRow icon="shield-checkmark-outline" label="Privacy" onPress={() => {}} colors={colors} />
-          <SettingRow icon="help-circle-outline" label="Help & Support" onPress={() => {}} colors={colors} />
+          <SettingRow icon="notifications-outline" label="Notifications" onPress={() => router.push('/notifications')} colors={colors} />
+          <SettingRow icon="shield-checkmark-outline" label="Privacy" onPress={() => router.push('/privacy')} colors={colors} />
+          <SettingRow icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/support')} colors={colors} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Account</Text>

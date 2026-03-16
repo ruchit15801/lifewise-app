@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,7 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { getApiUrl } from '@/lib/query-client';
+import { getApiUrl, apiRequest } from '@/lib/query-client';
 import Animated, { FadeInDown, FadeInRight, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -189,6 +189,7 @@ export default function HomeScreen() {
   const [quickAddText, setQuickAddText] = useState('');
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
@@ -196,6 +197,22 @@ export default function HomeScreen() {
     await refreshData();
     setRefreshing(false);
   }, [refreshData]);
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const res = await apiRequest('GET', '/api/notifications', undefined, token);
+        const json = (await res.json()) as { id: string; read: boolean }[];
+        const count = json.filter((n) => !n.read).length;
+        setUnreadCount(count);
+      } catch {
+        // ignore
+      }
+    };
+    if (token) {
+      run();
+    }
+  }, [token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -290,19 +307,30 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 }]}
         >
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
-              <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
+                <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Pressable
+                  onPress={() => router.push('/notifications')}
+                  style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                >
+                  <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+                  {unreadCount > 0 && (
+                    <View style={styles.unreadDot} />
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/settings')}
+                  style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  testID="home-settings-btn"
+                >
+                  <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+                </Pressable>
+              </View>
             </View>
-            <Pressable
-              onPress={() => router.push('/settings')}
-              style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              testID="home-settings-btn"
-            >
-              <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
-            </Pressable>
-          </View>
 
           <View style={[styles.seniorHeroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>Balance Left</Text>
@@ -364,13 +392,22 @@ export default function HomeScreen() {
               <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
               <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
             </View>
-            <Pressable
-              onPress={() => router.push('/settings')}
-              style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              testID="home-settings-btn"
-            >
-              <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Pressable
+                onPress={() => router.push('/notifications')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+                {unreadCount > 0 && <View style={styles.unreadDot} />}
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/settings')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                testID="home-settings-btn"
+              >
+                <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
           </View>
         </Animated.View>
 
@@ -509,23 +546,51 @@ export default function HomeScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(320).duration(500) : undefined}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Spending by Category</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-            {sortedCategories.map(([cat, total], idx) => (
-              <CategoryPill key={cat} category={cat as CategoryType} total={total as number} index={idx} colors={colors} formatAmount={formatAmount} />
-            ))}
-          </ScrollView>
+          {sortedCategories.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.emptyIconWrap, { backgroundColor: colors.accentDim }]}>
+                <Ionicons name="pie-chart-outline" size={20} color={colors.accent} />
+              </View>
+              <View style={styles.emptyTextWrap}>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No spending yet</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+                  Add a few expenses and we’ll show a beautiful category breakdown here.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
+              {sortedCategories.map(([cat, total], idx) => (
+                <CategoryPill key={cat} category={cat as CategoryType} total={total as number} index={idx} colors={colors} formatAmount={formatAmount} />
+              ))}
+            </ScrollView>
+          )}
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(400).duration(500) : undefined}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Transactions</Text>
-          <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {recentTxs.map((tx, idx) => (
-              <React.Fragment key={tx.id}>
-                <TransactionRow merchant={tx.merchant} amount={tx.amount} category={tx.category} date={tx.date} colors={colors} formatAmount={formatAmount} />
-                {idx < recentTxs.length - 1 && <View style={[styles.txDivider, { backgroundColor: colors.border }]} />}
-              </React.Fragment>
-            ))}
-          </View>
+          {recentTxs.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.emptyIconWrap, { backgroundColor: colors.accentBlueDim || colors.accentDim }]}>
+                <Ionicons name="receipt-outline" size={20} color={colors.accentBlue || colors.accent} />
+              </View>
+              <View style={styles.emptyTextWrap}>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No activity recorded</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+                  Tap Auto Track or add a transaction to see your latest spending here.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {recentTxs.map((tx, idx) => (
+                <React.Fragment key={tx.id}>
+                  <TransactionRow merchant={tx.merchant} amount={tx.amount} category={tx.category} date={tx.date} colors={colors} formatAmount={formatAmount} />
+                  {idx < recentTxs.length - 1 && <View style={[styles.txDivider, { backgroundColor: colors.border }]} />}
+                </React.Fragment>
+              ))}
+            </View>
+          )}
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(480).duration(500) : undefined}>
@@ -684,6 +749,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+  },
   heroCard: { borderRadius: 24, padding: 24, marginBottom: 20 },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   heroLeft: { flex: 1, marginRight: 16 },
@@ -700,6 +782,32 @@ const styles = StyleSheet.create({
   heroStatLabel: { fontFamily: 'Inter_400Regular', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 },
   heroStatValue: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   sectionTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 17, marginBottom: 14 },
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 24,
+    gap: 12,
+  },
+  emptyIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTextWrap: { flex: 1, gap: 2 },
+  emptyTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
+  emptySubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+  },
   remindersScroll: { gap: 10, paddingBottom: 20 },
   reminderPill: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, gap: 10, minWidth: 200 },
   reminderPillIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },

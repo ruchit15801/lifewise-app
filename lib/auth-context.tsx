@@ -24,6 +24,7 @@ interface AuthContextValue {
   hasOnboarded: boolean;
   completeOnboarding: () => void;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+   updateProfile: (fields: { name?: string; phone?: string | null }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -160,9 +161,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [googleRequest, googlePromptAsync]);
 
-  const loginWithApple = useCallback(async () => {
-    return { success: false, error: 'Apple login is disabled' };
-  }, []);
+  const updateProfile = useCallback(
+    async (fields: { name?: string; phone?: string | null }) => {
+      try {
+        if (!token) {
+          return { success: false, error: 'Not authenticated' };
+        }
+        const baseUrl = getApiUrl();
+        const url = new URL('/api/auth/me', baseUrl).toString();
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(fields),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return { success: false, error: data.message || 'Update failed' };
+        }
+        if (data.user) {
+          setUser(data.user);
+          await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
+        }
+        return { success: true };
+      } catch {
+        return { success: false, error: 'Profile update error' };
+      }
+    },
+    [token],
+  );
 
   const completeOnboarding = useCallback(() => {
     setHasOnboarded(true);
@@ -180,8 +209,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     hasOnboarded,
     completeOnboarding,
     loginWithGoogle,
-    loginWithApple,
-  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding, loginWithGoogle, loginWithApple]);
+    updateProfile,
+  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding, loginWithGoogle, updateProfile]);
 
   return (
     <AuthContext.Provider value={value}>

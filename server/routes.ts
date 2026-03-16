@@ -174,6 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const notifications = db.collection('notifications');
   const reminderLogs = db.collection('reminder_logs');
   const pushTokens = db.collection('push_tokens');
+  const supportTickets = db.collection('support_tickets');
 
   // ----- Auth -----
   app.post('/api/auth/register', async (req, res) => {
@@ -443,6 +444,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put('/api/auth/me', authMiddleware, async (req, res) => {
+    try {
+      const { name, phone, avatarUrl } = req.body as { name?: string; phone?: string | null; avatarUrl?: string | null };
+      const update: any = {};
+      if (name !== undefined) update.name = String(name).trim();
+      if (phone !== undefined) update.phone = phone === null ? null : String(phone).trim();
+      if (avatarUrl !== undefined) update.avatarUrl = avatarUrl === null ? null : String(avatarUrl);
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ message: 'No fields to update' });
+      }
+
+      await users.updateOne({ _id: toId(req.userId) }, { $set: update });
+      const user = await users.findOne({ _id: toId(req.userId) });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      const uid = (user as { _id: string | { toString: () => string } })._id;
+      return res.json({
+        user: {
+          id: typeof uid === 'string' ? uid : uid.toString(),
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          phoneVerified: user.phoneVerified,
+          avatarUrl: (user as any).avatarUrl,
+        },
+      });
+    } catch (err) {
+      console.error('Update me error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post(
+    '/api/avatar',
+    authMiddleware,
+    upload.single('avatar'),
+    async (req: any, res: any) => {
+      try {
+        if (!S3_BUCKET) {
+          return res.status(500).json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
+        }
+        const file = req.file as Express.Multer.File | undefined;
+        if (!file || !file.buffer) {
+          return res.status(400).json({ message: 'avatar file is required' });
+        }
+
+        const key = `avatars/${req.userId}/${Date.now()}-${file.originalname}`;
+
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype || 'image/jpeg',
+            ACL: 'public-read',
+          } as any),
+        );
+
+        const url = `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+        await users.updateOne({ _id: toId(req.userId) }, { $set: { avatarUrl: url } });
+        return res.status(201).json({ url });
+      } catch (err) {
+        console.error('Upload avatar error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    },
+  );
+
   // ----- In-app notifications -----
   app.get('/api/notifications', authMiddleware, async (req, res) => {
     try {
@@ -481,6 +552,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ updated: result.modifiedCount || 0 });
     } catch (err) {
       console.error('Mark notifications read error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // ----- Support tickets -----
+  app.post('/api/support', authMiddleware, async (req, res) => {
+    try {
+      const { subject, message } = req.body as { subject?: string; message?: string };
+      if (!subject || !message) {
+        return res.status(400).json({ message: 'Subject and message are required' });
+      }
+
+      const doc = {
+        userId: req.userId,
+        subject: String(subject).slice(0, 120),
+        message: String(message).slice(0, 4000),
+        status: 'open',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = await supportTickets.insertOne(doc);
+      return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+    } catch (err) {
+      console.error('Create support ticket error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });

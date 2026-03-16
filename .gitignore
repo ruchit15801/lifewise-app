@@ -58,3 +58,6 @@ yarn-error.*
 
 firebase-service-account.json
 server/firebase-service-account.json
+.env
+*.json
+firebase-service-account.json
