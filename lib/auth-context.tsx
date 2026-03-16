@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiUrl } from '@/lib/query-client';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
 
 interface User {
   id: string;
@@ -20,6 +23,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   hasOnboarded: boolean;
   completeOnboarding: () => void;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -35,6 +39,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasOnboarded, setHasOnboarded] = useState(false);
+
+  WebBrowser.maybeCompleteAuthSession();
+
+  const [googleRequest, , googlePromptAsync] = Google.useIdTokenAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '',
+  });
 
   useEffect(() => {
     loadState();
@@ -111,6 +121,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
+  const loginWithGoogle = useCallback(async () => {
+    try {
+      if (!googleRequest) {
+        return { success: false, error: 'Google config missing' };
+      }
+
+      const result = await googlePromptAsync();
+      if (result.type !== 'success') {
+        return { success: false, error: 'Google login cancelled' };
+      }
+
+      const authResult = result as AuthSession.AuthSessionResult & { params?: any };
+      const idToken = authResult.params?.id_token;
+      if (!idToken) {
+        return { success: false, error: 'No id_token from Google' };
+      }
+
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/auth/oauth/google', baseUrl).toString();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.message || 'Google login failed' };
+      }
+
+      setUser(data.user);
+      setToken(data.token);
+      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
+      await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Google login error' };
+    }
+  }, [googleRequest, googlePromptAsync]);
+
+  const loginWithApple = useCallback(async () => {
+    return { success: false, error: 'Apple login is disabled' };
+  }, []);
+
   const completeOnboarding = useCallback(() => {
     setHasOnboarded(true);
     AsyncStorage.setItem(STORAGE_KEYS.ONBOARDED, 'true');
@@ -126,7 +179,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     hasOnboarded,
     completeOnboarding,
-  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding]);
+    loginWithGoogle,
+    loginWithApple,
+  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding, loginWithGoogle, loginWithApple]);
 
   return (
     <AuthContext.Provider value={value}>

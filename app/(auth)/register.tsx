@@ -8,7 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
-  Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +19,7 @@ import { useTheme } from '@/lib/theme-context';
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const { colors } = useTheme();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -27,6 +27,7 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [showPasswordHints, setShowPasswordHints] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
@@ -36,8 +37,14 @@ export default function RegisterScreen() {
       setError('Please fill in all fields');
       return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    const hasMinLength = password.length >= 8;
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+
+    if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+      setError('Password must meet all the requirements');
       return;
     }
     setError('');
@@ -49,11 +56,11 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleSocialLogin = (provider: string) => {
-    if (Platform.OS === 'web') {
-      setError(`${provider} sign-up coming soon`);
-    } else {
-      Alert.alert('Coming Soon', `${provider} sign-up will be available in a future update.`);
+  const handleGoogleSignup = async () => {
+    setError('');
+    const res = await loginWithGoogle();
+    if (!res.success) {
+      setError(res.error || 'Google sign-up failed');
     }
   };
 
@@ -65,8 +72,8 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.headerSection}>
-          <View style={[styles.logoCircle, { backgroundColor: colors.accentDim }]}>
-            <Ionicons name="person-add" size={32} color={colors.accent} />
+          <View style={styles.logoCircle}>
+            <Image source={require('../../logo.png')} style={styles.logoImage} resizeMode="contain" />
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Start tracking your expenses smarter</Text>
@@ -117,15 +124,46 @@ export default function RegisterScreen() {
               style={[styles.input, { color: colors.text }]}
               value={password}
               onChangeText={setPassword}
-              placeholder="Min 6 characters"
+              placeholder="Min 8 characters, strong"
               placeholderTextColor={colors.textTertiary}
               secureTextEntry={!showPassword}
               testID="register-password"
+              onFocus={() => setShowPasswordHints(true)}
             />
             <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
               <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
             </Pressable>
           </View>
+
+          {showPasswordHints && (
+            <View style={styles.passwordHints}>
+              <PasswordRule
+                label="At least 8 characters"
+                met={password.length >= 8}
+                colors={colors}
+              />
+              <PasswordRule
+                label="One uppercase letter (A-Z)"
+                met={/[A-Z]/.test(password)}
+                colors={colors}
+              />
+              <PasswordRule
+                label="One lowercase letter (a-z)"
+                met={/[a-z]/.test(password)}
+                colors={colors}
+              />
+              <PasswordRule
+                label="One number (0-9)"
+                met={/[0-9]/.test(password)}
+                colors={colors}
+              />
+              <PasswordRule
+                label="One special character (!@#$...)"
+                met={/[^A-Za-z0-9]/.test(password)}
+                colors={colors}
+              />
+            </View>
+          )}
 
           <Pressable
             onPress={handleRegister}
@@ -150,24 +188,17 @@ export default function RegisterScreen() {
 
         <View style={styles.dividerRow}>
           <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.dividerText, { color: colors.textTertiary }]}>or sign up with</Text>
+          <Text style={[styles.dividerText, { color: colors.textTertiary }]}>OR</Text>
           <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
         </View>
 
         <View style={styles.socialRow}>
           <Pressable
-            onPress={() => handleSocialLogin('Google')}
-            style={[styles.socialBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={handleGoogleSignup}
+            style={[styles.googleBtn, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}
           >
-            <Ionicons name="logo-google" size={22} color={colors.text} />
-            <Text style={[styles.socialBtnText, { color: colors.text }]}>Google</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => handleSocialLogin('Apple')}
-            style={[styles.socialBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          >
-            <Ionicons name="logo-apple" size={22} color={colors.text} />
-            <Text style={[styles.socialBtnText, { color: colors.text }]}>Apple</Text>
+            <Ionicons name="logo-google" size={24} color="#4285F4" />
+            <Text style={[styles.googleBtnText, { color: colors.text }]}>Continue with Google</Text>
           </Pressable>
         </View>
 
@@ -184,6 +215,29 @@ export default function RegisterScreen() {
   );
 }
 
+function PasswordRule({
+  label,
+  met,
+  colors,
+}: {
+  label: string;
+  met: boolean;
+  colors: { textSecondary: string; success?: string };
+}) {
+  const successColor = (colors as any).success || '#16a34a';
+  const textColor = met ? successColor : colors.textSecondary;
+  return (
+    <View style={styles.passwordRuleRow}>
+      <Ionicons
+        name={met ? 'checkmark-circle' : 'ellipse-outline'}
+        size={16}
+        color={textColor}
+      />
+      <Text style={[styles.passwordRuleText, { color: textColor }]}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingHorizontal: 24 },
@@ -194,7 +248,13 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
     marginBottom: 20,
+  },
+  logoImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   title: {
     fontFamily: 'Inter_700Bold',
@@ -257,6 +317,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
   },
+  passwordHints: {
+    marginTop: 8,
+    marginHorizontal: 4,
+    gap: 4,
+  },
+  passwordRuleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  passwordRuleText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+  },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -269,23 +343,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   socialRow: {
-    flexDirection: 'row',
-    gap: 12,
     marginBottom: 32,
   },
-  socialBtn: {
-    flex: 1,
+  googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 12,
     paddingVertical: 16,
+    paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
   },
-  socialBtnText: {
+  googleBtnText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
+    fontSize: 16,
   },
   footerRow: {
     flexDirection: 'row',

@@ -8,7 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
-  Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +19,7 @@ import { useTheme } from '@/lib/theme-context';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const { colors } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,11 +44,11 @@ export default function LoginScreen() {
     }
   };
 
-  const handleSocialLogin = (provider: string) => {
-    if (Platform.OS === 'web') {
-      setError(`${provider} sign-in coming soon`);
-    } else {
-      Alert.alert('Coming Soon', `${provider} sign-in will be available in a future update.`);
+  const handleGoogleLogin = async () => {
+    setError('');
+    const res = await loginWithGoogle();
+    if (!res.success) {
+      setError(res.error || 'Google sign-in failed');
     }
   };
 
@@ -60,8 +60,8 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.headerSection}>
-          <View style={[styles.logoCircle, { backgroundColor: colors.accentDim }]}>
-            <Ionicons name="wallet" size={32} color={colors.accent} />
+          <View style={styles.logoCircle}>
+            <Image source={require('../../logo.png')} style={styles.logoImage} resizeMode="contain" />
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to access your spending insights</Text>
@@ -131,24 +131,17 @@ export default function LoginScreen() {
 
         <View style={styles.dividerRow}>
           <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.dividerText, { color: colors.textTertiary }]}>or continue with</Text>
+          <Text style={[styles.dividerText, { color: colors.textTertiary }]}>OR</Text>
           <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
         </View>
 
         <View style={styles.socialRow}>
           <Pressable
-            onPress={() => handleSocialLogin('Google')}
-            style={[styles.socialBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={handleGoogleLogin}
+            style={[styles.googleBtn, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}
           >
-            <Ionicons name="logo-google" size={22} color={colors.text} />
-            <Text style={[styles.socialBtnText, { color: colors.text }]}>Google</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => handleSocialLogin('Apple')}
-            style={[styles.socialBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          >
-            <Ionicons name="logo-apple" size={22} color={colors.text} />
-            <Text style={[styles.socialBtnText, { color: colors.text }]}>Apple</Text>
+            <Ionicons name="logo-google" size={24} color="#4285F4" />
+            <Text style={[styles.googleBtnText, { color: colors.text }]}>Continue with Google</Text>
           </Pressable>
         </View>
 
@@ -175,7 +168,13 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
     marginBottom: 20,
+  },
+  logoImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   title: {
     fontFamily: 'Inter_700Bold',
@@ -242,6 +241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+    marginTop: 12,
     marginBottom: 24,
   },
   dividerLine: { flex: 1, height: 1 },
@@ -250,23 +250,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   socialRow: {
-    flexDirection: 'row',
-    gap: 12,
+    marginTop: 4,
     marginBottom: 32,
   },
-  socialBtn: {
-    flex: 1,
+  googleBtn: {
+    flexDirection: 'row',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 12,
     paddingVertical: 16,
+    paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
   },
-  socialBtnText: {
+  googleBtnText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
+    fontSize: 16,
   },
   footerRow: {
     flexDirection: 'row',

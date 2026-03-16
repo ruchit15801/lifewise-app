@@ -22,6 +22,8 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeProvider, useTheme } from "@/lib/theme-context";
 import { CurrencyProvider } from "@/lib/currency-context";
 import { StatusBar } from "expo-status-bar";
+import * as Notifications from "expo-notifications";
+import { registerForPushNotifications } from "@/lib/notifications";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -110,7 +112,7 @@ const splashStyles = StyleSheet.create({
 });
 
 function AuthGate() {
-  const { user, isLoading, hasOnboarded, isAuthenticated } = useAuth();
+  const { user, token, isLoading, hasOnboarded, isAuthenticated } = useAuth();
   const { colors } = useTheme();
   const segments = useSegments();
   const router = useRouter();
@@ -139,6 +141,29 @@ function AuthGate() {
       router.replace('/(tabs)');
     }
   }, [isAuthenticated, isLoading, hasOnboarded, segments, showSplash]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+    registerForPushNotifications(token).catch((e) => {
+      console.log("[Push] Registration error", e);
+    });
+  }, [isAuthenticated, token]);
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as any;
+      if (data?.type === "reminder" && data?.billId) {
+        router.push({
+          pathname: "/(tabs)",
+          params: { billId: data.billId },
+        } as any);
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [router]);
 
   if (isLoading || showSplash) {
     return <AnimatedSplash />;

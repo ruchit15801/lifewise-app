@@ -28,6 +28,7 @@ interface ExpenseContextValue {
   syncSmsFromDevice: () => Promise<void>;
   monthlyBudget: number;
   setMonthlyBudget: (budget: number) => void;
+  quickAddReminder: (text: string) => Promise<void>;
   addReminder: (bill: Omit<Bill, 'id'>) => void;
   editReminder: (bill: Bill) => void;
   deleteReminder: (billId: string) => void;
@@ -54,7 +55,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [leaks, setLeaks] = useState<MoneyLeak[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingSms, setIsSyncingSms] = useState(false);
-  const [monthlyBudget, setMonthlyBudgetState] = useState(50000);
+  const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
 
   const loadData = useCallback(async () => {
@@ -214,6 +215,26 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token, bills]);
 
+  const quickAddReminder = useCallback(
+    async (text: string) => {
+      if (!token || !text.trim()) return;
+      try {
+        const res = await fetchWithAuth(token, '/api/reminders/quick-add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (res.ok) {
+          const created = await res.json();
+          setBills((prev) => [...prev, created]);
+        }
+      } catch {
+        // ignore, user will still have manual flows
+      }
+    },
+    [token],
+  );
+
   const refreshData = useCallback(async () => {
     await loadData();
     await syncSmsFromDevice();
@@ -263,6 +284,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       syncSmsFromDevice,
       monthlyBudget,
       setMonthlyBudget,
+      quickAddReminder,
       addReminder,
       editReminder,
       deleteReminder,
@@ -282,6 +304,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       refreshData,
       syncSmsFromDevice,
       setMonthlyBudget,
+      quickAddReminder,
       addReminder,
       editReminder,
       deleteReminder,

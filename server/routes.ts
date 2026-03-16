@@ -6,6 +6,10 @@ import { ObjectId } from 'mongodb';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { connectMongo, getDb } from './db/mongodb';
+import { getFirebaseMessaging } from './firebase-admin';
+import multer from 'multer';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { TextractClient, DetectDocumentTextCommand } from '@aws-sdk/client-textract';
 
 function toId(id: string): ObjectId | string {
   return /^[a-f0-9]{24}$/i.test(String(id)) ? new ObjectId(id) : String(id);
@@ -24,6 +28,8 @@ const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-rep
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
+const S3_BUCKET = process.env.AWS_S3_BUCKET;
 
 const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
 const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
@@ -31,6 +37,11 @@ const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
   : '';
 
 type ReminderChannel = 'email' | 'in_app';
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+const s3 = new S3Client({ region: AWS_REGION });
+const textract = new TextractClient({ region: AWS_REGION });
 
 // SMS stub: logs OTP. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE for real SMS.
 async function sendSmsOtp(phone: string, otp: string): Promise<void> {
@@ -162,6 +173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const otpStore = db.collection('otp_store');
   const notifications = db.collection('notifications');
   const reminderLogs = db.collection('reminder_logs');
+  const pushTokens = db.collection('push_tokens');
 
   // ----- Auth -----
   app.post('/api/auth/register', async (req, res) => {
@@ -272,6 +284,142 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error('Login error:', err);
       return res.status(500).json({ message: 'Server error. Please try again.' });
+    }
+  });
+
+  app.post('/api/auth/oauth/google', async (req, res) => {
+    try {
+      const { idToken } = req.body as { idToken?: string };
+      if (!idToken) {
+        return res.status(400).json({ message: 'idToken is required' });
+      }
+
+      const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+      if (!verifyRes.ok) {
+        return res.status(401).json({ message: 'Invalid Google token' });
+      }
+
+      const payload = (await verifyRes.json()) as {
+        email?: string;
+        email_verified?: string;
+        name?: string;
+        sub?: string;
+      };
+
+      const email = payload.email?.toLowerCase().trim();
+      if (!email) {
+        return res.status(400).json({ message: 'Google account has no email' });
+      }
+
+      let user = await users.findOne({ email });
+      if (!user) {
+        const doc = {
+          name: payload.name || email.split('@')[0],
+          email,
+          passwordHash: null,
+          googleSub: payload.sub || null,
+          emailVerified: payload.email_verified === 'true',
+          createdAt: new Date(),
+        };
+        const result = await users.insertOne(doc);
+        user = { _id: result.insertedId, ...doc } as any;
+      }
+
+      const userId = (user as any)._id.toString();
+      const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+
+      return res.json({
+        user: {
+          id: userId,
+          email: user.email,
+          name: user.name,
+          phone: (user as any).phone,
+          phoneVerified: (user as any).phoneVerified ?? false,
+        },
+        token,
+      });
+    } catch (err) {
+      console.error('Google OAuth login error:', err);
+      return res.status(500).json({ message: 'Server error. Please try again.' });
+    }
+  });
+
+  app.post('/api/auth/oauth/apple', async (req, res) => {
+    try {
+      const { appleUserId, email, name } = req.body as {
+        appleUserId?: string;
+        email?: string;
+        name?: string;
+      };
+      if (!appleUserId) {
+        return res.status(400).json({ message: 'appleUserId is required' });
+      }
+
+      let user = null;
+      if (email) {
+        user = await users.findOne({ email: email.toLowerCase().trim() });
+      }
+      if (!user) {
+        user = await users.findOne({ appleUserId });
+      }
+
+      if (!user) {
+        const finalEmail = email?.toLowerCase().trim() || `${appleUserId}@apple.local`;
+        const doc = {
+          name: name || 'Apple User',
+          email: finalEmail,
+          passwordHash: null,
+          appleUserId,
+          emailVerified: !!email,
+          createdAt: new Date(),
+        };
+        const result = await users.insertOne(doc);
+        user = { _id: result.insertedId, ...doc } as any;
+      }
+
+      const userId = (user as any)._id.toString();
+      const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+
+      return res.json({
+        user: {
+          id: userId,
+          email: user.email,
+          name: user.name,
+          phone: (user as any).phone,
+          phoneVerified: (user as any).phoneVerified ?? false,
+        },
+        token,
+      });
+    } catch (err) {
+      console.error('Apple OAuth login error:', err);
+      return res.status(500).json({ message: 'Server error. Please try again.' });
+    }
+  });
+
+  app.post('/api/push-token', authMiddleware, async (req, res) => {
+    try {
+      const { token, platform } = req.body as { token?: string; platform?: 'ios' | 'android' | 'web' };
+      if (!token) {
+        return res.status(400).json({ message: 'token is required' });
+      }
+
+      await pushTokens.updateOne(
+        { userId: req.userId, token },
+        {
+          $set: {
+            userId: req.userId,
+            token,
+            platform: platform || 'android',
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Save push token error:', err);
+      return res.status(500).json({ message: 'Server error.' });
     }
   });
 
@@ -464,6 +612,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Scan Bill (image -> OCR -> bill reminder)
+  app.post(
+    '/api/bills/scan',
+    authMiddleware,
+    upload.single('image'),
+    async (req: any, res: any) => {
+      try {
+        if (!S3_BUCKET) {
+          return res
+            .status(500)
+            .json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
+        }
+        const file = req.file as Express.Multer.File | undefined;
+        if (!file || !file.buffer) {
+          return res.status(400).json({ message: 'image file is required' });
+        }
+
+        const key = `bills/${req.userId}/${Date.now()}-${file.originalname}`;
+
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype || 'image/jpeg',
+          }),
+        );
+
+        const texRes = await textract.send(
+          new DetectDocumentTextCommand({
+            Document: { Bytes: file.buffer },
+          }),
+        );
+
+        const lines =
+          texRes.Blocks?.filter((b) => b.BlockType === 'LINE')
+            .map((b) => b.Text || '')
+            .filter(Boolean) ?? [];
+        const fullText = lines.join('\n');
+
+        let title = lines.find((l) =>
+          /bill|invoice|electric/i.test(l),
+        ) || 'Scanned Bill';
+
+        let amount = 0;
+        const amountMatch =
+          fullText.match(/₹\s*([\d,]+(?:\.\d{1,2})?)/i) ||
+          fullText.match(/amount[:\s]*₹?\s*([\d,]+(?:\.\d{1,2})?)/i);
+        if (amountMatch && amountMatch[1]) {
+          amount = Number(amountMatch[1].replace(/,/g, '')) || 0;
+        }
+
+        let dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 7);
+
+        const dateMatch =
+          fullText.match(/due\s*date[:\s]*([0-9]{1,2}\s+\w+\s+\d{4})/i) ||
+          fullText.match(/([0-9]{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4})/i);
+        if (dateMatch && dateMatch[1]) {
+          const parsed = new Date(dateMatch[1]);
+          if (!Number.isNaN(parsed.getTime())) {
+            dueDate = parsed;
+          }
+        }
+
+        const reminderDate = new Date(dueDate.getTime());
+        reminderDate.setDate(reminderDate.getDate() - 2);
+        reminderDate.setHours(9, 0, 0, 0);
+
+        const doc = {
+          userId: req.userId,
+          name: title.slice(0, 80),
+          amount,
+          dueDate: dueDate.toISOString(),
+          category: 'bills' as CategoryType,
+          isPaid: false,
+          icon: 'receipt',
+          reminderType: 'bill' as ReminderType,
+          repeatType: 'monthly' as RepeatType,
+          status: 'active' as ReminderStatus,
+          snoozedUntil: undefined,
+          reminderDaysBefore: [2, 0],
+          source: 'scan_bill',
+          imageKey: key,
+          imageUrl: `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`,
+          createdAt: new Date(),
+        };
+
+        const result = await bills.insertOne(doc);
+        return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+      } catch (err) {
+        console.error('Scan bill error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    },
+  );
+
   app.put('/api/bills/:id', authMiddleware, async (req, res) => {
     try {
       const id = req.params.id;
@@ -496,6 +741,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ ok: true });
     } catch (err) {
       console.error('Delete bill error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // Quick Add reminder from free text
+  app.post('/api/reminders/quick-add', authMiddleware, async (req, res) => {
+    try {
+      const { text } = req.body as { text: string };
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ message: 'text is required' });
+      }
+
+      let title = text.trim();
+      let due = new Date();
+      due.setDate(due.getDate() + 1);
+
+      if (OPENAI_API_KEY) {
+        try {
+          const prompt =
+            'You are a reminder parser. Given a natural language reminder in English or Hinglish, ' +
+            'extract: title, isoDate (YYYY-MM-DD), and hour (0-23). ' +
+            'If no date is mentioned, assume tomorrow. If no time, use 9. ' +
+            'Reply ONLY with strict JSON: {"title": "...", "isoDate": "...", "hour": 9}. Input: ' +
+            JSON.stringify(text);
+
+          const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: OPENAI_MODEL,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0,
+            }),
+          });
+
+          if (aiRes.ok) {
+            const json = await aiRes.json();
+            const content = json.choices?.[0]?.message?.content;
+            if (content) {
+              try {
+                const parsed = JSON.parse(content);
+                if (parsed.title) title = String(parsed.title);
+                if (parsed.isoDate) {
+                  const parsedDate = new Date(parsed.isoDate);
+                  if (!Number.isNaN(parsedDate.getTime())) {
+                    due = parsedDate;
+                  }
+                }
+                if (typeof parsed.hour === 'number') {
+                  due.setHours(parsed.hour, 0, 0, 0);
+                } else {
+                  due.setHours(9, 0, 0, 0);
+                }
+              } catch {
+                // ignore JSON parse error, fallback to defaults
+              }
+            }
+          }
+        } catch {
+          // ignore AI failure, fallback to defaults
+        }
+      } else {
+        due.setHours(9, 0, 0, 0);
+      }
+
+      const doc = {
+        userId: req.userId,
+        name: title.slice(0, 80),
+        amount: 0,
+        dueDate: due.toISOString(),
+        category: 'bills' as CategoryType,
+        isPaid: false,
+        icon: 'flash',
+        reminderType: 'custom' as ReminderType,
+        repeatType: 'none' as RepeatType,
+        status: 'active' as ReminderStatus,
+        snoozedUntil: undefined,
+        reminderDaysBefore: [0],
+        source: 'quick_add',
+        createdAt: new Date(),
+      };
+
+      const result = await bills.insertOne(doc);
+      return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+    } catch (err) {
+      console.error('Quick add reminder error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
@@ -552,7 +886,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/settings', authMiddleware, async (req, res) => {
     try {
       const user = await users.findOne({ _id: toId(req.userId) });
-      const settings = (user as { settings?: unknown })?.settings || { monthlyBudget: 50000, reminderSettings: { defaultReminderDays: [3, 1, 0], soundEnabled: true, vibrationEnabled: true } };
+      const settings =
+        (user as { settings?: unknown })?.settings || {
+          monthlyBudget: 100000,
+          reminderSettings: {
+            defaultReminderDays: [3, 1, 0],
+            soundEnabled: true,
+            vibrationEnabled: true,
+          },
+        };
       return res.json(settings);
     } catch (err) {
       console.error('Get settings error:', err);
@@ -908,23 +1250,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   html,
                 });
               } else if (channel === 'in_app') {
+                const title = bill.name || 'Upcoming payment';
+                const body =
+                  daysLeft === 0
+                    ? `Your ${bill.name || 'payment'} is due today.`
+                    : `Your ${bill.name || 'payment'} is due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`;
+
+                const meta = {
+                  billId: bill._id.toString(),
+                  amount: bill.amount || 0,
+                  dueDate: baseDate.toISOString(),
+                  reminderType: bill.reminderType || 'bill',
+                };
+
                 await notifications.insertOne({
                   userId: user._id?.toString?.() ?? user._id,
                   type: 'reminder',
-                  title: bill.name || 'Upcoming payment',
-                  body:
-                    daysLeft === 0
-                      ? `Your ${bill.name || 'payment'} is due today.`
-                      : `Your ${bill.name || 'payment'} is due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+                  title,
+                  body,
                   read: false,
                   createdAt: new Date(),
-                  meta: {
-                    billId: bill._id.toString(),
-                    amount: bill.amount || 0,
-                    dueDate: baseDate.toISOString(),
-                    reminderType: bill.reminderType || 'bill',
-                  },
+                  meta,
                 });
+
+                const messaging = getFirebaseMessaging();
+                if (messaging) {
+                  try {
+                    const tokenDocs = await pushTokens
+                      .find({ userId: user._id?.toString?.() ?? user._id })
+                      .project<{ token: string }>({ token: 1, _id: 0 })
+                      .toArray();
+
+                    const tokens = tokenDocs.map((t) => t.token).filter(Boolean);
+
+                    if (tokens.length) {
+                      await messaging.sendEachForMulticast({
+                        tokens,
+                        notification: {
+                          title,
+                          body,
+                        },
+                        data: {
+                          type: 'reminder',
+                          billId: meta.billId,
+                        },
+                      });
+                    }
+                  } catch (err) {
+                    console.error('FCM send error:', err);
+                  }
+                }
               }
 
               await reminderLogs.insertOne({

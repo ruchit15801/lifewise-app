@@ -10,10 +10,13 @@ import {
   Modal,
   Alert,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import { getApiUrl } from '@/lib/query-client';
 import Animated, { FadeInDown, FadeInRight, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -166,12 +169,25 @@ function QuickAccessCard({ icon, label, subtitle, color, onPress, colors }: { ic
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { transactions, bills, leaks, isLoading, isSyncingSms, monthlyBudget, refreshData } = useExpenses();
-  const { user } = useAuth();
+  const {
+    transactions,
+    bills,
+    leaks,
+    isLoading,
+    isSyncingSms,
+    monthlyBudget,
+    refreshData,
+    syncSmsFromDevice,
+    quickAddReminder,
+  } = useExpenses();
+  const { user, token } = useAuth();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const [seniorMode, setSeniorMode] = useState(false);
   const [showScoreDetail, setShowScoreDetail] = useState(false);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddText, setQuickAddText] = useState('');
+  const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -229,6 +245,43 @@ export default function HomeScreen() {
       Alert.alert('Coming Soon', 'This feature will be available in a future update.');
     }
   };
+
+  const handleScanBill = useCallback(async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets || !result.assets[0]) return;
+    const asset = result.assets[0];
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/bills/scan', baseUrl).toString();
+      const form = new FormData();
+      form.append('image', {
+        uri: asset.uri,
+        name: asset.fileName || 'bill.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      } as any);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: form,
+      });
+      if (!res.ok) {
+        Alert.alert('Scan failed', 'Could not scan this bill. You can add it manually in Reminders.');
+        return;
+      }
+      await refreshData();
+      Alert.alert('Bill added', 'We scanned your bill and created a reminder.');
+    } catch (e) {
+      Alert.alert('Scan failed', 'Network error while scanning bill.');
+    }
+  }, [refreshData]);
 
   if (seniorMode) {
     return (
@@ -477,9 +530,9 @@ export default function HomeScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(480).duration(500) : undefined}>
           <View style={styles.actionButtonsRow}>
-            <ActionButton icon="add-circle" label="Quick Add" color={colors.accent} onPress={showComingSoon} colors={colors} />
-            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={showComingSoon} colors={colors} />
-            <ActionButton icon="flash" label="Auto Track" color="#F59E0B" onPress={showComingSoon} colors={colors} />
+            <ActionButton icon="add-circle" label="Quick Add" color={colors.accent} onPress={() => setShowQuickAdd(true)} colors={colors} />
+            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={handleScanBill} colors={colors} />
+            <ActionButton icon="flash" label="Auto Track" color="#F59E0B" onPress={syncSmsFromDevice} colors={colors} />
           </View>
         </Animated.View>
       </ScrollView>
@@ -531,6 +584,73 @@ export default function HomeScreen() {
             <Pressable onPress={() => { setShowScoreDetail(false); showComingSoon(); }} style={[styles.shareBtn, { backgroundColor: colors.accentDim }]}>
               <Ionicons name="share-outline" size={18} color={colors.accent} />
               <Text style={[styles.shareBtnText, { color: colors.accent }]}>Share Score Card</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showQuickAdd} transparent animationType="fade">
+        <Pressable
+          style={styles.scoreOverlay}
+          onPress={() => {
+            if (!isQuickAdding) setShowQuickAdd(false);
+          }}
+        >
+          <View style={[styles.scoreDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Quick Add Reminder</Text>
+              {!isQuickAdding && (
+                <Pressable onPress={() => setShowQuickAdd(false)} hitSlop={10}>
+                  <Ionicons name="close" size={22} color={colors.textTertiary} />
+                </Pressable>
+              )}
+            </View>
+            <Text style={[styles.lifeInsightText, { color: colors.textSecondary, marginBottom: 12 }]}>
+              Type something like "Pay electricity bill tomorrow at 8 pm".
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text,
+                  marginBottom: 16,
+                },
+              ]}
+              value={quickAddText}
+              onChangeText={setQuickAddText}
+              placeholder='e.g., "Pay electricity bill tomorrow at 8 pm"'
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              numberOfLines={3}
+            />
+            <Pressable
+              disabled={!quickAddText.trim() || isQuickAdding}
+              onPress={async () => {
+                if (!quickAddText.trim()) return;
+                setIsQuickAdding(true);
+                await quickAddReminder(quickAddText.trim());
+                setIsQuickAdding(false);
+                setShowQuickAdd(false);
+                setQuickAddText('');
+              }}
+              style={[
+                styles.shareBtn,
+                {
+                  backgroundColor: !quickAddText.trim() || isQuickAdding ? colors.accentDim : colors.accent,
+                  marginTop: 10,
+                },
+              ]}
+            >
+              {isQuickAdding ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                  <Text style={[styles.shareBtnText, { color: '#FFFFFF' }]}>Create Reminder</Text>
+                </>
+              )}
             </Pressable>
           </View>
         </Pressable>
