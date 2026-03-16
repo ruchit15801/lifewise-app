@@ -9,7 +9,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useSegments, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Platform, ActivityIndicator, Image } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,22 +28,40 @@ SplashScreen.preventAutoHideAsync();
 function AnimatedSplash() {
   return (
     <LinearGradient
-      colors={['#1E1B4B', '#312E81', '#4C1D95', '#1E1B4B']}
+      colors={["#ffffff", "#ffffff"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={splashStyles.container}
     >
-      <View style={splashStyles.content}>
-        <LinearGradient
-          colors={['#EC4899', '#8B5CF6', '#6366F1']}
-          style={splashStyles.iconCircle}
+      <Animated.View
+        entering={FadeIn.duration(700)}
+        exiting={FadeOut.duration(300)}
+        style={splashStyles.content}
+      >
+        <Animated.View
+          entering={FadeIn.duration(500)}
+          style={splashStyles.logoShadow}
         >
-          <Ionicons name="heart" size={40} color="#FFFFFF" />
-        </LinearGradient>
-        <Text style={splashStyles.title}>LifeWise</Text>
-        <Text style={splashStyles.subtitle}>Your Intelligent Life Companion</Text>
-        <ActivityIndicator color="#EC4899" style={{ marginTop: 40 }} />
-      </View>
+          <Image
+            source={require("../logo.png")}
+            style={splashStyles.logo}
+            resizeMode="contain"
+          />
+        </Animated.View>
+        <Animated.Text
+          entering={FadeIn.duration(600).delay(150)}
+          style={splashStyles.title}
+        >
+          LifeWise
+        </Animated.Text>
+        <Animated.Text
+          entering={FadeIn.duration(700).delay(250)}
+          style={splashStyles.subtitle}
+        >
+          Your Intelligent Life Companion
+        </Animated.Text>
+        <ActivityIndicator color="#EC4899" style={{ marginTop: 24 }} />
+      </Animated.View>
     </LinearGradient>
   );
 }
@@ -51,30 +69,42 @@ function AnimatedSplash() {
 const splashStyles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
   },
   content: {
-    alignItems: 'center',
+    alignItems: "center",
   },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoShadow: {
+    width: 140,
+    height: 140,
+    borderRadius: 40,
+    padding: 8,
+    backgroundColor: "#ffffff",
+    shadowColor: "#000000",
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 16,
     marginBottom: 20,
   },
+  logo: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 32,
+  },
   title: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: "Inter_700Bold",
     fontSize: 32,
-    color: '#FFFFFF',
-    letterSpacing: 1,
+    color: "#111827",
+    letterSpacing: 0.8,
+    marginTop: 4,
   },
   subtitle: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: "Inter_400Regular",
     fontSize: 14,
-    color: 'rgba(255,255,255,0.5)',
+    color: "rgba(31,41,55,0.6)",
     marginTop: 8,
   },
 });
