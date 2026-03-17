@@ -176,10 +176,19 @@ export function getMonthlySpending(transactions: Transaction[], month?: number, 
     .reduce((sum, tx) => sum + tx.amount, 0);
 }
 
-export function getGreeting(): string {
+export type GreetingPeriod = 'morning' | 'afternoon' | 'evening';
+
+export function getGreetingPeriod(): GreetingPeriod {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good Morning';
-  if (hour < 17) return 'Good Afternoon';
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  return 'evening';
+}
+
+export function getGreeting(): string {
+  const period = getGreetingPeriod();
+  if (period === 'morning') return 'Good Morning';
+  if (period === 'afternoon') return 'Good Afternoon';
   return 'Good Evening';
 }
 

@@ -27,13 +27,38 @@ const RELATIONSHIPS = [
   { key: 'other', label: 'Other', icon: 'people' },
 ];
 
+type MedAppearance = 'capsule' | 'tablet' | 'round' | 'liquid';
+type MedInstruction = 'before_meal' | 'after_meal' | 'any';
+type MedScheduleType = 'continuous' | 'custom';
+
+interface MedicineSlots {
+  morning?: string | null;
+  noon?: string | null;
+  evening?: string | null;
+}
+
 interface Medicine {
   id: string;
   name: string;
-  time: string;
-  frequency: string;
-  taken: boolean;
-  snoozed: boolean;
+  dosage?: string;
+  appearance?: MedAppearance;
+  color?: string;
+  instruction?: MedInstruction;
+  slots?: MedicineSlots;
+  scheduleType?: MedScheduleType;
+  startDate?: string;
+  endDate?: string | null;
+  caregiverName?: string | null;
+  caregiverContact?: string | null;
+  totalReminders?: number;
+  takenReminders?: number;
+  missedReminders?: number;
+  adherenceScore?: number;
+  streak?: number;
+  lastTakenAt?: string | null;
+  lastStatus?: 'pending' | 'taken' | 'missed' | 'snoozed';
+  taken?: boolean;
+  snoozed?: boolean;
 }
 
 interface FamilyMember {
@@ -53,8 +78,20 @@ export default function FamilyScreen() {
   const [newName, setNewName] = useState('');
   const [selectedRel, setSelectedRel] = useState('self');
   const [medName, setMedName] = useState('');
-  const [medTime, setMedTime] = useState('8:00 AM');
-  const [medFreq, setMedFreq] = useState('Daily');
+  const [medDosage, setMedDosage] = useState('');
+  const [medAppearance, setMedAppearance] = useState<MedAppearance>('tablet');
+  const [medColor, setMedColor] = useState('#10B981');
+  const [medInstruction, setMedInstruction] = useState<MedInstruction>('any');
+  const [slotMorning, setSlotMorning] = useState(true);
+  const [slotNoon, setSlotNoon] = useState(false);
+  const [slotEvening, setSlotEvening] = useState(false);
+  const [slotMorningTime, setSlotMorningTime] = useState('9:00 AM');
+  const [slotNoonTime, setSlotNoonTime] = useState('1:00 PM');
+  const [slotEveningTime, setSlotEveningTime] = useState('8:00 PM');
+  const [medScheduleType, setMedScheduleType] = useState<MedScheduleType>('continuous');
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [medStartDate, setMedStartDate] = useState(todayIso);
+  const [medEndDate, setMedEndDate] = useState('');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
@@ -101,10 +138,27 @@ export default function FamilyScreen() {
     if (!token) return;
     (async () => {
       try {
+        const slots: MedicineSlots = {};
+        if (slotMorning) slots.morning = slotMorningTime;
+        if (slotNoon) slots.noon = slotNoonTime;
+        if (slotEvening) slots.evening = slotEveningTime;
+
+        const body = {
+          name: medName.trim(),
+          dosage: medDosage.trim(),
+          appearance: medAppearance,
+          color: medColor,
+          instruction: medInstruction,
+          slots,
+          scheduleType: medScheduleType,
+          startDate: medStartDate,
+          endDate: medScheduleType === 'custom' ? medEndDate || null : null,
+        };
+
         const res = await apiRequest(
           'POST',
           `/api/family/${showAddMedicine}/medicines`,
-          { name: medName.trim(), time: medTime, frequency: medFreq },
+          body,
           token,
         );
         const updatedMember = (await res.json()) as FamilyMember;
@@ -112,8 +166,19 @@ export default function FamilyScreen() {
           prev.map(m => (m.id === updatedMember.id ? updatedMember : m)),
         );
         setMedName('');
-        setMedTime('8:00 AM');
-        setMedFreq('Daily');
+        setMedDosage('');
+        setMedAppearance('tablet');
+        setMedColor('#10B981');
+        setMedInstruction('any');
+        setSlotMorning(true);
+        setSlotNoon(false);
+        setSlotEvening(false);
+        setSlotMorningTime('9:00 AM');
+        setSlotNoonTime('1:00 PM');
+        setSlotEveningTime('8:00 PM');
+        setMedScheduleType('continuous');
+        setMedStartDate(todayIso);
+        setMedEndDate('');
         setShowAddMedicine(null);
       } catch (e) {
         console.error('Add medicine error:', e);
@@ -231,40 +296,87 @@ export default function FamilyScreen() {
                 <Text style={[styles.noMedsText, { color: colors.textTertiary }]}>No medicines added</Text>
               )}
 
-              {member.medicines.map(med => (
-                <View key={med.id} style={[styles.medCard, { backgroundColor: isDark ? colors.cardElevated : colors.cardElevated, borderColor: colors.border }]}>
-                  <View style={styles.medInfo}>
-                    <View style={[styles.medIconWrap, { backgroundColor: '#10B981' + '15' }]}>
-                      <Ionicons name="medkit" size={16} color="#10B981" />
-                    </View>
-                    <View style={styles.medDetails}>
-                      <Text style={[styles.medName, { color: colors.text }]}>{med.name}</Text>
-                      <Text style={[styles.medSchedule, { color: colors.textTertiary }]}>{med.time} / {med.frequency}</Text>
-                    </View>
-                    {med.taken && (
-                      <View style={[styles.statusBadge, { backgroundColor: '#10B981' + '15' }]}>
-                        <Text style={[styles.statusText, { color: '#10B981' }]}>Taken</Text>
+              {member.medicines.map(med => {
+                const pillColor = med.color || '#10B981';
+                const adherence = typeof med.adherenceScore === 'number' ? med.adherenceScore : null;
+                const slots = med.slots || {};
+                const parts: string[] = [];
+                if (slots.morning) parts.push(`Morning ${slots.morning}`);
+                if (slots.noon) parts.push(`Noon ${slots.noon}`);
+                if (slots.evening) parts.push(`Evening ${slots.evening}`);
+                const scheduleText =
+                  parts.length > 0
+                    ? parts.join(' • ')
+                    : (med as any).time && (med as any).frequency
+                    ? `${(med as any).time} / ${(med as any).frequency}`
+                    : 'No schedule set';
+
+                return (
+                  <View
+                    key={med.id}
+                    style={[
+                      styles.medCard,
+                      {
+                        backgroundColor: isDark ? colors.cardElevated : colors.cardElevated,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.medInfo}>
+                      <View style={[styles.medIconWrap, { backgroundColor: pillColor + '15' }]}>
+                        <Ionicons name="medkit" size={16} color={pillColor} />
                       </View>
-                    )}
-                    {med.snoozed && (
-                      <View style={[styles.statusBadge, { backgroundColor: colors.warningDim }]}>
-                        <Text style={[styles.statusText, { color: colors.warning }]}>Snoozed</Text>
+                      <View style={styles.medDetails}>
+                        <Text style={[styles.medName, { color: colors.text }]}>
+                          {med.name}
+                          {med.dosage ? `  ${med.dosage}` : ''}
+                        </Text>
+                        <Text style={[styles.medSchedule, { color: colors.textTertiary }]}>
+                          {scheduleText}
+                          {med.instruction === 'before_meal' && ' • Before meal'}
+                          {med.instruction === 'after_meal' && ' • After meal'}
+                        </Text>
+                        {adherence !== null && (
+                          <Text style={[styles.medAdherence, { color: colors.textSecondary }]}>
+                            Adherence: {adherence}%
+                            {med.streak ? `  •  Streak ${med.streak} days` : ''}
+                          </Text>
+                        )}
                       </View>
-                    )}
+                      {med.taken && (
+                        <View style={[styles.statusBadge, { backgroundColor: '#10B981' + '15' }]}>
+                          <Text style={[styles.statusText, { color: '#10B981' }]}>Taken</Text>
+                        </View>
+                      )}
+                      {med.snoozed && (
+                        <View style={[styles.statusBadge, { backgroundColor: colors.warningDim }]}>
+                          <Text style={[styles.statusText, { color: colors.warning }]}>Snoozed</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.medActions}>
+                      <Pressable
+                        onPress={() => markMedicine(member.id, med.id, 'taken')}
+                        style={[styles.medBtn, { backgroundColor: '#10B981' + '12' }]}
+                      >
+                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => markMedicine(member.id, med.id, 'snooze')}
+                        style={[styles.medBtn, { backgroundColor: colors.warningDim }]}
+                      >
+                        <Ionicons name="time" size={18} color={colors.warning} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => markMedicine(member.id, med.id, 'skip')}
+                        style={[styles.medBtn, { backgroundColor: colors.dangerDim }]}
+                      >
+                        <Ionicons name="close" size={18} color={colors.danger} />
+                      </Pressable>
+                    </View>
                   </View>
-                  <View style={styles.medActions}>
-                    <Pressable onPress={() => markMedicine(member.id, med.id, 'taken')} style={[styles.medBtn, { backgroundColor: '#10B981' + '12' }]}>
-                      <Ionicons name="checkmark" size={18} color="#10B981" />
-                    </Pressable>
-                    <Pressable onPress={() => markMedicine(member.id, med.id, 'snooze')} style={[styles.medBtn, { backgroundColor: colors.warningDim }]}>
-                      <Ionicons name="time" size={18} color={colors.warning} />
-                    </Pressable>
-                    <Pressable onPress={() => markMedicine(member.id, med.id, 'skip')} style={[styles.medBtn, { backgroundColor: colors.dangerDim }]}>
-                      <Ionicons name="close" size={18} color={colors.danger} />
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </Animated.View>
         ))}
@@ -330,32 +442,258 @@ export default function FamilyScreen() {
               placeholder="e.g., Telma 40"
               placeholderTextColor={colors.textTertiary}
             />
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Dosage</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+              value={medDosage}
+              onChangeText={setMedDosage}
+              placeholder="e.g., 40mg"
+              placeholderTextColor={colors.textTertiary}
+            />
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Time</Text>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Appearance</Text>
             <View style={styles.relGrid}>
-              {['8:00 AM', '12:00 PM', '8:00 PM', '10:00 PM'].map(t => (
+              {[
+                { key: 'capsule', label: 'Capsule', icon: 'ellipse-outline' },
+                { key: 'tablet', label: 'Tablet', icon: 'square-outline' },
+                { key: 'round', label: 'Round', icon: 'radio-button-on' },
+                { key: 'liquid', label: 'Liquid', icon: 'water' },
+              ].map(opt => (
                 <Pressable
-                  key={t}
-                  onPress={() => setMedTime(t)}
-                  style={[styles.relChip, { backgroundColor: medTime === t ? colors.accentDim : colors.inputBg, borderColor: medTime === t ? colors.accent : colors.inputBorder }]}
+                  key={opt.key}
+                  onPress={() => setMedAppearance(opt.key as MedAppearance)}
+                  style={[
+                    styles.relChip,
+                    {
+                      backgroundColor:
+                        medAppearance === opt.key ? colors.accentDim : colors.inputBg,
+                      borderColor:
+                        medAppearance === opt.key ? colors.accent : colors.inputBorder,
+                    },
+                  ]}
                 >
-                  <Text style={[styles.relChipText, { color: medTime === t ? colors.accent : colors.textSecondary }]}>{t}</Text>
+                  <Ionicons
+                    name={opt.icon as any}
+                    size={16}
+                    color={medAppearance === opt.key ? colors.accent : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.relChipText,
+                      {
+                        color:
+                          medAppearance === opt.key ? colors.accent : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
                 </Pressable>
               ))}
             </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Frequency</Text>
-            <View style={styles.relGrid}>
-              {['Daily', 'Twice Daily', 'Weekly', 'As Needed'].map(f => (
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Color</Text>
+            <View style={styles.colorRow}>
+              {['#10B981', '#3B82F6', '#F97316', '#EF4444', '#8B5CF6'].map(c => (
                 <Pressable
-                  key={f}
-                  onPress={() => setMedFreq(f)}
-                  style={[styles.relChip, { backgroundColor: medFreq === f ? colors.accentMintDim : colors.inputBg, borderColor: medFreq === f ? colors.accentMint : colors.inputBorder }]}
+                  key={c}
+                  onPress={() => setMedColor(c)}
+                  style={[
+                    styles.colorDot,
+                    {
+                      backgroundColor: c,
+                      borderColor: medColor === c ? '#FFFFFF' : 'transparent',
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Timing</Text>
+            <View style={styles.slotRow}>
+              <Pressable
+                onPress={() => setSlotMorning(v => !v)}
+                style={[
+                  styles.slotChip,
+                  {
+                    backgroundColor: slotMorning ? colors.accentDim : colors.inputBg,
+                    borderColor: slotMorning ? colors.accent : colors.inputBorder,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.relChipText,
+                    { color: slotMorning ? colors.accent : colors.textSecondary },
+                  ]}
                 >
-                  <Text style={[styles.relChipText, { color: medFreq === f ? colors.accentMint : colors.textSecondary }]}>{f}</Text>
+                  Morning
+                </Text>
+                <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
+                  {slotMorningTime}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSlotNoon(v => !v)}
+                style={[
+                  styles.slotChip,
+                  {
+                    backgroundColor: slotNoon ? colors.accentDim : colors.inputBg,
+                    borderColor: slotNoon ? colors.accent : colors.inputBorder,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.relChipText,
+                    { color: slotNoon ? colors.accent : colors.textSecondary },
+                  ]}
+                >
+                  Noon
+                </Text>
+                <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
+                  {slotNoonTime}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSlotEvening(v => !v)}
+                style={[
+                  styles.slotChip,
+                  {
+                    backgroundColor: slotEvening ? colors.accentDim : colors.inputBg,
+                    borderColor: slotEvening ? colors.accent : colors.inputBorder,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.relChipText,
+                    { color: slotEvening ? colors.accent : colors.textSecondary },
+                  ]}
+                >
+                  Evening
+                </Text>
+                <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
+                  {slotEveningTime}
+                </Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+              Instruction
+            </Text>
+            <View style={styles.relGrid}>
+              {[
+                { key: 'before_meal', label: 'Before Meal' },
+                { key: 'after_meal', label: 'After Meal' },
+                { key: 'any', label: "Doesn't Matter" },
+              ].map(opt => (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setMedInstruction(opt.key as MedInstruction)}
+                  style={[
+                    styles.relChip,
+                    {
+                      backgroundColor:
+                        medInstruction === opt.key ? colors.accentMintDim : colors.inputBg,
+                      borderColor:
+                        medInstruction === opt.key ? colors.accentMint : colors.inputBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.relChipText,
+                      {
+                        color:
+                          medInstruction === opt.key
+                            ? colors.accentMint
+                            : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
                 </Pressable>
               ))}
             </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+              Duration
+            </Text>
+            <View style={styles.relGrid}>
+              {[
+                { key: 'continuous', label: 'Continuous / Lifetime' },
+                { key: 'custom', label: 'Custom' },
+              ].map(opt => (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setMedScheduleType(opt.key as MedScheduleType)}
+                  style={[
+                    styles.relChip,
+                    {
+                      backgroundColor:
+                        medScheduleType === opt.key ? colors.accentDim : colors.inputBg,
+                      borderColor:
+                        medScheduleType === opt.key ? colors.accent : colors.inputBorder,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.relChipText,
+                      {
+                        color:
+                          medScheduleType === opt.key
+                            ? colors.accent
+                            : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {medScheduleType === 'custom' && (
+              <>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  Start Date (YYYY-MM-DD)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                    },
+                  ]}
+                  value={medStartDate}
+                  onChangeText={setMedStartDate}
+                  placeholder={todayIso}
+                  placeholderTextColor={colors.textTertiary}
+                />
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  End Date (YYYY-MM-DD)
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                    },
+                  ]}
+                  value={medEndDate}
+                  onChangeText={setMedEndDate}
+                  placeholder="e.g., 2026-04-01"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </>
+            )}
 
             <View style={styles.modalBtns}>
               <Pressable onPress={() => setShowAddMedicine(null)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
@@ -401,6 +739,7 @@ const styles = StyleSheet.create({
   medDetails: { flex: 1 },
   medName: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   medSchedule: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  medAdherence: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   statusText: { fontFamily: 'Inter_600SemiBold', fontSize: 10, textTransform: 'uppercase' as const },
   medActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
@@ -414,6 +753,20 @@ const styles = StyleSheet.create({
   relGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   relChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
   relChipText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  colorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
+  colorDot: { width: 26, height: 26, borderRadius: 13, borderWidth: 2 },
+  slotRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slotChip: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: 90,
+  },
+  slotTime: { fontFamily: 'Inter_400Regular', fontSize: 11 },
   modalBtns: { flexDirection: 'row', gap: 12, marginTop: 8 },
   cancelBtn: { flex: 1, borderRadius: 14, borderWidth: 1, paddingVertical: 16, alignItems: 'center' },
   cancelBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },

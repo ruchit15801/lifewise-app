@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, Platform } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import {
   Transaction,
   Bill,
@@ -10,7 +10,7 @@ import {
 } from './data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
-import { readSmsFromDevice, requestSmsPermission } from './sms-reader';
+import { readSmsFromDeviceWithMeta, requestSmsPermissionDetails } from './sms-reader';
 import { parseSmsToTransactions } from './parse-sms';
 
 const STORAGE_KEYS = {
@@ -24,6 +24,9 @@ interface ExpenseContextValue {
   leaks: MoneyLeak[];
   isLoading: boolean;
   isSyncingSms: boolean;
+  smsSyncStatus: string | null;
+  smsSampleSenders: string[];
+  lastSmsReadCount: number | null;
   lastSmsSyncCount: number | null;
   toggleBillPaid: (billId: string) => void;
   refreshData: () => void;
@@ -57,6 +60,9 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [leaks, setLeaks] = useState<MoneyLeak[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingSms, setIsSyncingSms] = useState(false);
+  const [smsSyncStatus, setSmsSyncStatus] = useState<string | null>(null);
+  const [smsSampleSenders, setSmsSampleSenders] = useState<string[]>([]);
+  const [lastSmsReadCount, setLastSmsReadCount] = useState<number | null>(null);
   const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
   const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
@@ -107,53 +113,124 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const syncSmsFromDevice = useCallback(async () => {
     if (!token) return;
     setIsSyncingSms(true);
+    setSmsSyncStatus('Preparing SMS sync...');
+    setSmsSampleSenders([]);
+    setLastSmsReadCount(null);
     setLastSmsSyncCount(null);
     try {
       if (Platform.OS !== 'android') {
         Alert.alert('SMS sync not supported', 'Auto Track via SMS only works on Android phones.');
+        setSmsSyncStatus('SMS sync only works on Android devices.');
+        setLastSmsReadCount(0);
+        setLastSmsSyncCount(0);
         await loadData();
         return;
       }
 
-      const granted = await requestSmsPermission();
-      if (!granted) {
-        Alert.alert('Permission needed', 'Please allow SMS permission to enable Auto Track.');
+      setSmsSyncStatus('Requesting SMS permission...');
+      const permission = await requestSmsPermissionDetails();
+      if (permission.status !== 'granted') {
+        if (permission.status === 'never_ask_again') {
+          Alert.alert(
+            'Permission blocked',
+            'SMS permission is blocked. Please open Settings > Permissions and allow SMS.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  Linking.openSettings().catch(() => {});
+                },
+              },
+            ],
+          );
+        } else {
+          Alert.alert('Permission needed', 'Please allow SMS permission to enable Auto Track.');
+        }
+        setSmsSyncStatus(permission.message);
+        setLastSmsReadCount(0);
+        setLastSmsSyncCount(0);
         await loadData();
         return;
       }
-      const rawSms = await readSmsFromDevice(200);
+
+      setSmsSyncStatus('Reading SMS inbox...');
+      const smsResult = await readSmsFromDeviceWithMeta(150);
+      const rawSms = smsResult.messages;
+      const readCount = rawSms.length;
+      setLastSmsReadCount(readCount);
+      const senderPreview = Array.from(
+        new Set(
+          rawSms
+            .map((s) => String(s.address || '').trim())
+            .filter(Boolean)
+            .map((v) => v.slice(0, 18))
+        )
+      ).slice(0, 4);
+      setSmsSampleSenders(senderPreview);
+
+      if (smsResult.error && readCount === 0) {
+        setSmsSyncStatus(smsResult.error);
+      } else {
+        setSmsSyncStatus(`Read ${readCount} SMS. Parsing transactions...`);
+      }
+
       const parsed = parseSmsToTransactions(rawSms);
       if (parsed.length > 0) {
-        const res = await fetchWithAuth(token, '/api/transactions/sync-from-sms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transactions: parsed.map((p) => ({
-              merchant: p.merchant,
-              amount: p.amount,
-              date: p.date,
-              isDebit: p.isDebit,
-              description: p.description,
-              upiId: p.upiId,
-              category: p.category,
-            })),
-          }),
-        });
-        if (res.ok) {
+        const chunkSize = 40;
+        let totalSynced = 0;
+
+        for (let i = 0; i < parsed.length; i += chunkSize) {
+          const chunk = parsed.slice(i, i + chunkSize);
+          const upto = Math.min(i + chunk.length, parsed.length);
+          setSmsSyncStatus(`Syncing ${upto}/${parsed.length} transactions...`);
+
+          const res = await fetchWithAuth(token, '/api/transactions/sync-from-sms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transactions: chunk.map((p) => ({
+                merchant: p.merchant,
+                amount: p.amount,
+                date: p.date,
+                isDebit: p.isDebit,
+                description: p.description,
+                upiId: p.upiId,
+                category: p.category,
+              })),
+            }),
+          });
+
+          if (!res.ok) continue;
+
           try {
             const json = await res.json();
-            setLastSmsSyncCount(typeof json.synced === 'number' ? json.synced : 0);
+            const syncedChunk = typeof json.synced === 'number' ? json.synced : chunk.length;
+            totalSynced += syncedChunk;
           } catch {
-            setLastSmsSyncCount(0);
+            totalSynced += chunk.length;
           }
+
+          setLastSmsSyncCount(totalSynced);
           await loadData();
-        } else {
-          setLastSmsSyncCount(0);
         }
+
+        await loadData();
+        setLastSmsSyncCount(totalSynced);
+        setSmsSyncStatus(`Read ${readCount} SMS, synced ${totalSynced} transactions.`);
       } else {
+        setLastSmsSyncCount(0);
+        if (!smsResult.moduleAvailable && smsResult.error) {
+          setSmsSyncStatus(smsResult.error);
+        } else {
+          setSmsSyncStatus(`Read ${readCount} SMS, synced 0 transactions.`);
+        }
         await loadData();
       }
     } catch {
+      setSmsSyncStatus('SMS sync failed unexpectedly.');
+      setLastSmsReadCount(0);
+      setLastSmsSyncCount(0);
       await loadData();
     } finally {
       setIsSyncingSms(false);
@@ -161,8 +238,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   }, [token, loadData]);
 
   useEffect(() => {
-    loadData().then(() => syncSmsFromDevice());
-  }, [loadData, syncSmsFromDevice]);
+    loadData();
+  }, [loadData]);
 
   const toggleBillPaid = useCallback(async (billId: string) => {
     if (!token) return;
@@ -263,8 +340,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
 
   const refreshData = useCallback(async () => {
     await loadData();
-    await syncSmsFromDevice();
-  }, [loadData, syncSmsFromDevice]);
+  }, [loadData]);
 
   const setMonthlyBudget = useCallback(async (budget: number) => {
     setMonthlyBudgetState(budget);
@@ -305,6 +381,9 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       leaks,
       isLoading,
       isSyncingSms,
+      smsSyncStatus,
+      smsSampleSenders,
+      lastSmsReadCount,
       lastSmsSyncCount,
       toggleBillPaid,
       refreshData,
@@ -325,6 +404,9 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       leaks,
       isLoading,
       isSyncingSms,
+      smsSyncStatus,
+      smsSampleSenders,
+      lastSmsReadCount,
       lastSmsSyncCount,
       monthlyBudget,
       reminderSettings,

@@ -18,17 +18,21 @@ const AMOUNT_REGEX = /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{2})?)|([\d,]+(?:\.\d{2}
 const DEBIT_KEYWORDS = /debited|deducted|withdrawn|spent|paid to|sent to|purchase/i;
 const CREDIT_KEYWORDS = /credited|received|deposited|refund/i;
 
-// Extract merchant/sender: "to UPI- MERCHANT", "to VPA xxx@bank", "from XXX", "at MERCHANT"
+// Extract merchant/sender: "from xxx@okaxis", "towards MERCHANT", "debited from X on", "to UPI- MERCHANT", etc.
 function extractMerchant(body: string, isDebit: boolean): string {
   const upper = body;
   let match =
+    upper.match(/towards\s+([^.]+?)(?:\s+UPI|\.|$|\s+UMN)/i) ||
+    upper.match(/from\s+([^\s.]+@[^\s.]+)(?:\.|$|\s)/i) ||
+    upper.match(/from\s+([^.]+?)(?:\.|$|\s+on\s|\s+RRN)/i) ||
+    upper.match(/debited\s+from\s+([^.]+?)(?:\s+on\s|\s+Info)/i) ||
     upper.match(/to\s+UPI[- ]([^.]+?)(?:\.|$|\s+on)/i) ||
     upper.match(/to\s+VPA\s+([^\s.]+)/i) ||
     upper.match(/paid to\s+([^.]+?)(?:\.|$|\s+on)/i) ||
     upper.match(/sent to\s+([^.]+?)(?:\.|$|\s+on)/i) ||
     upper.match(/at\s+([^.]+?)(?:\.|$|\s+on)/i) ||
-    upper.match(/from\s+([^.]+?)(?:\.|$|\s+on)/i) ||
-    upper.match(/UPI\s*-\s*([^.]+?)(?:\.|$|\s+on)/i);
+    upper.match(/UPI\s*-\s*([^.]+?)(?:\.|$|\s+on)/i) ||
+    upper.match(/NEFT\s+Dr-[^-]+-([^-]+)-/i);
   if (match) {
     return match[1].trim().replace(/\s+/g, ' ').slice(0, 80);
   }
@@ -39,6 +43,9 @@ function extractMerchant(body: string, isDebit: boolean): string {
 function extractAmount(body: string): number | null {
   const normalized = body.replace(/,/g, '');
   const patterns = [
+    /credited\s+by\s+Rs\.?\s*([\d.]+)/i,
+    /debited\s+by\s+Rs\.?\s*([\d.]+)/i,
+    /(?:INR|Rs\.?|₹)\s*([\d.]+)\s*(?:debited|credited)/i,
     /(?:Rs\.?|INR|₹)\s*([\d.]+)/i,
     /([\d.]+)\s*(?:Rs\.?|INR|₹)/i,
     /debited\s*(?:with)?\s*[Rr]s\.?\s*([\d.]+)/i,
@@ -55,9 +62,25 @@ function extractAmount(body: string): number | null {
   return null;
 }
 
-function extractDate(body: string): Date {
+const MONTH_ABBR: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+function extractDate(body: string, smsDate?: number | string): Date {
   const now = new Date();
-  // "on 14-Mar-25" / "on 14/03/2025" / "dated 14-Mar"
+  if (smsDate != null) {
+    const d = new Date(typeof smsDate === 'number' ? smsDate : smsDate);
+    if (!isNaN(d.getTime())) return d;
+  }
+  // "09-MAR-26" / "on 14-Mar-25" / "14/03/2025"
+  const ddmmyy = body.match(/(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{2,4})/);
+  if (ddmmyy) {
+    const day = parseInt(ddmmyy[1], 10);
+    const monthStr = ddmmyy[2].toLowerCase().slice(0, 3);
+    const month = MONTH_ABBR[monthStr] ?? parseInt(ddmmyy[2], 10) - 1;
+    const y = parseInt(ddmmyy[3], 10);
+    const year = y < 100 ? 2000 + y : y;
+    const date = new Date(year, month, day);
+    if (!isNaN(date.getTime())) return date;
+  }
   const d = body.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
   if (d) {
     const day = parseInt(d[1], 10);
@@ -91,9 +114,7 @@ export function parseSmsToTransactions(
     const amount = extractAmount(body);
     if (amount == null || amount <= 0) continue;
 
-    const date = sms.date
-      ? new Date(typeof sms.date === 'number' ? sms.date : sms.date)
-      : extractDate(body);
+    const date = extractDate(body, sms.date);
     const merchant = extractMerchant(body, isDebit);
     const key = `${date.getTime()}-${merchant}-${amount}`;
     if (seen.has(key)) continue;

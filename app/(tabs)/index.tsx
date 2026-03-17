@@ -17,7 +17,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { getApiUrl, apiRequest } from '@/lib/query-client';
-import Animated, { FadeInDown, FadeInRight, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  FadeInRight,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  withSpring,
+  withSequence,
+  withDelay,
+} from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useExpenses } from '@/lib/expense-context';
@@ -29,8 +39,10 @@ import {
   getTodaySpending,
   getMonthlySpending,
   getGreeting,
+  getGreetingPeriod,
   formatTime,
   CategoryType,
+  type GreetingPeriod,
 } from '@/lib/data';
 
 function SpendingScoreRing({ score, colors, isDark, onPress }: { score: number; colors: any; isDark: boolean; onPress?: () => void }) {
@@ -167,6 +179,96 @@ function QuickAccessCard({ icon, label, subtitle, color, onPress, colors }: { ic
   );
 }
 
+const GREETING_CONFIG: Record<GreetingPeriod, { icon: string; accent: string; label: string }> = {
+  morning: { icon: 'sunny', accent: '#F59E0B', label: 'Good Morning' },
+  afternoon: { icon: 'partly-sunny', accent: '#3B82F6', label: 'Good Afternoon' },
+  evening: { icon: 'moon', accent: '#8B5CF6', label: 'Good Evening' },
+};
+
+const springConfig = { damping: 14, stiffness: 120 };
+
+function AnimatedGreeting({ userName, colors }: { userName: string; colors: any }) {
+  const period = getGreetingPeriod();
+  const config = GREETING_CONFIG[period];
+  const iconScale = useSharedValue(0);
+  const iconScalePulse = useSharedValue(1);
+  const iconTranslateY = useSharedValue(0);
+  const greetingOpacity = useSharedValue(0);
+  const greetingTranslateY = useSharedValue(12);
+  const nameOpacity = useSharedValue(0);
+  const nameTranslateY = useSharedValue(16);
+
+  useEffect(() => {
+    iconScale.value = withSpring(1, springConfig);
+    greetingOpacity.value = withDelay(100, withSpring(1, springConfig));
+    greetingTranslateY.value = withDelay(100, withSpring(0, springConfig));
+    nameOpacity.value = withDelay(200, withSpring(1, springConfig));
+    nameTranslateY.value = withDelay(200, withSpring(0, springConfig));
+  }, []);
+
+  useEffect(() => {
+    iconTranslateY.value = withRepeat(
+      withSequence(
+        withTiming(-4, { duration: 2000 }),
+        withTiming(0, { duration: 2000 })
+      ),
+      -1,
+      true
+    );
+    iconScalePulse.value = withRepeat(
+      withSequence(
+        withTiming(1.05, { duration: 2400 }),
+        withTiming(1, { duration: 2400 })
+      ),
+      -1,
+      true
+    );
+  }, [iconTranslateY, iconScalePulse]);
+
+  const iconAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: iconScale.value * iconScalePulse.value },
+      { translateY: iconTranslateY.value },
+    ],
+  }));
+
+  const greetingTextStyle = useAnimatedStyle(() => ({
+    opacity: greetingOpacity.value,
+    transform: [{ translateY: greetingTranslateY.value }],
+  }));
+
+  const nameTextStyle = useAnimatedStyle(() => ({
+    opacity: nameOpacity.value,
+    transform: [{ translateY: nameTranslateY.value }],
+  }));
+
+  return (
+    <View style={styles.headerLeft}>
+      <View style={styles.greetingRow}>
+        <Animated.View style={iconAnimatedStyle}>
+          <View style={[styles.greetingIconWrap, { backgroundColor: config.accent + '20' }]}>
+            <Ionicons name={config.icon as any} size={22} color={config.accent} />
+          </View>
+        </Animated.View>
+        <View style={styles.greetingTextWrap}>
+          <Animated.Text
+            style={[styles.greetingAnimated, { color: config.accent }, greetingTextStyle]}
+            numberOfLines={1}
+          >
+            {config.label}
+          </Animated.Text>
+          <Animated.Text
+            style={[styles.userNameHero, { color: colors.text }, nameTextStyle]}
+            numberOfLines={1}
+          >
+            {userName}
+          </Animated.Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const {
@@ -175,6 +277,9 @@ export default function HomeScreen() {
     leaks,
     isLoading,
     isSyncingSms,
+    smsSyncStatus,
+    smsSampleSenders,
+    lastSmsReadCount,
     lastSmsSyncCount,
     monthlyBudget,
     refreshData,
@@ -223,6 +328,43 @@ export default function HomeScreen() {
     }, [])
   );
 
+  const handleScanBill = useCallback(async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets || !result.assets[0]) return;
+    const asset = result.assets[0];
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/bills/scan', baseUrl).toString();
+      const form = new FormData();
+      form.append('image', {
+        uri: asset.uri,
+        name: asset.fileName || 'bill.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      } as any);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: form,
+      });
+      if (!res.ok) {
+        Alert.alert('Scan failed', 'Could not scan this bill. You can add it manually in Reminders.');
+        return;
+      }
+      await refreshData();
+      Alert.alert('Bill added', 'We scanned your bill and created a reminder.');
+    } catch {
+      Alert.alert('Scan failed', 'Network error while scanning bill.');
+    }
+  }, [token, refreshData]);
+
   if (isLoading && !transactions.length && !bills.length && !leaks.length) {
     return <SyncingSmsOverlay colors={colors} />;
   }
@@ -269,43 +411,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleScanBill = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets || !result.assets[0]) return;
-    const asset = result.assets[0];
-    try {
-      const baseUrl = getApiUrl();
-      const url = new URL('/api/bills/scan', baseUrl).toString();
-      const form = new FormData();
-      form.append('image', {
-        uri: asset.uri,
-        name: asset.fileName || 'bill.jpg',
-        type: asset.mimeType || 'image/jpeg',
-      } as any);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: form,
-      });
-      if (!res.ok) {
-        Alert.alert('Scan failed', 'Could not scan this bill. You can add it manually in Reminders.');
-        return;
-      }
-      await refreshData();
-      Alert.alert('Bill added', 'We scanned your bill and created a reminder.');
-    } catch (e) {
-      Alert.alert('Scan failed', 'Network error while scanning bill.');
-    }
-  }, [refreshData]);
-
   if (seniorMode) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -314,10 +419,7 @@ export default function HomeScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 }]}
         >
             <View style={styles.header}>
-              <View style={styles.headerLeft}>
-                <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
-                <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
-              </View>
+              <AnimatedGreeting userName={userName} colors={colors} />
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Pressable
                   onPress={() => router.push('/notifications')}
@@ -394,10 +496,7 @@ export default function HomeScreen() {
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
           <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Text style={[styles.greeting, { color: colors.text }]}>{getGreeting()}</Text>
-              <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
-            </View>
+            <AnimatedGreeting userName={userName} colors={colors} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Pressable
                 onPress={() => router.push('/notifications')}
@@ -419,16 +518,32 @@ export default function HomeScreen() {
 
         {isSyncingSms && (
           <View style={[styles.syncBanner, { backgroundColor: colors.accentDim }]}>
-            <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 8 }} />
-            <Text style={[styles.syncBannerText, { color: colors.text }]}>Syncing SMS…</Text>
+            <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 8, marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.syncBannerText, { color: colors.text }]}>
+                {smsSyncStatus || 'Syncing SMS...'}
+              </Text>
+              {smsSampleSenders.length > 0 && (
+                <Text style={[styles.syncBannerSubText, { color: colors.textSecondary }]}>
+                  Sources: {smsSampleSenders.join(', ')}
+                </Text>
+              )}
+            </View>
           </View>
         )}
-        {!isSyncingSms && lastSmsSyncCount != null && (
+        {!isSyncingSms && (lastSmsReadCount != null || lastSmsSyncCount != null) && (
           <View style={[styles.syncBanner, { backgroundColor: colors.card }]}>
             <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={[styles.syncBannerText, { color: colors.textSecondary }]}>
-              Synced {lastSmsSyncCount} SMS transaction{lastSmsSyncCount === 1 ? '' : 's'}.
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.syncBannerText, { color: colors.textSecondary }]}>
+                Read {lastSmsReadCount ?? 0} SMS, synced {lastSmsSyncCount ?? 0} transaction{(lastSmsSyncCount ?? 0) === 1 ? '' : 's'}.
+              </Text>
+              {smsSyncStatus && (
+                <Text style={[styles.syncBannerSubText, { color: colors.textTertiary }]}>
+                  {smsSyncStatus}
+                </Text>
+              )}
+            </View>
           </View>
         )}
 
@@ -759,9 +874,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerLeft: { gap: 2 },
+  headerLeft: { flex: 1, minWidth: 0 },
+  greetingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  greetingIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greetingTextWrap: { flex: 1, gap: 2, justifyContent: 'center', minWidth: 0 },
+  greetingAnimated: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    letterSpacing: 0.3,
+  },
+  userNameHero: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 24,
+    letterSpacing: -0.3,
+  },
   greeting: { fontFamily: 'Inter_400Regular', fontSize: 14, opacity: 0.6 },
-  userName: { fontFamily: 'Inter_700Bold', fontSize: 28 },
+  userName: { fontFamily: 'Inter_700Bold', fontSize: 26 },
   settingsBtn: {
     width: 44,
     height: 44,
@@ -889,6 +1023,16 @@ const styles = StyleSheet.create({
   scoreDetailCard: { borderRadius: 24, padding: 24, borderWidth: 1, width: '100%', maxWidth: 360 },
   scoreDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16, borderBottomWidth: 1, marginBottom: 4 },
   scoreDetailTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    textAlignVertical: 'top',
+    minHeight: 86,
+  },
   scoreBreakdown: { gap: 4, marginBottom: 16 },
   scoreRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1 },
   scoreRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -909,5 +1053,10 @@ const styles = StyleSheet.create({
   syncBannerText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
+  },
+  syncBannerSubText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    marginTop: 2,
   },
 });

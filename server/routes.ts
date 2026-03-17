@@ -26,8 +26,8 @@ const JWT_EXPIRY = '7d';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-reply@lifewise.app>';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || 'asst_WmTjqjLyo3ki1MFHtqDtal6R';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const S3_BUCKET = process.env.AWS_S3_BUCKET;
 
@@ -161,6 +161,15 @@ async function sendReminderEmail(opts: {
   } catch (e) {
     console.error('Reminder email send error:', e);
   }
+}
+
+function getOpenAIKey(): string | undefined {
+  return (
+    process.env.OPENAI_API_KEY ||
+    process.env.OPENAI_KEY ||
+    process.env.OPENAI_TOKEN ||
+    process.env.OPEN_AI_API_KEY
+  );
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -853,7 +862,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let due = new Date();
       due.setDate(due.getDate() + 1);
 
-      if (OPENAI_API_KEY) {
+      const openAIKey = getOpenAIKey();
+      if (openAIKey) {
         try {
           const prompt =
             'You are a reminder parser. Given a natural language reminder in English or Hinglish, ' +
@@ -865,7 +875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${OPENAI_API_KEY}`,
+              Authorization: `Bearer ${openAIKey}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -1012,10 +1022,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ----- AI Assistant (data-aware chat) -----
+  // ----- AI Assistant (Assistants API: Conversly asst_WmTjqjLyo3ki1MFHtqDtal6R, or fallback chat completions) -----
   app.post('/api/assistant/chat', authMiddleware, async (req, res) => {
     try {
-      if (!OPENAI_API_KEY) {
+      const openAIKey = getOpenAIKey();
+      if (!openAIKey) {
         return res.status(500).json({ message: 'Assistant is not configured. Set OPENAI_API_KEY.' });
       }
 
@@ -1084,45 +1095,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
       };
 
+      const authHeader = {
+        Authorization: `Bearer ${openAIKey}`,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2',
+      };
+      const baseUrl = 'https://api.openai.com/v1';
+
+      if (OPENAI_ASSISTANT_ID) {
+        // Use OpenAI Assistants API (Conversly assistant)
+        const createThreadRes = await fetch(`${baseUrl}/threads`, {
+          method: 'POST',
+          headers: authHeader,
+          body: JSON.stringify({}),
+        });
+        if (!createThreadRes.ok) {
+          const errText = await createThreadRes.text();
+          console.error('OpenAI threads error:', errText);
+          return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+        }
+        const { id: threadId } = (await createThreadRes.json()) as { id: string };
+
+        const contextContent =
+          'LifeWise user data context (use for personalised advice): ' + JSON.stringify(snapshot);
+        const addCtxRes = await fetch(`${baseUrl}/threads/${threadId}/messages`, {
+          method: 'POST',
+          headers: authHeader,
+          body: JSON.stringify({ role: 'user', content: contextContent }),
+        });
+        if (!addCtxRes.ok) {
+          const errText = await addCtxRes.text();
+          console.error('OpenAI add message error:', errText);
+          return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+        }
+        for (const m of userMessages.filter((m) => m.role === 'user' || m.role === 'assistant')) {
+          const addRes = await fetch(`${baseUrl}/threads/${threadId}/messages`, {
+            method: 'POST',
+            headers: authHeader,
+            body: JSON.stringify({ role: m.role, content: m.content }),
+          });
+          if (!addRes.ok) {
+            const errText = await addRes.text();
+            console.error('OpenAI add message error:', errText);
+            return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+          }
+        }
+
+        const runRes = await fetch(`${baseUrl}/threads/${threadId}/runs`, {
+          method: 'POST',
+          headers: authHeader,
+          body: JSON.stringify({ assistant_id: OPENAI_ASSISTANT_ID }),
+        });
+        if (!runRes.ok) {
+          const errText = await runRes.text();
+          console.error('OpenAI create run error:', errText);
+          return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+        }
+        const { id: runId } = (await runRes.json()) as { id: string };
+
+        const pollUntil = Date.now() + 60_000;
+        let status: string = 'queued';
+        while (Date.now() < pollUntil) {
+          const runStatusRes = await fetch(`${baseUrl}/threads/${threadId}/runs/${runId}`, {
+            headers: { Authorization: `Bearer ${openAIKey}`, 'OpenAI-Beta': 'assistants=v2' },
+          });
+          if (!runStatusRes.ok) break;
+          const runStatus = (await runStatusRes.json()) as { status: string };
+          status = runStatus.status;
+          if (status === 'completed') break;
+          if (status === 'failed' || status === 'cancelled' || status === 'expired') {
+            console.error('OpenAI run status:', status);
+            return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+        if (status !== 'completed') {
+          return res.status(500).json({ message: 'Assistant is taking too long. Please try again.' });
+        }
+
+        const listMsgRes = await fetch(`${baseUrl}/threads/${threadId}/messages`, {
+          headers: { Authorization: `Bearer ${openAIKey}`, 'OpenAI-Beta': 'assistants=v2' },
+        });
+        if (!listMsgRes.ok) {
+          const errText = await listMsgRes.text();
+          console.error('OpenAI list messages error:', errText);
+          return res.status(500).json({ message: 'Assistant error. Please try again later.' });
+        }
+        const listData = (await listMsgRes.json()) as {
+          data?: Array<{ role: string; content?: Array<{ type: string; text?: { value?: string } }> }>;
+        };
+        const data = listData.data || [];
+        const lastAssistant = data.find((m) => m.role === 'assistant');
+        const reply =
+          lastAssistant?.content?.find((c) => c.type === 'text')?.text?.value ||
+          'Sorry, I could not generate a response right now.';
+        return res.json({ reply });
+      }
+
+      // Fallback: chat completions (no assistant ID)
       const systemPrompt =
         'You are LifeWise, a financial and life assistant for Indian users. ' +
         'You MUST base advice on the provided JSON snapshot of the user data. ' +
         'Explain in simple, friendly language (you can mix light Hinglish but keep it clear). ' +
         'Never invent transactions or bills. Be concise and practical.';
-
       const messagesForModel = [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'system',
-          content: `User data snapshot (JSON): ${JSON.stringify(snapshot)}`,
-        },
+        { role: 'system', content: `User data snapshot (JSON): ${JSON.stringify(snapshot)}` },
         ...userMessages.filter((m) => m.role === 'user' || m.role === 'assistant'),
       ];
-
-      const openAiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      const openAiRes = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        headers: authHeader,
         body: JSON.stringify({
           model: OPENAI_MODEL,
           messages: messagesForModel,
           temperature: 0.4,
         }),
       });
-
       if (!openAiRes.ok) {
         const errText = await openAiRes.text();
         console.error('OpenAI error:', errText);
         return res.status(500).json({ message: 'Assistant error. Please try again later.' });
       }
-
       const json = await openAiRes.json();
       const reply =
         json.choices?.[0]?.message?.content ||
         'Sorry, I could not generate a response right now.';
-
       return res.json({ reply });
     } catch (err) {
       console.error('Assistant chat error:', err);
@@ -1189,19 +1287,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/family/:id/medicines', authMiddleware, async (req, res) => {
     try {
       const memberId = req.params.id;
-      const { name, time, frequency } = req.body;
+      const {
+        name,
+        dosage,
+        appearance,
+        color,
+        instruction,
+        slots,
+        scheduleType,
+        startDate,
+        endDate,
+        caregiverName,
+        caregiverContact,
+      } = req.body as {
+        name?: string;
+        dosage?: string;
+        appearance?: string;
+        color?: string;
+        instruction?: string;
+        slots?: { morning?: string; noon?: string; evening?: string };
+        scheduleType?: 'continuous' | 'custom';
+        startDate?: string;
+        endDate?: string | null;
+        caregiverName?: string;
+        caregiverContact?: string;
+      };
+
       if (!name) {
         return res.status(400).json({ message: 'Medicine name is required' });
       }
+
       const medId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      const safeSlots = slots && typeof slots === 'object' ? slots : {};
+      const todayIso = new Date().toISOString().slice(0, 10);
+
       const med = {
         id: medId,
         name: String(name).trim(),
-        time: String(time || '8:00 AM'),
-        frequency: String(frequency || 'Daily'),
-        taken: false,
-        snoozed: false,
+        dosage: dosage ? String(dosage).trim() : '',
+        appearance: (appearance as string) || 'tablet',
+        color: color ? String(color) : '#10B981',
+        instruction: (instruction as string) || 'any',
+        slots: {
+          morning: safeSlots.morning || null,
+          noon: safeSlots.noon || null,
+          evening: safeSlots.evening || null,
+        },
+        scheduleType: scheduleType === 'custom' ? 'custom' as const : 'continuous' as const,
+        startDate: startDate || todayIso,
+        endDate: scheduleType === 'custom' && endDate ? endDate : null,
+        caregiverName: caregiverName ? String(caregiverName).trim() : null,
+        caregiverContact: caregiverContact ? String(caregiverContact).trim() : null,
+        // Tracking fields for adherence / streaks
+        totalReminders: 0,
+        takenReminders: 0,
+        missedReminders: 0,
+        adherenceScore: 0,
+        streak: 0,
+        lastTakenAt: null,
+        lastStatus: 'pending',
+        createdAt: new Date(),
       };
+
       const result = await family.updateOne(
         { _id: toId(memberId), userId: req.userId },
         { $push: { medicines: med } },
@@ -1234,13 +1381,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Family member not found' });
       }
       const meds = Array.isArray(member.medicines) ? member.medicines : [];
+      const now = new Date();
+
       const updatedMeds = meds.map((m: any) => {
         if (m.id !== medId) return m;
-        if (action === 'taken') return { ...m, taken: true, snoozed: false };
-        if (action === 'snooze') return { ...m, snoozed: true };
-        if (action === 'skip') return { ...m, taken: false, snoozed: false };
+
+        const base = {
+          totalReminders: typeof m.totalReminders === 'number' ? m.totalReminders : 0,
+          takenReminders: typeof m.takenReminders === 'number' ? m.takenReminders : 0,
+          missedReminders: typeof m.missedReminders === 'number' ? m.missedReminders : 0,
+          streak: typeof m.streak === 'number' ? m.streak : 0,
+        };
+
+        if (action === 'taken') {
+          const total = base.totalReminders + 1;
+          const taken = base.takenReminders + 1;
+          const adherence = total > 0 ? Math.round((taken / total) * 100) : 0;
+          return {
+            ...m,
+            taken: true,
+            snoozed: false,
+            lastStatus: 'taken',
+            lastTakenAt: now,
+            totalReminders: total,
+            takenReminders: taken,
+            missedReminders: base.missedReminders,
+            adherenceScore: adherence,
+            streak: base.streak + 1,
+          };
+        }
+
+        if (action === 'snooze') {
+          return {
+            ...m,
+            snoozed: true,
+            lastStatus: 'snoozed',
+          };
+        }
+
+        if (action === 'skip') {
+          const total = base.totalReminders + 1;
+          const missed = base.missedReminders + 1;
+          const adherence =
+            total > 0 ? Math.round((base.takenReminders / total) * 100) : 0;
+          return {
+            ...m,
+            taken: false,
+            snoozed: false,
+            lastStatus: 'missed',
+            totalReminders: total,
+            takenReminders: base.takenReminders,
+            missedReminders: missed,
+            adherenceScore: adherence,
+            streak: 0,
+          };
+        }
+
         return m;
       });
+
       await family.updateOne(
         { _id: toId(memberId), userId: req.userId },
         { $set: { medicines: updatedMeds } },
