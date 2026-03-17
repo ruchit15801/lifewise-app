@@ -85,7 +85,7 @@ export default function LeaksScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
+          { paddingTop: topInset + 16, paddingBottom: 30 },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>

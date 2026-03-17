@@ -63,18 +63,18 @@ function SpendingScoreRing({ score, colors, isDark, onPress }: { score: number; 
 const ringStyles = StyleSheet.create({
   container: { alignItems: 'center', justifyContent: 'center' },
   outerRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   innerRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -250,22 +250,11 @@ function TopReminderAlert({
             style={[styles.reminderAlertSubtitle, { color: colors.textSecondary }]}
             numberOfLines={1}
           >
-            {`Due ${dateLabel} • ${formatAmount(next.amount)}`}
+            {`Due ${dateLabel}`}
           </Text>
         </View>
       </View>
     </View>
-  );
-}
-
-function ActionButton({ icon, label, color, onPress, colors }: { icon: string; label: string; color: string; onPress: () => void; colors: any }) {
-  return (
-    <Pressable onPress={onPress} style={styles.actionBtnWrap}>
-      <View style={[styles.actionBtnCircle, { backgroundColor: color + '15', borderColor: color + '25' }]}>
-        <Ionicons name={icon as any} size={24} color={color} />
-      </View>
-      <Text style={[styles.actionBtnLabel, { color: colors.textSecondary }]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -278,6 +267,67 @@ function QuickAccessCard({ icon, label, subtitle, color, onPress, colors }: { ic
       <Text style={[styles.quickCardLabel, { color: colors.text }]}>{label}</Text>
       <Text style={[styles.quickCardSubtitle, { color: colors.textTertiary }]}>{subtitle}</Text>
     </Pressable>
+  );
+}
+
+function PrimaryCircleActions({ colors, onScanBill, onQuickAdd, onAutoTrack }: {
+  colors: any;
+  onScanBill: () => void;
+  onQuickAdd: () => void;
+  onAutoTrack: () => void;
+}) {
+  const baseScale = useSharedValue(0.9);
+  useEffect(() => {
+    baseScale.value = withSpring(1, { damping: 14, stiffness: 140 });
+  }, [baseScale]);
+
+  const pulse1 = useSharedValue(1);
+  const pulse2 = useSharedValue(1);
+  const pulse3 = useSharedValue(1);
+
+  useEffect(() => {
+    pulse1.value = withRepeat(withSequence(withTiming(1.05, { duration: 900 }), withTiming(1, { duration: 900 })), -1, true);
+    pulse2.value = withRepeat(withSequence(withDelay(150, withTiming(1.05, { duration: 900 })), withTiming(1, { duration: 900 })), -1, true);
+    pulse3.value = withRepeat(withSequence(withDelay(300, withTiming(1.05, { duration: 900 })), withTiming(1, { duration: 900 })), -1, true);
+  }, [pulse1, pulse2, pulse3]);
+
+  const circleStyle1 = useAnimatedStyle(() => ({
+    transform: [{ scale: baseScale.value * pulse1.value }],
+  }));
+  const circleStyle2 = useAnimatedStyle(() => ({
+    transform: [{ scale: baseScale.value * pulse2.value }],
+  }));
+  const circleStyle3 = useAnimatedStyle(() => ({
+    transform: [{ scale: baseScale.value * pulse3.value }],
+  }));
+
+  return (
+    <View style={styles.primaryCircleRow}>
+      <Pressable onPress={onQuickAdd} style={styles.primaryCircleItem}>
+        <Animated.View style={[styles.primaryCircleOuter, { backgroundColor: '#F5E9FF' }, circleStyle1]}>
+          <View style={[styles.primaryCircleInner, { backgroundColor: '#A855F7' + '10', borderColor: '#A855F7' + '40' }]}>
+            <Ionicons name="mic" size={22} color="#7C3AED" />
+          </View>
+        </Animated.View>
+        <Text style={[styles.primaryCircleLabel, { color: colors.text }]}>Voice Reminder</Text>
+      </Pressable>
+      <Pressable onPress={onScanBill} style={styles.primaryCircleItem}>
+        <Animated.View style={[styles.primaryCircleOuter, { backgroundColor: '#E0F2FE' }, circleStyle2]}>
+          <View style={[styles.primaryCircleInner, { backgroundColor: '#3B82F6' + '10', borderColor: '#3B82F6' + '40' }]}>
+            <Ionicons name="camera" size={22} color="#2563EB" />
+          </View>
+        </Animated.View>
+        <Text style={[styles.primaryCircleLabel, { color: colors.text }]}>Scan Bill</Text>
+      </Pressable>
+      <Pressable onPress={onAutoTrack} style={styles.primaryCircleItem}>
+        <Animated.View style={[styles.primaryCircleOuter, { backgroundColor: '#FEF3C7' }, circleStyle3]}>
+          <View style={[styles.primaryCircleInner, { backgroundColor: '#F59E0B' + '10', borderColor: '#F59E0B' + '40' }]}>
+            <Ionicons name="sparkles" size={22} color="#D97706" />
+          </View>
+        </Animated.View>
+        <Text style={[styles.primaryCircleLabel, { color: colors.text }]}>Quick Entry</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -433,7 +483,7 @@ export default function HomeScreen() {
     useCallback(() => {
       AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
         setSeniorMode(v === 'true');
-      }).catch(() => {});
+      }).catch(() => { });
     }, [])
   );
 
@@ -532,42 +582,42 @@ export default function HomeScreen() {
               title="Refreshing…"
             />
           }
-          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: 30 }]}
         >
-            <TopReminderAlert
-              colors={colors}
-              upcomingBills={upcomingBills}
-            />
-            <MustSmsSyncBanner
-              colors={colors}
-              isSyncingSms={isSyncingSms || isLoading}
-              smsSyncStatus={smsSyncStatus}
-              smsSyncProgressCurrent={smsSyncProgressCurrent}
-              smsSyncProgressTotal={smsSyncProgressTotal}
-              lastSmsReadCount={lastSmsReadCount}
-              lastSmsSyncCount={lastSmsSyncCount}
-            />
-            <View style={styles.header}>
-              <AnimatedGreeting userName={userName} colors={colors} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Pressable
-                  onPress={() => router.push('/notifications')}
-                  style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                >
-                  <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
-                  {unreadCount > 0 && (
-                    <View style={styles.unreadDot} />
-                  )}
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push('/settings')}
-                  style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  testID="home-settings-btn"
-                >
-                  <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
-                </Pressable>
-              </View>
+          <TopReminderAlert
+            colors={colors}
+            upcomingBills={upcomingBills}
+          />
+          <MustSmsSyncBanner
+            colors={colors}
+            isSyncingSms={isSyncingSms || isLoading}
+            smsSyncStatus={smsSyncStatus}
+            smsSyncProgressCurrent={smsSyncProgressCurrent}
+            smsSyncProgressTotal={smsSyncProgressTotal}
+            lastSmsReadCount={lastSmsReadCount}
+            lastSmsSyncCount={lastSmsSyncCount}
+          />
+          <View style={styles.header}>
+            <AnimatedGreeting userName={userName} colors={colors} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Pressable
+                onPress={() => router.push('/notifications')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+                {unreadCount > 0 && (
+                  <View style={styles.unreadDot} />
+                )}
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/settings')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                testID="home-settings-btn"
+              >
+                <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
             </View>
+          </View>
 
           <View style={[styles.seniorHeroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>Balance Left</Text>
@@ -620,7 +670,7 @@ export default function HomeScreen() {
         }
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
+          { paddingTop: topInset + 12, paddingBottom: 30 },
         ]}
       >
         <TopReminderAlert
@@ -656,6 +706,15 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </View>
+        </Animated.View>
+
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(40).duration(450) : undefined}>
+          <PrimaryCircleActions
+            colors={colors}
+            onScanBill={handleScanBill}
+            onQuickAdd={() => setShowQuickAdd(true)}
+            onAutoTrack={syncSmsFromDevice}
+          />
         </Animated.View>
 
         {/* Old multi-line SMS banners removed in favor of compact MUST banner */}
@@ -769,7 +828,7 @@ export default function HomeScreen() {
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Access</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Reach</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
             <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
             <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
@@ -842,13 +901,6 @@ export default function HomeScreen() {
           )}
         </Animated.View>
 
-        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(480).duration(500) : undefined}>
-          <View style={styles.actionButtonsRow}>
-            <ActionButton icon="add-circle" label="Quick Add" color={colors.accent} onPress={() => setShowQuickAdd(true)} colors={colors} />
-            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={handleScanBill} colors={colors} />
-            <ActionButton icon="flash" label="Auto Track" color="#F59E0B" onPress={syncSmsFromDevice} colors={colors} />
-          </View>
-        </Animated.View>
       </ScrollView>
 
       <Modal visible={showScoreDetail} transparent animationType="fade">
@@ -1035,7 +1087,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   heroCard: { borderRadius: 24, padding: 24, marginBottom: 20 },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   heroLeft: { flex: 1, marginRight: 16 },
   heroLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 6 },
   heroAmount: { fontFamily: 'Inter_700Bold', fontSize: 36, marginBottom: 12 },
@@ -1121,10 +1173,43 @@ const styles = StyleSheet.create({
   txTime: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
   txAmount: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   txDivider: { height: 1, marginHorizontal: 14 },
-  actionButtonsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 20 },
-  actionBtnWrap: { alignItems: 'center', gap: 8 },
-  actionBtnCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
-  actionBtnLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  primaryCircleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    marginTop: 4,
+  },
+  primaryCircleItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  primaryCircleOuter: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  primaryCircleInner: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+  },
+  primaryCircleLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    marginTop: 8,
+  },
   seniorHeroCard: { borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', marginBottom: 28, gap: 8 },
   seniorHeroLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },
   seniorHeroAmount: { fontFamily: 'Inter_700Bold', fontSize: 42, letterSpacing: -1 },

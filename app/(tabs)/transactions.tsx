@@ -204,7 +204,7 @@ export default function TransactionsScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingBottom: Platform.OS === 'web' ? 100 : 100,
+          paddingBottom: 30,
         }}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}

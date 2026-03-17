@@ -126,7 +126,7 @@ function ReminderCard({
         <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
           <Pressable
             onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
               onMarkPaid();
             }}
             style={[styles.cardActionBtn, { backgroundColor: isPaid ? colors.warningDim : colors.accentMintDim }]}
@@ -137,7 +137,7 @@ function ReminderCard({
           {!isPaid && (
             <Pressable
               onPress={() => {
-                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
                 onSnooze();
               }}
               style={[styles.cardActionBtn, { backgroundColor: colors.accentBlueDim }]}
@@ -147,7 +147,7 @@ function ReminderCard({
           )}
           <Pressable
             onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
               onEdit();
             }}
             style={[styles.cardActionBtn, { backgroundColor: colors.accentDim }]}
@@ -156,7 +156,7 @@ function ReminderCard({
           </Pressable>
           <Pressable
             onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
               onDelete();
             }}
             style={[styles.cardActionBtn, { backgroundColor: colors.dangerDim }]}
@@ -250,7 +250,7 @@ function AddEditModal({
     } else {
       const effectiveReminderDays =
         Array.isArray(reminderSettings.defaultReminderDays) &&
-        reminderSettings.defaultReminderDays.length > 0
+          reminderSettings.defaultReminderDays.length > 0
           ? reminderSettings.defaultReminderDays
           : [3, 1, 0];
 
@@ -627,7 +627,7 @@ export default function BillsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
+          { paddingTop: topInset + 16, paddingBottom: 30 },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
@@ -747,7 +747,7 @@ export default function BillsScreen() {
                 key={bill.id}
                 bill={bill}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
-                onSnooze={() => {}}
+                onSnooze={() => { }}
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
                 onDelete={() => handleDelete(bill.id)}
                 index={idx}
