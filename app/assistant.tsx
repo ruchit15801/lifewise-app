@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,32 +7,22 @@ import {
   Pressable,
   Platform,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
-import { useCurrency } from '@/lib/currency-context';
-import { useExpenses } from '@/lib/expense-context';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/query-client';
-import { CATEGORIES, CategoryType, getMonthlySpending } from '@/lib/data';
 
 interface Message {
   id: string;
   text: string;
   isUser: boolean;
-  cards?: AnalysisCard[];
-}
-
-interface AnalysisCard {
-  label: string;
-  value: string;
-  icon: string;
-  color: string;
 }
 
 const QUICK_CHIPS = [
@@ -45,11 +35,12 @@ const QUICK_CHIPS = [
 ];
 
 export default function AssistantScreen() {
+  const params = useLocalSearchParams<{ chatId?: string }>();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
-  const { formatAmount } = useCurrency();
-  const { transactions, bills, leaks, monthlyBudget } = useExpenses();
+  const { colors } = useTheme();
   const { token } = useAuth();
+  const [chatId, setChatId] = useState<string>(params.chatId ? String(params.chatId) : '');
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(!!params.chatId);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -63,25 +54,33 @@ export default function AssistantScreen() {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
-  const monthlySpend = useMemo(() => getMonthlySpending(transactions), [transactions]);
+  useEffect(() => {
+    setChatId(params.chatId ? String(params.chatId) : '');
+  }, [params.chatId]);
 
-  const categoryTotals = useMemo(() => {
-    const totals: Partial<Record<CategoryType, number>> = {};
-    transactions.forEach(tx => {
-      if (tx.isDebit) {
-        totals[tx.category] = (totals[tx.category] || 0) + tx.amount;
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!token || !params.chatId) return;
+      setLoadingHistory(true);
+      try {
+        const res = await apiRequest('GET', `/api/assistant/chats/${params.chatId}/messages`, undefined, token);
+        const json = await res.json();
+        const incoming = Array.isArray(json?.messages) ? json.messages : [];
+        const mapped = incoming.map((m: any, idx: number) => ({
+          id: m.id || `m-${idx}`,
+          text: m.content || '',
+          isUser: m.role === 'user',
+        }));
+        if (mapped.length > 0) setMessages(mapped);
+      } catch {
+        // ignore and keep greeting
+      } finally {
+        setLoadingHistory(false);
       }
-    });
-    return totals;
-  }, [transactions]);
+    };
+    loadHistory();
+  }, [token, params.chatId]);
 
-  const merchantTotals = useMemo(() => {
-    const map: Record<string, number> = {};
-    transactions.forEach(tx => {
-      map[tx.merchant] = (map[tx.merchant] || 0) + tx.amount;
-    });
-    return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 5);
-  }, [transactions]);
   const handleSend = useCallback(
     async (text?: string) => {
       const query = text || inputText.trim();
@@ -98,6 +97,8 @@ export default function AssistantScreen() {
 
       try {
         const payload = {
+          chat_id: chatId || undefined,
+          create_chat: !chatId,
           messages: messages
             .map(m => ({
               role: m.isUser ? 'user' as const : 'assistant' as const,
@@ -108,6 +109,9 @@ export default function AssistantScreen() {
 
         const res = await apiRequest('POST', '/api/assistant/chat', payload, token);
         const data = await res.json();
+        if (data?.chat_id && !chatId) {
+          setChatId(String(data.chat_id));
+        }
         const replyText: string =
           typeof data.reply === 'string'
             ? data.reply
@@ -134,7 +138,7 @@ export default function AssistantScreen() {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     },
-    [inputText, token, messages],
+    [inputText, token, messages, chatId],
   );
 
   const handleBack = () => {
@@ -164,19 +168,6 @@ export default function AssistantScreen() {
         ]}>
           {item.text}
         </Text>
-        {item.cards && (
-          <View style={styles.cardsGrid}>
-            {item.cards.map((card, idx) => (
-              <View key={idx} style={[styles.analysisCard, { backgroundColor: card.color + '10', borderColor: card.color + '20' }]}>
-                <View style={[styles.analysisIconWrap, { backgroundColor: card.color + '15' }]}>
-                  <Ionicons name={card.icon as any} size={16} color={card.color} />
-                </View>
-                <Text style={[styles.analysisLabel, { color: colors.textSecondary }]}>{card.label}</Text>
-                <Text style={[styles.analysisValue, { color: colors.text }]}>{card.value}</Text>
-              </View>
-            ))}
-          </View>
-        )}
       </View>
     </Animated.View>
   );
@@ -188,8 +179,8 @@ export default function AssistantScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Decision Assistant</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textTertiary }]}>AI-powered insights</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Wise AI Assistant</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textTertiary }]}>Contextual life and finance guidance</Text>
         </View>
         <View style={{ width: 24 }} />
       </View>
@@ -218,6 +209,11 @@ export default function AssistantScreen() {
           </View>
         }
       />
+      {loadingHistory && (
+        <View style={styles.historyLoader}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      )}
 
       <View style={[styles.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: bottomInset }]}>
         <TextInput
@@ -265,4 +261,5 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, fontFamily: 'Inter_400Regular', fontSize: 15 },
   sendBtnWrap: { borderRadius: 14, overflow: 'hidden' },
   sendBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  historyLoader: { position: 'absolute', top: 90, right: 16 },
 });

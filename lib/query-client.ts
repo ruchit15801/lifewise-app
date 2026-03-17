@@ -1,5 +1,8 @@
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { Platform } from "react-native";
+import Constants from "expo-constants";
+let preferredApiBaseUrl: string | null = null;
 
 /**
  * Gets the base URL for the Express API server.
@@ -14,6 +17,10 @@ export function getApiUrl(): string {
     "127.0.0.1:5000";
 
   host = host.replace(/^https?:\/\//, "").split("/")[0];
+  // Android emulator cannot reach host localhost directly.
+  if (Platform.OS === "android") {
+    host = host.replace("localhost", "10.0.2.2").replace("127.0.0.1", "10.0.2.2");
+  }
   const isLocal =
     host.includes("localhost") ||
     host.includes("127.0.0.1") ||
@@ -21,6 +28,100 @@ export function getApiUrl(): string {
     /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(host);
   const url = new URL(isLocal ? `http://${host}` : `https://${host}`);
   return url.href.replace(/\/$/, "");
+}
+
+function getExpoDevHost(): string | null {
+  const c = Constants as unknown as {
+    expoConfig?: { hostUri?: string };
+    manifest2?: { extra?: { expoClient?: { hostUri?: string } } };
+    manifest?: { debuggerHost?: string; hostUri?: string };
+  };
+  const hostUri =
+    c.expoConfig?.hostUri ||
+    c.manifest2?.extra?.expoClient?.hostUri ||
+    c.manifest?.debuggerHost ||
+    c.manifest?.hostUri;
+  if (!hostUri || typeof hostUri !== "string") return null;
+  return hostUri.replace(/^https?:\/\//, "").split("/")[0] || null;
+}
+
+function getFallbackApiUrl(baseUrl: string): string | null {
+  if (Platform.OS !== "android") return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const hostname = parsed.hostname;
+  if (hostname !== "10.0.2.2" && hostname !== "127.0.0.1" && hostname !== "localhost") {
+    return null;
+  }
+
+  const devHost = getExpoDevHost();
+  if (!devHost) return null;
+
+  const lanIp = devHost.split(":")[0];
+  if (!lanIp || lanIp === "localhost" || lanIp === "127.0.0.1") return null;
+
+  parsed.hostname = lanIp;
+  return parsed.href.replace(/\/$/, "");
+}
+
+function isAndroidLoopbackBaseUrl(baseUrl: string): boolean {
+  try {
+    const parsed = new URL(baseUrl);
+    return parsed.hostname === "10.0.2.2" || parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  } catch {
+    return false;
+  }
+}
+
+function getBaseUrlCandidates(): string[] {
+  const baseUrl = getApiUrl();
+  const fallbackBaseUrl = getFallbackApiUrl(baseUrl);
+  const candidates: string[] = [];
+
+  if (preferredApiBaseUrl) {
+    candidates.push(preferredApiBaseUrl);
+  }
+
+  // On Android devices, prefer LAN fallback before emulator loopback when available.
+  if (fallbackBaseUrl && isAndroidLoopbackBaseUrl(baseUrl)) {
+    candidates.push(fallbackBaseUrl, baseUrl);
+  } else {
+    candidates.push(baseUrl);
+    if (fallbackBaseUrl) candidates.push(fallbackBaseUrl);
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+export function getApiBaseCandidates(): string[] {
+  return getBaseUrlCandidates();
+}
+
+async function fetchWithApiBaseFallback(route: string, init: RequestInit): Promise<Response> {
+  const candidates = getBaseUrlCandidates();
+  let lastError: unknown = null;
+
+  for (const baseUrl of candidates) {
+    try {
+      const url = new URL(route, baseUrl);
+      const res = await fetch(url.toString(), init);
+      preferredApiBaseUrl = baseUrl;
+      return res;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Network request failed");
+}
+
+export async function apiRawRequest(route: string, init: RequestInit): Promise<Response> {
+  return fetchWithApiBaseFallback(route, init);
 }
 
 async function throwIfResNotOk(res: Response) {
@@ -36,12 +137,10 @@ export async function apiRequest(
   data?: unknown | undefined,
   token?: string | null,
 ): Promise<Response> {
-  const baseUrl = getApiUrl();
-  const url = new URL(route, baseUrl);
   const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(url.toString(), {
+  const res = await fetchWithApiBaseFallback(route, {
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
@@ -58,10 +157,8 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const baseUrl = getApiUrl();
-    const url = new URL(queryKey.join("/") as string, baseUrl);
-
-    const res = await fetch(url.toString(), {
+    const route = queryKey.join("/") as string;
+    const res = await fetchWithApiBaseFallback(route, {
       credentials: "include",
     });
 

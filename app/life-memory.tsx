@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,6 +14,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useAuth } from '@/lib/auth-context';
+import { apiRequest } from '@/lib/query-client';
 import { CATEGORIES, CategoryType } from '@/lib/data';
 
 interface MemoryCard {
@@ -27,12 +29,34 @@ interface MemoryCard {
 
 export default function LifeMemoryScreen() {
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { formatAmount } = useCurrency();
+  const { token } = useAuth();
   const { transactions, bills, leaks } = useExpenses();
+  const [patternDuration, setPatternDuration] = useState(30);
+  const [habitInsights, setHabitInsights] = useState<string[]>([]);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!token) return;
+      try {
+        const [settingsRes, insightsRes] = await Promise.all([
+          apiRequest('GET', '/api/memory/settings', undefined, token),
+          apiRequest('GET', '/api/memory/insights', undefined, token),
+        ]);
+        const settings = (await settingsRes.json()) as { pattern_duration: number };
+        const insights = (await insightsRes.json()) as { habits?: string[] };
+        setPatternDuration(settings.pattern_duration || 30);
+        setHabitInsights(Array.isArray(insights.habits) ? insights.habits : []);
+      } catch {
+        // ignore
+      }
+    };
+    load();
+  }, [token]);
 
   const memories = useMemo((): MemoryCard[] => {
     const cards: MemoryCard[] = [];
@@ -163,8 +187,20 @@ export default function LifeMemoryScreen() {
       }
     }
 
+    if (habitInsights.length > 0) {
+      habitInsights.forEach((habit, index) => {
+        cards.push({
+          id: `habit_${index}`,
+          icon: 'moon',
+          iconColor: '#6366F1',
+          title: 'Life Habit Detection',
+          insight: habit,
+          tag: 'Habit',
+        });
+      });
+    }
     return cards;
-  }, [transactions, bills, leaks, formatAmount]);
+  }, [transactions, bills, leaks, formatAmount, habitInsights]);
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
@@ -192,9 +228,41 @@ export default function LifeMemoryScreen() {
           <View style={[styles.summaryIcon, { backgroundColor: colors.accentDim }]}>
             <Ionicons name="sparkles" size={24} color={colors.accent} />
           </View>
-          <Text style={[styles.summaryText, { color: colors.textSecondary }]}>
-            We've analyzed your spending patterns and remembered {memories.length} insights about your lifestyle.
-          </Text>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={[styles.summaryText, { color: colors.textSecondary }]}>
+              We analyzed your patterns for last {patternDuration} days and found {memories.length} insights.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+              {[10, 15, 30, 60].map((days) => (
+                <Pressable
+                  key={days}
+                  onPress={async () => {
+                    if (!token) return;
+                    try {
+                      await apiRequest('POST', '/api/memory/settings', { pattern_duration: days }, token);
+                      setPatternDuration(days);
+                      const refreshed = await apiRequest('GET', '/api/memory/insights', undefined, token);
+                      const json = (await refreshed.json()) as { habits?: string[] };
+                      setHabitInsights(Array.isArray(json.habits) ? json.habits : []);
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  style={[
+                    styles.durationChip,
+                    {
+                      backgroundColor: patternDuration === days ? colors.accentDim : colors.inputBg,
+                      borderColor: patternDuration === days ? colors.accent : colors.inputBorder,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.durationChipText, { color: patternDuration === days ? colors.accent : colors.textSecondary }]}>
+                    {days} days
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
         </View>
 
         {memories.map((memory, idx) => (
@@ -231,6 +299,8 @@ const styles = StyleSheet.create({
   summaryCard: { borderRadius: 20, padding: 20, borderWidth: 1, marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 14 },
   summaryIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   summaryText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
+  durationChip: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  durationChipText: { fontFamily: 'Inter_500Medium', fontSize: 11 },
   memoryCard: { borderRadius: 20, padding: 20, borderWidth: 1, marginBottom: 12, gap: 10 },
   memoryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   memoryIconWrap: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },

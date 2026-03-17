@@ -130,10 +130,11 @@ function AuthGate() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
+    const inSmsDetection = segments[0] === 'sms-detection';
     const inTabs = segments[0] === '(tabs)';
     const inSettings = segments[0] === 'settings';
 
-    if (!hasOnboarded && !inOnboarding) {
+    if (!hasOnboarded && !inOnboarding && !inSmsDetection) {
       router.replace('/onboarding');
     } else if (hasOnboarded && !isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login');
@@ -175,11 +176,16 @@ function AuthGate() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="onboarding" />
+        <Stack.Screen name="sms-detection" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="life-memory" />
         <Stack.Screen name="family" />
         <Stack.Screen name="assistant" />
+        <Stack.Screen name="voice-reminder" />
+        <Stack.Screen name="scan-bill" />
+        <Stack.Screen name="smart-capture" />
+        <Stack.Screen name="quick-entry" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>

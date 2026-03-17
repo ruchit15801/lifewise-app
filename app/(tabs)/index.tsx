@@ -10,13 +10,11 @@ import {
   Modal,
   Alert,
   RefreshControl,
-  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
-import { getApiUrl, apiRequest } from '@/lib/query-client';
+import { apiRequest } from '@/lib/query-client';
 import Animated, {
   FadeInDown,
   FadeInRight,
@@ -38,7 +36,6 @@ import {
   CATEGORIES,
   getTodaySpending,
   getMonthlySpending,
-  getGreeting,
   getGreetingPeriod,
   formatTime,
   CategoryType,
@@ -83,10 +80,10 @@ const ringStyles = StyleSheet.create({
   scoreLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 8, letterSpacing: 1.5 },
 });
 
-function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors }: {
-  icon: string; iconColor: string; bgColor: string; title: string; value: string; subtitle: string; colors: any;
+function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors, onPress }: {
+  icon: string; iconColor: string; bgColor: string; title: string; value: string; subtitle: string; colors: any; onPress?: () => void;
 }) {
-  return (
+  const body = (
     <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={[styles.insightIconWrap, { backgroundColor: bgColor }]}>
         <Ionicons name={icon as any} size={18} color={iconColor} />
@@ -96,6 +93,8 @@ function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors 
       <Text style={[styles.insightSubtitle, { color: colors.textTertiary }]}>{subtitle}</Text>
     </View>
   );
+  if (onPress) return <Pressable onPress={onPress}>{body}</Pressable>;
+  return body;
 }
 
 function CategoryPill({ category, total, index, colors, formatAmount }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string }) {
@@ -131,37 +130,42 @@ function TransactionRow({ merchant, amount, category, date, colors, formatAmount
   );
 }
 
-function SyncingSmsOverlay({ colors }: { colors: any }) {
-  const rotation = useSharedValue(0);
-  React.useEffect(() => {
-    rotation.value = withRepeat(withTiming(360, { duration: 1500 }), -1, true);
-  }, [rotation]);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-  return (
-    <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-      <LinearGradient
-        colors={[colors.accentDim, colors.bgSecondary || colors.card]}
-        style={styles.syncOverlayCard}
-      >
-        <Animated.View style={[styles.syncIconWrap, { backgroundColor: colors.accentDim }, animatedStyle]}>
-          <Ionicons name="sync" size={40} color={colors.accent} />
-        </Animated.View>
-        <Text style={[styles.syncTitle, { color: colors.text }]}>Syncing SMS</Text>
-        <Text style={[styles.syncSubtitle, { color: colors.textSecondary }]}>Fetching your transactions…</Text>
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 16 }} />
-      </LinearGradient>
-    </View>
-  );
-}
-
 function ActionButton({ icon, label, color, onPress, colors }: { icon: string; label: string; color: string; onPress: () => void; colors: any }) {
+  const pressScale = useSharedValue(1);
+  const pulse = useSharedValue(1);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1.05, { duration: 900 }),
+        withTiming(1, { duration: 900 }),
+      ),
+      -1,
+      true,
+    );
+  }, [pulse]);
+
+  const animatedCircleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value * pulse.value }],
+  }));
+
   return (
-    <Pressable onPress={onPress} style={styles.actionBtnWrap}>
-      <View style={[styles.actionBtnCircle, { backgroundColor: color + '15', borderColor: color + '25' }]}>
-        <Ionicons name={icon as any} size={24} color={color} />
-      </View>
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => { pressScale.value = withSpring(0.92); }}
+      onPressOut={() => { pressScale.value = withSpring(1); }}
+      style={styles.actionBtnWrap}
+    >
+      <Animated.View style={[styles.actionBtnCircle, { backgroundColor: color + '16', borderColor: color + '35' }, animatedCircleStyle]}>
+        <LinearGradient
+          colors={[color + '2A', color + '10']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.actionBtnInner}
+        >
+          <Ionicons name={icon as any} size={24} color={color} />
+        </LinearGradient>
+      </Animated.View>
       <Text style={[styles.actionBtnLabel, { color: colors.textSecondary }]}>{label}</Text>
     </Pressable>
   );
@@ -275,7 +279,6 @@ export default function HomeScreen() {
     transactions,
     bills,
     leaks,
-    isLoading,
     isSyncingSms,
     smsSyncStatus,
     smsSampleSenders,
@@ -283,19 +286,23 @@ export default function HomeScreen() {
     lastSmsSyncCount,
     monthlyBudget,
     refreshData,
-    syncSmsFromDevice,
-    quickAddReminder,
   } = useExpenses();
   const { user, token } = useAuth();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const [seniorMode, setSeniorMode] = useState(false);
   const [showScoreDetail, setShowScoreDetail] = useState(false);
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickAddText, setQuickAddText] = useState('');
-  const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [dailyMetrics, setDailyMetrics] = useState<{
+    hydration: number;
+    sleep_hours: number;
+    calories_burned: number;
+    nutrition_intake: number;
+    health_planet: number;
+    meds_supplements: number;
+    tasks: number;
+  } | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
@@ -320,6 +327,20 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  useEffect(() => {
+    const loadMetrics = async () => {
+      if (!token) return;
+      try {
+        const res = await apiRequest('GET', '/api/daily-metrics', undefined, token);
+        const json = await res.json();
+        setDailyMetrics(json);
+      } catch {
+        setDailyMetrics(null);
+      }
+    };
+    loadMetrics();
+  }, [token, transactions.length, bills.length]);
+
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
@@ -327,47 +348,6 @@ export default function HomeScreen() {
       }).catch(() => {});
     }, [])
   );
-
-  const handleScanBill = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets || !result.assets[0]) return;
-    const asset = result.assets[0];
-    try {
-      const baseUrl = getApiUrl();
-      const url = new URL('/api/bills/scan', baseUrl).toString();
-      const form = new FormData();
-      form.append('image', {
-        uri: asset.uri,
-        name: asset.fileName || 'bill.jpg',
-        type: asset.mimeType || 'image/jpeg',
-      } as any);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: form,
-      });
-      if (!res.ok) {
-        Alert.alert('Scan failed', 'Could not scan this bill. You can add it manually in Reminders.');
-        return;
-      }
-      await refreshData();
-      Alert.alert('Bill added', 'We scanned your bill and created a reminder.');
-    } catch {
-      Alert.alert('Scan failed', 'Network error while scanning bill.');
-    }
-  }, [token, refreshData]);
-
-  if (isLoading && !transactions.length && !bills.length && !leaks.length) {
-    return <SyncingSmsOverlay colors={colors} />;
-  }
 
   const todaySpend = getTodaySpending(transactions);
   const monthlySpend = getMonthlySpending(transactions);
@@ -547,6 +527,15 @@ export default function HomeScreen() {
           </View>
         )}
 
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(60).duration(500) : undefined}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Access</Text>
+          <View style={styles.actionButtonsRow}>
+            <ActionButton icon="mic" label="Voice Reminder" color={colors.accent} onPress={() => router.push('/voice-reminder')} colors={colors} />
+            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={() => router.push('/scan-bill')} colors={colors} />
+            <ActionButton icon="sparkles" label="Quick Entry" color="#F59E0B" onPress={() => router.push('/quick-entry')} colors={colors} />
+          </View>
+        </Animated.View>
+
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(80).duration(500) : undefined}>
           <LinearGradient
             colors={colors.heroGradient as unknown as [string, string, ...string[]]}
@@ -600,7 +589,7 @@ export default function HomeScreen() {
 
         {upcomingBills.length > 0 && (
           <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Reminders</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today Reminders</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
               {upcomingBills.map((bill) => {
                 const dueDate = new Date(bill.dueDate);
@@ -633,6 +622,7 @@ export default function HomeScreen() {
               value={formatAmount(totalLeakAmount)}
               subtitle="/month"
               colors={colors}
+              onPress={() => router.push('/(tabs)/money-leaks')}
             />
             <InsightCard
               icon="notifications"
@@ -653,18 +643,48 @@ export default function HomeScreen() {
               colors={colors}
             />
           </View>
+          {totalLeakAmount > 0 && (
+            <Pressable
+              onPress={() => router.push('/(tabs)/money-leaks')}
+              style={[styles.moneyLeakAlertCard, { backgroundColor: colors.warningDim, borderColor: colors.warning }]}
+            >
+              <View style={styles.moneyLeakAlertTop}>
+                <Text style={[styles.moneyLeakAlertTitle, { color: colors.warning }]}>Money Leak Detected</Text>
+                <Ionicons name="alert-circle" size={16} color={colors.warning} />
+              </View>
+              <Text style={[styles.moneyLeakAlertText, { color: colors.text }]}>
+                You spent {formatAmount(totalLeakAmount)} in leak categories this month.
+              </Text>
+              <Text style={[styles.moneyLeakAlertLink, { color: colors.warning }]}>See details →</Text>
+            </Pressable>
+          )}
         </Animated.View>
 
-        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Access</Text>
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(220).duration(500) : undefined}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Cards</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
             <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
             <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
-            <QuickAccessCard icon="chatbubble-ellipses" label="Assistant" subtitle="Smart Advice" color="#3B82F6" onPress={() => router.push('/assistant')} colors={colors} />
+            <QuickAccessCard icon="git-network" label="LifeFlow" subtitle="Plan & Timeline" color="#14B8A6" onPress={() => router.push('/life-flow')} colors={colors} />
+            <QuickAccessCard icon="chatbubble-ellipses" label="WiseAI" subtitle="Smart Advice" color="#3B82F6" onPress={() => router.push('/(tabs)/wiseai')} colors={colors} />
           </ScrollView>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(240).duration(500) : undefined}>
+          {dailyMetrics && (
+            <>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Daily Modules</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
+                <QuickAccessCard icon="water" label="Water" subtitle={`${dailyMetrics.hydration} glasses`} color="#06B6D4" onPress={showComingSoon} colors={colors} />
+                <QuickAccessCard icon="moon" label="Sleep" subtitle={`${dailyMetrics.sleep_hours} hrs`} color="#6366F1" onPress={showComingSoon} colors={colors} />
+                <QuickAccessCard icon="barbell" label="Fitness" subtitle={`${dailyMetrics.calories_burned} cal`} color="#F97316" onPress={showComingSoon} colors={colors} />
+                <QuickAccessCard icon="nutrition" label="Nutrition" subtitle={`${dailyMetrics.nutrition_intake} kcal`} color="#10B981" onPress={showComingSoon} colors={colors} />
+                <QuickAccessCard icon="planet" label="Health Planet" subtitle={`${dailyMetrics.health_planet}%`} color="#14B8A6" onPress={showComingSoon} colors={colors} />
+                <QuickAccessCard icon="medkit" label="Meds & Supplements" subtitle={`${dailyMetrics.meds_supplements} taken`} color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
+                <QuickAccessCard icon="checkbox" label="Tasks" subtitle={`${dailyMetrics.tasks} today`} color="#F59E0B" onPress={() => router.push('/life-flow')} colors={colors} />
+              </ScrollView>
+            </>
+          )}
           <View style={[styles.lifeInsightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.lifeInsightIconWrap, { backgroundColor: colors.accentDim }]}>
               <Ionicons name="sparkles" size={18} color={colors.accent} />
@@ -713,7 +733,7 @@ export default function HomeScreen() {
               <View style={styles.emptyTextWrap}>
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>No activity recorded</Text>
                 <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
-                  Tap Auto Track or add a transaction to see your latest spending here.
+                  Add a reminder or transaction to see your latest activity here.
                 </Text>
               </View>
             </View>
@@ -729,13 +749,6 @@ export default function HomeScreen() {
           )}
         </Animated.View>
 
-        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(480).duration(500) : undefined}>
-          <View style={styles.actionButtonsRow}>
-            <ActionButton icon="add-circle" label="Quick Add" color={colors.accent} onPress={() => setShowQuickAdd(true)} colors={colors} />
-            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={handleScanBill} colors={colors} />
-            <ActionButton icon="flash" label="Auto Track" color="#F59E0B" onPress={syncSmsFromDevice} colors={colors} />
-          </View>
-        </Animated.View>
       </ScrollView>
 
       <Modal visible={showScoreDetail} transparent animationType="fade">
@@ -790,72 +803,6 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={showQuickAdd} transparent animationType="fade">
-        <Pressable
-          style={styles.scoreOverlay}
-          onPress={() => {
-            if (!isQuickAdding) setShowQuickAdd(false);
-          }}
-        >
-          <View style={[styles.scoreDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Quick Add Reminder</Text>
-              {!isQuickAdding && (
-                <Pressable onPress={() => setShowQuickAdd(false)} hitSlop={10}>
-                  <Ionicons name="close" size={22} color={colors.textTertiary} />
-                </Pressable>
-              )}
-            </View>
-            <Text style={[styles.lifeInsightText, { color: colors.textSecondary, marginBottom: 12 }]}>
-              Type something like "Pay electricity bill tomorrow at 8 pm".
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text,
-                  marginBottom: 16,
-                },
-              ]}
-              value={quickAddText}
-              onChangeText={setQuickAddText}
-              placeholder='e.g., "Pay electricity bill tomorrow at 8 pm"'
-              placeholderTextColor={colors.textTertiary}
-              multiline
-              numberOfLines={3}
-            />
-            <Pressable
-              disabled={!quickAddText.trim() || isQuickAdding}
-              onPress={async () => {
-                if (!quickAddText.trim()) return;
-                setIsQuickAdding(true);
-                await quickAddReminder(quickAddText.trim());
-                setIsQuickAdding(false);
-                setShowQuickAdd(false);
-                setQuickAddText('');
-              }}
-              style={[
-                styles.shareBtn,
-                {
-                  backgroundColor: !quickAddText.trim() || isQuickAdding ? colors.accentDim : colors.accent,
-                  marginTop: 10,
-                },
-              ]}
-            >
-              {isQuickAdding ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                  <Text style={[styles.shareBtnText, { color: '#FFFFFF' }]}>Create Reminder</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -976,6 +923,17 @@ const styles = StyleSheet.create({
   insightTitle: { fontFamily: 'Inter_500Medium', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
   insightValue: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   insightSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 10 },
+  moneyLeakAlertCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 2,
+  },
+  moneyLeakAlertTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  moneyLeakAlertTitle: { fontFamily: 'Inter_700Bold', fontSize: 12, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  moneyLeakAlertText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  moneyLeakAlertLink: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 4 },
   quickAccessScroll: { gap: 10, paddingBottom: 20 },
   quickCard: { borderRadius: 18, padding: 16, borderWidth: 1, width: 130, gap: 8 },
   quickCardIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
@@ -1008,9 +966,10 @@ const styles = StyleSheet.create({
   txTime: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
   txAmount: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   txDivider: { height: 1, marginHorizontal: 14 },
-  actionButtonsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 20 },
-  actionBtnWrap: { alignItems: 'center', gap: 8 },
-  actionBtnCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  actionButtonsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, paddingTop: 2, paddingBottom: 14, marginBottom: 8 },
+  actionBtnWrap: { flex: 1, alignItems: 'center', gap: 8 },
+  actionBtnCircle: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', borderWidth: 1.6 },
+  actionBtnInner: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   actionBtnLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   seniorHeroCard: { borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', marginBottom: 28, gap: 8 },
   seniorHeroLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },
@@ -1032,6 +991,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlignVertical: 'top',
     minHeight: 86,
+  },
+  smallTypeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  smallTypeChipText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    textTransform: 'capitalize' as const,
   },
   scoreBreakdown: { gap: 4, marginBottom: 16 },
   scoreRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1 },

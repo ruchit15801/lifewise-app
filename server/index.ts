@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
+import { Server as SocketIOServer } from "socket.io";
 
 const app = express();
 const log = console.log;
@@ -237,6 +238,19 @@ function setupErrorHandler(app: express.Application) {
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
+  const io = new SocketIOServer(server, {
+    cors: { origin: "*", methods: ["GET", "POST"] },
+  });
+  app.set("io", io);
+
+  io.on("connection", (socket) => {
+    socket.on("join-user", (userId: string) => {
+      if (userId) socket.join(`user:${userId}`);
+    });
+    socket.on("join-family", (familyId: string) => {
+      if (familyId) socket.join(`family:${familyId}`);
+    });
+  });
 
   setupErrorHandler(app);
 

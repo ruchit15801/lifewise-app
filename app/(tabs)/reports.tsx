@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,17 +12,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import Colors, { ThemeColors } from '@/constants/colors';
+import { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useAuth } from '@/lib/auth-context';
+import { apiRequest } from '@/lib/query-client';
 import {
   CATEGORIES,
   getCategoryBreakdown,
   CategoryType,
 } from '@/lib/data';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const RANGE_OPTIONS = [
+  { key: 'day', label: 'Day' },
+  { key: 'month', label: 'Month' },
+  { key: 'custom', label: 'Custom Days' },
+  { key: 'year', label: 'Year' },
+] as const;
 
 function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark, formatAmount }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
   const cat = CATEGORIES[category];
@@ -58,20 +65,20 @@ export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
-  const { transactions, isLoading, monthlyBudget } = useExpenses();
-  const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
-  const [selectedYear] = useState(now.getFullYear());
+  const { transactions, isLoading } = useExpenses();
+  const { token } = useAuth();
+  const [selectedRange, setSelectedRange] = useState<(typeof RANGE_OPTIONS)[number]['key']>('month');
+  const [customDays, setCustomDays] = useState<10 | 30 | 60 | 90>(30);
+  const [reportData, setReportData] = useState<{
+    tasks_completed: number;
+    reminders_missed: number;
+    medicine_taken: number;
+    life_score: number;
+  } | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
-  const monthTxs = useMemo(() =>
-    transactions.filter(tx => {
-      const d = new Date(tx.date);
-      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
-    }),
-    [transactions, selectedMonth, selectedYear]
-  );
+  const monthTxs = useMemo(() => transactions, [transactions]);
 
   const breakdown = useMemo(() => getCategoryBreakdown(monthTxs), [monthTxs]);
   const totalSpent = monthTxs.reduce((s, tx) => s + (tx.isDebit ? tx.amount : 0), 0);
@@ -89,9 +96,28 @@ export default function ReportsScreen() {
       .slice(0, 5);
   }, [monthTxs]);
 
-  const savingsRate = monthlyBudget > 0
-    ? Math.max(0, Math.round(((monthlyBudget - totalSpent) / monthlyBudget) * 100))
-    : 0;
+  useEffect(() => {
+    const loadReport = async () => {
+      if (!token) return;
+      try {
+        const monthValue = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+        const yearValue = String(new Date().getFullYear());
+        const value =
+          selectedRange === 'custom' ? String(customDays) : selectedRange === 'month' ? monthValue : selectedRange === 'year' ? yearValue : '';
+        const res = await apiRequest('GET', `/api/reports?type=${selectedRange}&value=${encodeURIComponent(value)}`, undefined, token);
+        const json = await res.json();
+        setReportData({
+          tasks_completed: Number(json.tasks_completed || 0),
+          reminders_missed: Number(json.reminders_missed || 0),
+          medicine_taken: Number(json.medicine_taken || 0),
+          life_score: Number(json.life_score || 0),
+        });
+      } catch {
+        setReportData(null);
+      }
+    };
+    loadReport();
+  }, [token, selectedRange, customDays]);
 
   if (isLoading) {
     return (
@@ -113,39 +139,54 @@ export default function ReportsScreen() {
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
           <Text style={[styles.screenTitle, { color: colors.text }]}>Monthly Report</Text>
           <Text style={[styles.screenSubtitle, { color: colors.textTertiary }]}>
-            {MONTHS[selectedMonth]} {selectedYear}
+            Dynamic range report
           </Text>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.monthRow}>
-            {MONTHS.map((m, idx) => {
-              const isSelected = selectedMonth === idx;
-              const isDisabled = idx > now.getMonth();
+            {RANGE_OPTIONS.map((option) => {
+              const isSelected = selectedRange === option.key;
               return (
                 <Pressable
-                  key={m}
-                  onPress={() => setSelectedMonth(idx)}
+                  key={option.key}
+                  onPress={() => setSelectedRange(option.key)}
                   style={[
                     styles.monthChip,
                     { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderColor: 'transparent' },
                     isSelected && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' },
-                    isDisabled && styles.monthChipDisabled,
                   ]}
-                  disabled={isDisabled}
                 >
                   <Text style={[
                     styles.monthChipText,
                     { color: colors.textTertiary },
                     isSelected && { color: colors.accent, fontFamily: 'Inter_600SemiBold' },
-                    isDisabled && { color: colors.textTertiary },
                   ]}>
-                    {m}
+                    {option.label}
                   </Text>
                 </Pressable>
               );
             })}
           </ScrollView>
+          {selectedRange === 'custom' && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              {[10, 30, 60, 90].map((d) => (
+                <Pressable
+                  key={d}
+                  onPress={() => setCustomDays(d as 10 | 30 | 60 | 90)}
+                  style={[
+                    styles.monthChip,
+                    {
+                      backgroundColor: customDays === d ? colors.accentDim : colors.card,
+                      borderColor: customDays === d ? colors.accent : colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.monthChipText, { color: customDays === d ? colors.accent : colors.textSecondary }]}>{d}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
@@ -161,8 +202,8 @@ export default function ReportsScreen() {
                 <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatAmount(totalSpent)}</Text>
               </View>
               <View style={[styles.savingsCircle, { borderColor: colors.accentMint, backgroundColor: colors.accentMintDim }]}>
-                <Text style={[styles.savingsValue, { color: colors.accentMint }]}>{savingsRate}%</Text>
-                <Text style={[styles.savingsLabel, { color: colors.accentMint + 'AA' }]}>Saved</Text>
+                <Text style={[styles.savingsValue, { color: colors.accentMint }]}>{reportData?.life_score ?? 0}</Text>
+                <Text style={[styles.savingsLabel, { color: colors.accentMint + 'AA' }]}>LifeScore</Text>
               </View>
             </View>
 
@@ -181,16 +222,16 @@ export default function ReportsScreen() {
                   <Ionicons name="trending-down" size={16} color={colors.accent} />
                 </View>
                 <Text style={[styles.summaryStatValue, { color: colors.text }]}>
-                  {monthTxs.length > 0 ? formatAmount(Math.round(totalSpent / Math.max(1, new Date().getDate()))) : '0'}
+                  {reportData?.tasks_completed ?? 0}
                 </Text>
-                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Daily Avg</Text>
+                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Tasks Done</Text>
               </View>
               <View style={styles.summaryStat}>
                 <View style={[styles.statIconWrap, { backgroundColor: colors.accentMintDim }]}>
                   <Ionicons name="pricetag-outline" size={16} color={colors.accentMint} />
                 </View>
-                <Text style={[styles.summaryStatValue, { color: colors.text }]}>{breakdown.length}</Text>
-                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Categories</Text>
+                <Text style={[styles.summaryStatValue, { color: colors.text }]}>{reportData?.medicine_taken ?? 0}</Text>
+                <Text style={[styles.summaryStatLabel, { color: colors.textTertiary }]}>Medicine Taken</Text>
               </View>
             </View>
           </LinearGradient>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useAuth } from '@/lib/auth-context';
+import { apiRequest } from '@/lib/query-client';
 import {
   CATEGORIES,
   formatTime,
@@ -78,14 +80,50 @@ export default function TransactionsScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, isLoading } = useExpenses();
+  const { token } = useAuth();
   const [activeFilter, setActiveFilter] = useState('all');
+  const [activityTxs, setActivityTxs] = useState<Transaction[] | null>(null);
+
+  useEffect(() => {
+    const loadActivity = async () => {
+      if (!token) return;
+      try {
+        const res = await apiRequest('GET', '/api/activity?limit=50', undefined, token);
+        const json = await res.json();
+        if (!Array.isArray(json)) return;
+        const mapped: Transaction[] = json.map((e: any, idx: number) => ({
+          // Keep category compatible with existing category config.
+          id: String(e.id || `event-${idx}`),
+          merchant: String(e.title || e.type || 'Activity'),
+          amount: Number(e?.metadata?.amount || 0),
+          category: (
+            ['food', 'shopping', 'transport', 'entertainment', 'bills', 'healthcare', 'education', 'investment', 'others'].includes(
+              String(e?.metadata?.category || '').toLowerCase(),
+            )
+              ? String(e?.metadata?.category).toLowerCase()
+              : 'others'
+          ) as CategoryType,
+          date: String(e.date || new Date().toISOString()),
+          upiId: String(e.type || 'event'),
+          isDebit: Number(e?.metadata?.amount || 0) > 0,
+          description: String(e.source || ''),
+        }));
+        setActivityTxs(mapped);
+      } catch {
+        setActivityTxs(null);
+      }
+    };
+    loadActivity();
+  }, [token]);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
+  const sourceTransactions = activityTxs && activityTxs.length > 0 ? activityTxs : transactions;
+
   const filtered = useMemo(() => {
-    if (activeFilter === 'all') return transactions;
-    return transactions.filter(tx => tx.category === activeFilter);
-  }, [transactions, activeFilter]);
+    if (activeFilter === 'all') return sourceTransactions;
+    return sourceTransactions.filter(tx => tx.category === activeFilter);
+  }, [sourceTransactions, activeFilter]);
 
   const sections = useMemo(() => {
     const grouped: Record<string, Transaction[]> = {};

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,64 +12,43 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
-import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
-import { CATEGORIES, MoneyLeak } from '@/lib/data';
-import { ThemeColors } from '@/constants/colors';
-
-function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; index: number; colors: ThemeColors; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[leak.category];
-
-  return (
-    <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200 + index * 100).duration(500) : undefined}>
-      <View style={[styles.leakCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.leakHeader}>
-          <View style={[styles.leakIcon, { backgroundColor: cat.color + '15' }]}>
-            <Ionicons name={cat.icon as any} size={22} color={cat.color} />
-          </View>
-          <View style={styles.leakInfo}>
-            <Text style={[styles.leakMerchant, { color: colors.text }]}>{leak.merchant}</Text>
-            <View style={styles.leakMeta}>
-              <View style={[styles.freqBadge, { backgroundColor: colors.warningDim }]}>
-                <Ionicons name="time-outline" size={10} color={colors.warning} style={{ marginRight: 3 }} />
-                <Text style={[styles.freqText, { color: colors.warning }]}>{leak.frequency}</Text>
-              </View>
-              <Text style={[styles.leakCount, { color: colors.textTertiary }]}>{leak.transactionCount} times</Text>
-            </View>
-          </View>
-          <View style={styles.leakAmountBox}>
-            <Text style={[styles.leakAmount, { color: colors.danger }]}>{formatAmount(leak.monthlyEstimate)}</Text>
-            <Text style={[styles.leakAmountLabel, { color: colors.textTertiary }]}>per month</Text>
-          </View>
-        </View>
-
-        <View style={[styles.savingsPotentialRow, { backgroundColor: colors.accentMintDim }]}>
-          <Ionicons name="leaf-outline" size={14} color={colors.accentMint} />
-          <Text style={[styles.savingsPotentialText, { color: colors.accentMint }]}>
-            Save up to {formatAmount(leak.monthlyEstimate * 12)}/year
-          </Text>
-        </View>
-
-        <View style={[styles.suggestionBox, { borderTopColor: colors.border }]}>
-          <View style={[styles.suggestionIconWrap, { backgroundColor: colors.warningDim }]}>
-            <Ionicons name="bulb-outline" size={13} color={colors.warning} />
-          </View>
-          <Text style={[styles.suggestionText, { color: colors.textSecondary }]}>{leak.suggestion}</Text>
-        </View>
-      </View>
-    </Animated.View>
-  );
-}
+import { useAuth } from '@/lib/auth-context';
+import { apiRequest } from '@/lib/query-client';
 
 export default function LeaksScreen() {
   const insets = useSafeAreaInsets();
-  const { leaks, isLoading } = useExpenses();
+  const { isLoading } = useExpenses();
+  const { token } = useAuth();
   const { colors } = useTheme();
-  const { formatAmount } = useCurrency();
+  const [planetData, setPlanetData] = useState<{
+    life_score: number;
+    stage: number;
+    stage_label: string;
+    metrics: {
+      reminders_completed: number;
+      medicine_taken: number;
+      bills_paid: number;
+      tasks_completed: number;
+      missed_reminders: number;
+    };
+  } | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
-  const potentialYearlySavings = totalLeaks * 12;
+
+  useEffect(() => {
+    const run = async () => {
+      if (!token) return;
+      try {
+        const res = await apiRequest('GET', '/api/life-planet/status', undefined, token);
+        const json = await res.json();
+        setPlanetData(json);
+      } catch {
+        setPlanetData(null);
+      }
+    };
+    run();
+  }, [token]);
 
   if (isLoading) {
     return (
@@ -89,9 +68,9 @@ export default function LeaksScreen() {
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
-          <Text style={[styles.screenTitle, { color: colors.text }]}>Money Leaks</Text>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Life Planet</Text>
           <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
-            Smart insights on recurring expenses
+            Your ecosystem grows as your life score improves
           </Text>
         </Animated.View>
 
@@ -108,17 +87,17 @@ export default function LeaksScreen() {
               </View>
               <View style={styles.savingsContent}>
                 <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Potential Savings</Text>
-                <Text style={[styles.savingsAmount, { color: colors.accentMint }]}>
-                  {formatAmount(totalLeaks)}
+                <Text style={[styles.savingsAmount, { color: colors.accentMint }]}>{planetData?.life_score ?? 0}</Text>
+                <Text style={[styles.savingsAmountSuffix, { color: colors.textTertiary }]}>
+                  {planetData?.stage_label || 'Tiny planet'}
                 </Text>
-                <Text style={[styles.savingsAmountSuffix, { color: colors.textTertiary }]}>per month</Text>
               </View>
             </View>
 
             <View style={[styles.yearlySavingsRow, { backgroundColor: colors.surfaceGlow }]}>
               <Ionicons name="trending-up" size={16} color={colors.accentMint} />
               <Text style={[styles.yearlyText, { color: colors.accentMint }]}>
-                {formatAmount(potentialYearlySavings)} potential yearly savings
+                Stage {planetData?.stage ?? 1} / 5 • Keep completing reminders & tasks
               </Text>
             </View>
           </LinearGradient>
@@ -131,25 +110,32 @@ export default function LeaksScreen() {
           <View style={[styles.sectionBadge, { backgroundColor: colors.warningDim }]}>
             <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
             <Text style={[styles.sectionTitle, { color: colors.warning }]}>
-              {leaks.length} leak{leaks.length !== 1 ? 's' : ''} detected
+              Life metrics feeding your planet
             </Text>
           </View>
         </Animated.View>
 
-        {leaks.length === 0 ? (
+        {!planetData ? (
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.emptyIconWrap, { backgroundColor: colors.accentMintDim }]}>
               <Ionicons name="shield-checkmark" size={40} color={colors.accentMint} />
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>All clear!</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Loading your planet...</Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              No spending leaks detected. Your finances look healthy.
+              Complete reminders, medicines and tasks to evolve it.
             </Text>
           </View>
         ) : (
-          leaks.map((leak, idx) => (
-            <LeakCard key={leak.id} leak={leak} index={idx} colors={colors} formatAmount={formatAmount} />
-          ))
+          <View style={[styles.leakCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.leakMerchant, { color: colors.text }]}>Planet Progress</Text>
+            <Text style={[styles.suggestionText, { color: colors.textSecondary }]}>
+              Reminders completed: {planetData.metrics.reminders_completed}{'\n'}
+              Medicines taken: {planetData.metrics.medicine_taken}{'\n'}
+              Bills managed: {planetData.metrics.bills_paid}{'\n'}
+              Tasks completed: {planetData.metrics.tasks_completed}{'\n'}
+              Missed reminders: {planetData.metrics.missed_reminders}
+            </Text>
+          </View>
         )}
       </ScrollView>
     </View>

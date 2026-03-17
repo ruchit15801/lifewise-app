@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Linking, Platform } from 'react-native';
+import { io, type Socket } from 'socket.io-client';
 import {
   Transaction,
   Bill,
@@ -34,12 +35,20 @@ interface ExpenseContextValue {
   monthlyBudget: number;
   setMonthlyBudget: (budget: number) => void;
   quickAddReminder: (text: string) => Promise<void>;
+  createSmartReminder: (textInput: string) => Promise<void>;
+  createSmartCapture: (payload: {
+    type: 'reminder' | 'bill' | 'task' | 'expense' | 'note';
+    input_mode: 'voice' | 'text' | 'photo';
+    text_input: string;
+  }) => Promise<void>;
+  createVoiceReminder: (voiceText: string) => Promise<void>;
   addReminder: (bill: Omit<Bill, 'id'>) => void;
   editReminder: (bill: Bill) => void;
   deleteReminder: (billId: string) => void;
   snoozeReminder: (billId: string, days: number) => void;
   reminderSettings: ReminderSettings;
   updateReminderSettings: (settings: ReminderSettings) => void;
+  liveSocket: Socket | null;
 }
 
 const ExpenseContext = createContext<ExpenseContextValue | null>(null);
@@ -54,7 +63,7 @@ async function fetchWithAuth(token: string | null, path: string, options?: Reque
 }
 
 export function ExpenseProvider({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [leaks, setLeaks] = useState<MoneyLeak[]>([]);
@@ -66,6 +75,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
   const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
+  const [liveSocket, setLiveSocket] = useState<Socket | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -241,6 +251,24 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!token || !user?.id) return;
+    const socket = io(getApiUrl(), { transports: ['websocket'] });
+    socket.emit('join-user', user.id);
+    const refreshOnEvent = () => {
+      loadData();
+    };
+    socket.on('reminder_created', refreshOnEvent);
+    socket.on('expense_added', refreshOnEvent);
+    socket.on('bill_scanned', refreshOnEvent);
+    socket.on('family_member_added', refreshOnEvent);
+    setLiveSocket(socket);
+    return () => {
+      socket.disconnect();
+      setLiveSocket(null);
+    };
+  }, [token, user?.id, loadData]);
+
   const toggleBillPaid = useCallback(async (billId: string) => {
     if (!token) return;
     const bill = bills.find((b) => b.id === billId);
@@ -338,6 +366,74 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     [token],
   );
 
+  const createSmartReminder = useCallback(
+    async (textInput: string) => {
+      if (!token || !textInput.trim()) return;
+      try {
+        const res = await fetchWithAuth(token, '/api/reminders/ai-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text_input: textInput.trim() }),
+        });
+        if (res.ok) {
+          await loadData();
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [token, loadData],
+  );
+
+  const createVoiceReminder = useCallback(
+    async (voiceText: string) => {
+      if (!token || !voiceText.trim()) return;
+      try {
+        let res = await fetchWithAuth(token, '/api/reminders/voice-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: voiceText.trim() }),
+        });
+        if (!res.ok) {
+          res = await fetchWithAuth(token, '/api/voice-reminder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voice_text: voiceText.trim() }),
+          });
+        }
+        if (res.ok) {
+          await loadData();
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [token, loadData],
+  );
+
+  const createSmartCapture = useCallback(
+    async (payload: {
+      type: 'reminder' | 'bill' | 'task' | 'expense' | 'note';
+      input_mode: 'voice' | 'text' | 'photo';
+      text_input: string;
+    }) => {
+      if (!token || !payload.text_input.trim()) return;
+      try {
+        const res = await fetchWithAuth(token, '/api/life-flow/smart-capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          await loadData();
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [token, loadData],
+  );
+
   const refreshData = useCallback(async () => {
     await loadData();
   }, [loadData]);
@@ -391,12 +487,16 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       monthlyBudget,
       setMonthlyBudget,
       quickAddReminder,
+      createSmartReminder,
+      createSmartCapture,
+      createVoiceReminder,
       addReminder,
       editReminder,
       deleteReminder,
       snoozeReminder,
       reminderSettings,
       updateReminderSettings,
+      liveSocket,
     }),
     [
       transactions,
@@ -415,11 +515,15 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       syncSmsFromDevice,
       setMonthlyBudget,
       quickAddReminder,
+      createSmartReminder,
+      createSmartCapture,
+      createVoiceReminder,
       addReminder,
       editReminder,
       deleteReminder,
       snoozeReminder,
       updateReminderSettings,
+      liveSocket,
     ]
   );
 

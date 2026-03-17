@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 
 const { width } = Dimensions.get('window');
@@ -55,7 +54,6 @@ function Slide({ item, colors }: { item: typeof SLIDES[0]; colors: any }) {
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { completeOnboarding } = useAuth();
   const { colors } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
@@ -80,8 +78,7 @@ export default function OnboardingScreen() {
   };
 
   const handleGetStarted = () => {
-    completeOnboarding();
-    router.replace('/(auth)/login');
+    router.replace('/sms-detection');
   };
 
   const handleSkip = () => {

@@ -8,6 +8,7 @@ import {
   Platform,
   TextInput,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,15 +17,14 @@ import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
-import { apiRequest } from '@/lib/query-client';
+import { apiRequest, getApiUrl } from '@/lib/query-client';
+import { io } from 'socket.io-client';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
-  { key: 'papa', label: 'Papa', icon: 'man' },
-  { key: 'mummy', label: 'Mummy', icon: 'woman' },
-  { key: 'partner', label: 'Partner', icon: 'heart' },
+  { key: 'parent', label: 'Parent', icon: 'man' },
+  { key: 'spouse', label: 'Spouse', icon: 'heart' },
   { key: 'child', label: 'Child', icon: 'happy' },
-  { key: 'other', label: 'Other', icon: 'people' },
 ];
 
 type MedAppearance = 'capsule' | 'tablet' | 'round' | 'liquid';
@@ -65,6 +65,10 @@ interface FamilyMember {
   id: string;
   name: string;
   relationship: string;
+  relation?: string;
+  memberType?: 'parent' | 'child' | 'spouse' | 'self';
+  modulesEnabled?: string[];
+  connectionCode?: string | null;
   medicines: Medicine[];
 }
 
@@ -73,8 +77,15 @@ export default function FamilyScreen() {
   const { colors, isDark } = useTheme();
   const { token } = useAuth();
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [familyGraph, setFamilyGraph] = useState<Array<{ id: string; member_name: string; relation: string }>>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showAddMedicine, setShowAddMedicine] = useState<string | null>(null);
+  const [familyCodeInput, setFamilyCodeInput] = useState('');
+  const [memberCodeInput, setMemberCodeInput] = useState('');
+  const [generatedFamilyCode, setGeneratedFamilyCode] = useState('');
+  const [latestMemberCode, setLatestMemberCode] = useState('');
+  const [connectStatus, setConnectStatus] = useState('');
+  const [familyId, setFamilyId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [selectedRel, setSelectedRel] = useState('self');
   const [medName, setMedName] = useState('');
@@ -92,18 +103,39 @@ export default function FamilyScreen() {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [medStartDate, setMedStartDate] = useState(todayIso);
   const [medEndDate, setMedEndDate] = useState('');
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isAddingMember, setIsAddingMember] = useState(false);
+  const [isAddingMedicine, setIsAddingMedicine] = useState(false);
+  const [isCreatingFamily, setIsCreatingFamily] = useState(false);
+  const [isJoiningFamily, setIsJoiningFamily] = useState(false);
+  const [isLinkingFamily, setIsLinkingFamily] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
   const loadMembers = useCallback(async () => {
     if (!token) return;
+    setIsLoadingMembers(true);
     try {
-      const res = await apiRequest('GET', '/api/family', undefined, token);
-      const data = await res.json();
-      setMembers(data as FamilyMember[]);
+      const [res, graphRes] = await Promise.all([
+        apiRequest('GET', '/api/family', undefined, token),
+        apiRequest('GET', '/api/family/graph', undefined, token),
+      ]);
+      const [data, graphJson] = await Promise.all([res.json(), graphRes.json()]);
+      const membersData = data as FamilyMember[];
+      setMembers(membersData);
+      const ownerMember = membersData.find((m) => String(m.relationship || '').toLowerCase() === 'self');
+      if (ownerMember?.connectionCode) {
+        setLatestMemberCode(ownerMember.connectionCode);
+      }
+      setFamilyGraph(Array.isArray(graphJson) ? graphJson : []);
+      setActionError('');
     } catch (e) {
       console.error('Load family error:', e);
+      setActionError('Cannot connect to Family Hub. Check backend and network.');
+    } finally {
+      setIsLoadingMembers(false);
     }
   }, [token]);
 
@@ -115,20 +147,28 @@ export default function FamilyScreen() {
     if (!newName.trim()) return;
     if (!token) return;
     (async () => {
+      setIsAddingMember(true);
       try {
         const res = await apiRequest(
           'POST',
           '/api/family',
-          { name: newName.trim(), relationship: selectedRel },
+          { name: newName.trim(), relation: selectedRel, member_type: selectedRel },
           token,
         );
         const created = (await res.json()) as FamilyMember;
         setMembers(prev => [...prev, created]);
+        if (created.connectionCode) {
+          setLatestMemberCode(created.connectionCode);
+        }
         setNewName('');
         setSelectedRel('self');
         setShowAddMember(false);
+        setActionError('');
       } catch (e) {
         console.error('Add family member error:', e);
+        setActionError('Unable to add member right now. Please retry.');
+      } finally {
+        setIsAddingMember(false);
       }
     })();
   };
@@ -137,6 +177,7 @@ export default function FamilyScreen() {
     if (!medName.trim() || !showAddMedicine) return;
     if (!token) return;
     (async () => {
+      setIsAddingMedicine(true);
       try {
         const slots: MedicineSlots = {};
         if (slotMorning) slots.morning = slotMorningTime;
@@ -180,8 +221,12 @@ export default function FamilyScreen() {
         setMedStartDate(todayIso);
         setMedEndDate('');
         setShowAddMedicine(null);
+        setActionError('');
       } catch (e) {
         console.error('Add medicine error:', e);
+        setActionError('Unable to add medicine right now. Please retry.');
+      } finally {
+        setIsAddingMedicine(false);
       }
     })();
   };
@@ -218,6 +263,83 @@ export default function FamilyScreen() {
     })();
   };
 
+  const connectFamily = () => {
+    if (!token || !memberCodeInput.trim()) return;
+    (async () => {
+      setIsLinkingFamily(true);
+      try {
+        const res = await apiRequest(
+          'POST',
+          '/api/family/connect',
+          { code: memberCodeInput.trim().toUpperCase() },
+          token,
+        );
+        const data = (await res.json()) as { ok: boolean };
+        if (data.ok) {
+          setConnectStatus('Connected successfully. Family modules synced.');
+          setMemberCodeInput('');
+          await loadMembers();
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Invalid code. Please check and try again.';
+        setConnectStatus(message);
+      } finally {
+        setIsLinkingFamily(false);
+      }
+    })();
+  };
+
+  const createFamily = () => {
+    if (!token) return;
+    (async () => {
+      setIsCreatingFamily(true);
+      try {
+        const res = await apiRequest('POST', '/api/family/create', {}, token);
+        const data = (await res.json()) as { family_id: string; family_code: string };
+        setFamilyId(data.family_id);
+        setGeneratedFamilyCode(data.family_code);
+        setFamilyCodeInput(data.family_code);
+        setConnectStatus(`Family created: ${data.family_code}`);
+      } catch {
+        setConnectStatus('Unable to create family.');
+      } finally {
+        setIsCreatingFamily(false);
+      }
+    })();
+  };
+
+  const joinFamily = () => {
+    if (!token || !familyCodeInput.trim()) return;
+    (async () => {
+      setIsJoiningFamily(true);
+      try {
+        const res = await apiRequest('POST', '/api/family/join', { family_code: familyCodeInput.trim().toUpperCase() }, token);
+        const data = (await res.json()) as { family_id?: string };
+        if (data.family_id) setFamilyId(data.family_id);
+        setConnectStatus('Joined family successfully.');
+        await loadMembers();
+      } catch {
+        setConnectStatus('Invalid family code.');
+      } finally {
+        setIsJoiningFamily(false);
+      }
+    })();
+  };
+
+  useEffect(() => {
+    if (!familyId) return;
+    const baseUrl = getApiUrl();
+    const socket = io(baseUrl, { transports: ['websocket'] });
+    socket.emit('join-family', familyId);
+    socket.on('family_member_joined', (payload: { message?: string }) => {
+      setConnectStatus(payload?.message || 'Family member joined');
+      loadMembers();
+    });
+    return () => {
+      socket.disconnect();
+    };
+  }, [familyId, loadMembers]);
+
   const handleBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)');
@@ -250,6 +372,100 @@ export default function FamilyScreen() {
           </Text>
         </View>
 
+        {!!actionError && (
+          <View style={[styles.errorBanner, { backgroundColor: colors.dangerDim, borderColor: colors.danger }]}>
+            <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+            <Text style={[styles.errorBannerText, { color: colors.danger }]}>{actionError}</Text>
+          </View>
+        )}
+
+        <View style={[styles.connectCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.connectTitle, { color: colors.text }]}>Connect to Family Hub</Text>
+          <Text style={[styles.connectSubtitle, { color: colors.textSecondary }]}>
+            Step 1: User 1 creates a family code. Step 2: User 2 joins using that code.
+          </Text>
+          <View style={styles.connectRow}>
+            <Pressable
+              onPress={createFamily}
+              disabled={isCreatingFamily}
+              style={[styles.connectBtn, { backgroundColor: colors.accent, opacity: isCreatingFamily ? 0.7 : 1 }]}
+            >
+              <Text style={styles.connectBtnText}>{isCreatingFamily ? 'Creating...' : 'Create Family'}</Text>
+            </Pressable>
+            <Pressable
+              onPress={joinFamily}
+              disabled={isJoiningFamily}
+              style={[styles.connectBtn, { backgroundColor: colors.accentBlue || colors.accent, opacity: isJoiningFamily ? 0.7 : 1 }]}
+            >
+              <Text style={styles.connectBtnText}>{isJoiningFamily ? 'Joining...' : 'Join Family'}</Text>
+            </Pressable>
+          </View>
+
+          {(generatedFamilyCode || latestMemberCode) && (
+            <View style={[styles.codePreviewCard, { backgroundColor: colors.accentDim, borderColor: colors.accent }]}>
+              {!!generatedFamilyCode && (
+                <Text style={[styles.codePreviewText, { color: colors.text }]}>
+                  Family Code: <Text style={[styles.codePreviewStrong, { color: colors.accent }]}>{generatedFamilyCode}</Text>
+                </Text>
+              )}
+              {!!latestMemberCode && (
+                <Text style={[styles.codePreviewText, { color: colors.text }]}>
+                  Member Connect Code: <Text style={[styles.codePreviewStrong, { color: colors.accentMint }]}>{latestMemberCode}</Text>
+                </Text>
+              )}
+            </View>
+          )}
+
+          <View style={styles.connectRow}>
+            <TextInput
+              style={[styles.connectInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+              value={familyCodeInput}
+              onChangeText={setFamilyCodeInput}
+              placeholder="FAM-8472"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+            />
+            <Pressable
+              onPress={joinFamily}
+              disabled={isJoiningFamily}
+              style={[styles.connectBtn, { backgroundColor: colors.accentBlue || colors.accent, opacity: isJoiningFamily ? 0.7 : 1 }]}
+            >
+              <Text style={styles.connectBtnText}>{isJoiningFamily ? 'Joining...' : 'Join Code'}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.connectRow}>
+            <TextInput
+              style={[styles.connectInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+              value={memberCodeInput}
+              onChangeText={setMemberCodeInput}
+              placeholder="Member connect code"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+            />
+            <Pressable
+              onPress={connectFamily}
+              disabled={isLinkingFamily}
+              style={[styles.connectBtn, { backgroundColor: colors.accentMint || colors.accent, opacity: isLinkingFamily ? 0.7 : 1 }]}
+            >
+              <Text style={styles.connectBtnText}>{isLinkingFamily ? 'Linking...' : 'Link Device'}</Text>
+            </Pressable>
+          </View>
+          {!!connectStatus && <Text style={[styles.connectStatus, { color: colors.textTertiary }]}>{connectStatus}</Text>}
+        </View>
+
+        <View style={[styles.connectCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.connectTitle, { color: colors.text }]}>Family Graph</Text>
+          {familyGraph.length === 0 ? (
+            <Text style={[styles.connectStatus, { color: colors.textTertiary }]}>No graph data yet.</Text>
+          ) : (
+            familyGraph.map((node) => (
+              <Text key={node.id} style={[styles.connectStatus, { color: colors.textSecondary }]}>
+                Hetvi → {node.member_name} ({node.relation})
+              </Text>
+            ))
+          )}
+        </View>
+
         {members.length === 0 && (
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.accentDim }]}>
@@ -257,6 +473,9 @@ export default function FamilyScreen() {
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No family members yet</Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Tap + to add your first family member</Text>
+            <Pressable onPress={() => setShowAddMember(true)} style={[styles.emptyCtaBtn, { backgroundColor: colors.accent }]}>
+              {isLoadingMembers ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.connectBtnText}>Add First Member</Text>}
+            </Pressable>
           </View>
         )}
 
@@ -274,7 +493,7 @@ export default function FamilyScreen() {
                   <View>
                     <Text style={[styles.memberName, { color: colors.text }]}>{member.name}</Text>
                     <Text style={[styles.memberRel, { color: colors.textTertiary }]}>
-                      {RELATIONSHIPS.find(r => r.key === member.relationship)?.label || member.relationship}
+                      {RELATIONSHIPS.find(r => r.key === (member.memberType || member.relationship))?.label || member.relationship}
                     </Text>
                   </View>
                 </View>
@@ -291,6 +510,19 @@ export default function FamilyScreen() {
                   </Pressable>
                 </View>
               </View>
+
+              {member.connectionCode ? (
+                <Text style={[styles.connectionCode, { color: colors.accent }]}>Code: {member.connectionCode}</Text>
+              ) : null}
+              {Array.isArray(member.modulesEnabled) && member.modulesEnabled.length > 0 ? (
+                <View style={styles.modulesWrap}>
+                  {member.modulesEnabled.map((mod) => (
+                    <View key={mod} style={[styles.moduleChip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+                      <Text style={[styles.moduleChipText, { color: colors.textSecondary }]}>{mod.replace(/_/g, ' ')}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
 
               {member.medicines.length === 0 && (
                 <Text style={[styles.noMedsText, { color: colors.textTertiary }]}>No medicines added</Text>
@@ -418,9 +650,9 @@ export default function FamilyScreen() {
               <Pressable onPress={() => setShowAddMember(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
                 <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={addMember} style={styles.saveBtnWrap}>
+              <Pressable onPress={addMember} style={styles.saveBtnWrap} disabled={isAddingMember}>
                 <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
-                  <Text style={styles.saveBtnText}>Add Member</Text>
+                  <Text style={styles.saveBtnText}>{isAddingMember ? 'Adding...' : 'Add Member'}</Text>
                 </LinearGradient>
               </Pressable>
             </View>
@@ -699,9 +931,9 @@ export default function FamilyScreen() {
               <Pressable onPress={() => setShowAddMedicine(null)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
                 <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={addMedicine} style={styles.saveBtnWrap}>
+              <Pressable onPress={addMedicine} style={styles.saveBtnWrap} disabled={isAddingMedicine}>
                 <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
-                  <Text style={styles.saveBtnText}>Add Medicine</Text>
+                  <Text style={styles.saveBtnText}>{isAddingMedicine ? 'Saving...' : 'Add Medicine'}</Text>
                 </LinearGradient>
               </Pressable>
             </View>
@@ -720,10 +952,33 @@ const styles = StyleSheet.create({
   introCard: { borderRadius: 20, padding: 20, borderWidth: 1, marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 14 },
   introIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   introText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
+  connectCard: { borderRadius: 20, padding: 16, borderWidth: 1, marginBottom: 16, gap: 8 },
+  connectTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 },
+  connectSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12 },
+  connectRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  connectInput: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontFamily: 'Inter_500Medium' },
+  connectBtn: { borderRadius: 12, paddingHorizontal: 14, justifyContent: 'center' },
+  connectBtnText: { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  connectStatus: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  codePreviewCard: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, gap: 4, marginTop: 4 },
+  codePreviewText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  codePreviewStrong: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  errorBanner: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorBannerText: { fontFamily: 'Inter_500Medium', fontSize: 12, flex: 1 },
   emptyState: { borderRadius: 24, padding: 40, borderWidth: 1, alignItems: 'center', gap: 12 },
   emptyIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   emptyTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   emptySubtitle: { fontFamily: 'Inter_400Regular', fontSize: 14 },
+  emptyCtaBtn: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginTop: 6 },
   memberCard: { borderRadius: 20, padding: 18, borderWidth: 1, marginBottom: 14, gap: 12 },
   memberHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   memberInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -732,6 +987,10 @@ const styles = StyleSheet.create({
   memberRel: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
   memberActions: { flexDirection: 'row', gap: 8 },
   smallActionBtn: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  connectionCode: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
+  modulesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  moduleChip: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
+  moduleChipText: { fontFamily: 'Inter_400Regular', fontSize: 11, textTransform: 'capitalize' as const },
   noMedsText: { fontFamily: 'Inter_400Regular', fontSize: 13, paddingLeft: 4 },
   medCard: { borderRadius: 14, padding: 14, borderWidth: 1, gap: 10 },
   medInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
