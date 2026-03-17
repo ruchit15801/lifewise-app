@@ -193,7 +193,7 @@ export default function LifeMemoryScreen() {
             <Ionicons name="sparkles" size={24} color={colors.accent} />
           </View>
           <Text style={[styles.summaryText, { color: colors.textSecondary }]}>
-            We've analyzed your spending patterns and remembered {memories.length} insights about your lifestyle.
+            {`We\u2019ve analyzed your spending patterns and remembered ${memories.length} insights about your lifestyle.`}
           </Text>
         </View>
 

@@ -38,7 +38,6 @@ import {
   CATEGORIES,
   getTodaySpending,
   getMonthlySpending,
-  getGreeting,
   getGreetingPeriod,
   formatTime,
   CategoryType,
@@ -131,27 +130,130 @@ function TransactionRow({ merchant, amount, category, date, colors, formatAmount
   );
 }
 
-function SyncingSmsOverlay({ colors }: { colors: any }) {
-  const rotation = useSharedValue(0);
-  React.useEffect(() => {
-    rotation.value = withRepeat(withTiming(360, { duration: 1500 }), -1, true);
-  }, [rotation]);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
+function MustSmsSyncBanner({
+  colors,
+  isSyncingSms,
+  smsSyncStatus,
+  smsSyncProgressCurrent,
+  smsSyncProgressTotal,
+  lastSmsReadCount,
+  lastSmsSyncCount,
+}: {
+  colors: any;
+  isSyncingSms: boolean;
+  smsSyncStatus: string | null;
+  smsSyncProgressCurrent: number | null;
+  smsSyncProgressTotal: number | null;
+  lastSmsReadCount: number | null;
+  lastSmsSyncCount: number | null;
+}) {
+  const progressText =
+    smsSyncProgressCurrent != null && smsSyncProgressTotal != null
+      ? `${smsSyncProgressCurrent}/${smsSyncProgressTotal}`
+      : null;
+
+  const countText =
+    lastSmsSyncCount != null
+      ? `synced ${lastSmsSyncCount}`
+      : lastSmsReadCount != null
+        ? `read ${lastSmsReadCount}`
+        : null;
+
+  const primaryLine = isSyncingSms
+    ? `MUST • SMS syncing${progressText ? ` ${progressText}` : ''}${countText ? ` • ${countText}` : ''}`
+    : lastSmsReadCount != null || lastSmsSyncCount != null
+      ? `MUST • SMS synced • read ${lastSmsReadCount ?? 0} • synced ${lastSmsSyncCount ?? 0}`
+      : null;
+
+  if (!primaryLine) return null;
+
   return (
-    <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-      <LinearGradient
-        colors={[colors.accentDim, colors.bgSecondary || colors.card]}
-        style={styles.syncOverlayCard}
-      >
-        <Animated.View style={[styles.syncIconWrap, { backgroundColor: colors.accentDim }, animatedStyle]}>
-          <Ionicons name="sync" size={40} color={colors.accent} />
-        </Animated.View>
-        <Text style={[styles.syncTitle, { color: colors.text }]}>Syncing SMS</Text>
-        <Text style={[styles.syncSubtitle, { color: colors.textSecondary }]}>Fetching your transactions…</Text>
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 16 }} />
-      </LinearGradient>
+    <View
+      style={[
+        styles.mustBanner,
+        {
+          backgroundColor: isSyncingSms ? colors.accentDim : colors.card,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      {isSyncingSms ? (
+        <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
+      ) : (
+        <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
+      )}
+      <Text style={[styles.mustBannerText, { color: colors.text }]} numberOfLines={1}>
+        {primaryLine}
+      </Text>
+    </View>
+  );
+}
+
+function TopReminderAlert({
+  colors,
+  upcomingBills,
+}: {
+  colors: any;
+  upcomingBills: { name: string; amount: number; dueDate: string }[];
+}) {
+  if (!upcomingBills.length) return null;
+
+  const today = new Date();
+  const sorted = [...upcomingBills].sort(
+    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+  );
+  const next = sorted[0];
+  const due = new Date(next.dueDate);
+  const msDiff = due.setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0);
+  const daysDiff = Math.round(msDiff / (1000 * 60 * 60 * 24));
+
+  let label: string;
+  if (daysDiff === 0) {
+    label = `Today • ${next.name}`;
+  } else if (daysDiff === 1) {
+    label = `Tomorrow • ${next.name}`;
+  } else if (daysDiff > 1 && daysDiff <= 7) {
+    label = `This week • ${next.name}`;
+  } else if (daysDiff < 0) {
+    label = `Overdue • ${next.name}`;
+  } else {
+    label = `Upcoming • ${next.name}`;
+  }
+
+  const dateLabel = due.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
+
+  return (
+    <View
+      style={[
+        styles.reminderAlert,
+        {
+          backgroundColor: colors.warningDim,
+          borderColor: colors.warning,
+        },
+      ]}
+    >
+      <View style={styles.reminderAlertLeft}>
+        <Ionicons
+          name="alert-circle"
+          size={18}
+          color={colors.warning}
+          style={{ marginRight: 8 }}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.reminderAlertTitle, { color: colors.text }]} numberOfLines={1}>
+            {label}
+          </Text>
+          <Text
+            style={[styles.reminderAlertSubtitle, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {`Due ${dateLabel} • ${formatAmount(next.amount)}`}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -278,7 +380,8 @@ export default function HomeScreen() {
     isLoading,
     isSyncingSms,
     smsSyncStatus,
-    smsSampleSenders,
+    smsSyncProgressCurrent,
+    smsSyncProgressTotal,
     lastSmsReadCount,
     lastSmsSyncCount,
     monthlyBudget,
@@ -300,9 +403,15 @@ export default function HomeScreen() {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshData();
-    setRefreshing(false);
-  }, [refreshData]);
+    try {
+      await refreshData();
+      if (!isSyncingSms) {
+        await syncSmsFromDevice();
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshData, syncSmsFromDevice, isSyncingSms]);
 
   useEffect(() => {
     const run = async () => {
@@ -365,9 +474,7 @@ export default function HomeScreen() {
     }
   }, [token, refreshData]);
 
-  if (isLoading && !transactions.length && !bills.length && !leaks.length) {
-    return <SyncingSmsOverlay colors={colors} />;
-  }
+  // Never show a full-screen sync animation; we use a compact top banner instead.
 
   const todaySpend = getTodaySpending(transactions);
   const monthlySpend = getMonthlySpending(transactions);
@@ -416,8 +523,30 @@ export default function HomeScreen() {
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <ScrollView
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.accent]}
+              tintColor={colors.accent}
+              title="Refreshing…"
+            />
+          }
           contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 }]}
         >
+            <TopReminderAlert
+              colors={colors}
+              upcomingBills={upcomingBills}
+            />
+            <MustSmsSyncBanner
+              colors={colors}
+              isSyncingSms={isSyncingSms || isLoading}
+              smsSyncStatus={smsSyncStatus}
+              smsSyncProgressCurrent={smsSyncProgressCurrent}
+              smsSyncProgressTotal={smsSyncProgressTotal}
+              lastSmsReadCount={lastSmsReadCount}
+              lastSmsSyncCount={lastSmsSyncCount}
+            />
             <View style={styles.header}>
               <AnimatedGreeting userName={userName} colors={colors} />
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -486,7 +615,7 @@ export default function HomeScreen() {
             onRefresh={onRefresh}
             colors={[colors.accent]}
             tintColor={colors.accent}
-            title="Syncing SMS…"
+            title="Refreshing…"
           />
         }
         contentContainerStyle={[
@@ -494,6 +623,19 @@ export default function HomeScreen() {
           { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
         ]}
       >
+        <TopReminderAlert
+          colors={colors}
+          upcomingBills={upcomingBills}
+        />
+        <MustSmsSyncBanner
+          colors={colors}
+          isSyncingSms={isSyncingSms || isLoading}
+          smsSyncStatus={smsSyncStatus}
+          smsSyncProgressCurrent={smsSyncProgressCurrent}
+          smsSyncProgressTotal={smsSyncProgressTotal}
+          lastSmsReadCount={lastSmsReadCount}
+          lastSmsSyncCount={lastSmsSyncCount}
+        />
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
           <View style={styles.header}>
             <AnimatedGreeting userName={userName} colors={colors} />
@@ -516,36 +658,7 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
 
-        {isSyncingSms && (
-          <View style={[styles.syncBanner, { backgroundColor: colors.accentDim }]}>
-            <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 8, marginTop: 1 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.syncBannerText, { color: colors.text }]}>
-                {smsSyncStatus || 'Syncing SMS...'}
-              </Text>
-              {smsSampleSenders.length > 0 && (
-                <Text style={[styles.syncBannerSubText, { color: colors.textSecondary }]}>
-                  Sources: {smsSampleSenders.join(', ')}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
-        {!isSyncingSms && (lastSmsReadCount != null || lastSmsSyncCount != null) && (
-          <View style={[styles.syncBanner, { backgroundColor: colors.card }]}>
-            <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.syncBannerText, { color: colors.textSecondary }]}>
-                Read {lastSmsReadCount ?? 0} SMS, synced {lastSmsSyncCount ?? 0} transaction{(lastSmsSyncCount ?? 0) === 1 ? '' : 's'}.
-              </Text>
-              {smsSyncStatus && (
-                <Text style={[styles.syncBannerSubText, { color: colors.textTertiary }]}>
-                  {smsSyncStatus}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
+        {/* Old multi-line SMS banners removed in favor of compact MUST banner */}
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(80).duration(500) : undefined}>
           <LinearGradient
@@ -600,7 +713,7 @@ export default function HomeScreen() {
 
         {upcomingBills.length > 0 && (
           <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Reminders</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{`Today\u2019s Reminders`}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
               {upcomingBills.map((bill) => {
                 const dueDate = new Date(bill.dueDate);
@@ -807,7 +920,7 @@ export default function HomeScreen() {
               )}
             </View>
             <Text style={[styles.lifeInsightText, { color: colors.textSecondary, marginBottom: 12 }]}>
-              Type something like "Pay electricity bill tomorrow at 8 pm".
+              {`Type something like "Pay electricity bill tomorrow at 8 pm".`}
             </Text>
             <TextInput
               style={[
@@ -821,7 +934,7 @@ export default function HomeScreen() {
               ]}
               value={quickAddText}
               onChangeText={setQuickAddText}
-              placeholder='e.g., "Pay electricity bill tomorrow at 8 pm"'
+              placeholder={`e.g., "Pay electricity bill tomorrow at 8 pm"`}
               placeholderTextColor={colors.textTertiary}
               multiline
               numberOfLines={3}
@@ -1058,5 +1171,41 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
+  },
+  reminderAlert: {
+    alignSelf: 'stretch',
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  reminderAlertLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reminderAlertTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+  reminderAlertSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  mustBanner: {
+    alignSelf: 'stretch',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mustBannerText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
   },
 });

@@ -146,7 +146,7 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.footerRow}>
-          <Text style={[styles.footerText, { color: colors.textSecondary }]}>Don't have an account?</Text>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>{`Don\u2019t have an account?`}</Text>
           <Link href="/(auth)/register" asChild>
             <Pressable>
               <Text style={[styles.footerLink, { color: colors.accent }]}>Sign Up</Text>
@@ -254,7 +254,6 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   googleBtn: {
-    flexDirection: 'row',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

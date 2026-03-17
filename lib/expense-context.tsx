@@ -25,6 +25,8 @@ interface ExpenseContextValue {
   isLoading: boolean;
   isSyncingSms: boolean;
   smsSyncStatus: string | null;
+  smsSyncProgressCurrent: number | null;
+  smsSyncProgressTotal: number | null;
   smsSampleSenders: string[];
   lastSmsReadCount: number | null;
   lastSmsSyncCount: number | null;
@@ -61,6 +63,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingSms, setIsSyncingSms] = useState(false);
   const [smsSyncStatus, setSmsSyncStatus] = useState<string | null>(null);
+  const [smsSyncProgressCurrent, setSmsSyncProgressCurrent] = useState<number | null>(null);
+  const [smsSyncProgressTotal, setSmsSyncProgressTotal] = useState<number | null>(null);
   const [smsSampleSenders, setSmsSampleSenders] = useState<string[]>([]);
   const [lastSmsReadCount, setLastSmsReadCount] = useState<number | null>(null);
   const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
@@ -114,6 +118,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     setIsSyncingSms(true);
     setSmsSyncStatus('Preparing SMS sync...');
+    setSmsSyncProgressCurrent(null);
+    setSmsSyncProgressTotal(null);
     setSmsSampleSenders([]);
     setLastSmsReadCount(null);
     setLastSmsSyncCount(null);
@@ -121,6 +127,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       if (Platform.OS !== 'android') {
         Alert.alert('SMS sync not supported', 'Auto Track via SMS only works on Android phones.');
         setSmsSyncStatus('SMS sync only works on Android devices.');
+        setSmsSyncProgressCurrent(null);
+        setSmsSyncProgressTotal(null);
         setLastSmsReadCount(0);
         setLastSmsSyncCount(0);
         await loadData();
@@ -148,6 +156,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           Alert.alert('Permission needed', 'Please allow SMS permission to enable Auto Track.');
         }
         setSmsSyncStatus(permission.message);
+        setSmsSyncProgressCurrent(null);
+        setSmsSyncProgressTotal(null);
         setLastSmsReadCount(0);
         setLastSmsSyncCount(0);
         await loadData();
@@ -179,10 +189,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       if (parsed.length > 0) {
         const chunkSize = 40;
         let totalSynced = 0;
+        setSmsSyncProgressTotal(parsed.length);
 
         for (let i = 0; i < parsed.length; i += chunkSize) {
           const chunk = parsed.slice(i, i + chunkSize);
           const upto = Math.min(i + chunk.length, parsed.length);
+          setSmsSyncProgressCurrent(upto);
           setSmsSyncStatus(`Syncing ${upto}/${parsed.length} transactions...`);
 
           const res = await fetchWithAuth(token, '/api/transactions/sync-from-sms', {
@@ -220,6 +232,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         setSmsSyncStatus(`Read ${readCount} SMS, synced ${totalSynced} transactions.`);
       } else {
         setLastSmsSyncCount(0);
+        setSmsSyncProgressCurrent(null);
+        setSmsSyncProgressTotal(null);
         if (!smsResult.moduleAvailable && smsResult.error) {
           setSmsSyncStatus(smsResult.error);
         } else {
@@ -229,6 +243,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       setSmsSyncStatus('SMS sync failed unexpectedly.');
+      setSmsSyncProgressCurrent(null);
+      setSmsSyncProgressTotal(null);
       setLastSmsReadCount(0);
       setLastSmsSyncCount(0);
       await loadData();
@@ -382,6 +398,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       isLoading,
       isSyncingSms,
       smsSyncStatus,
+      smsSyncProgressCurrent,
+      smsSyncProgressTotal,
       smsSampleSenders,
       lastSmsReadCount,
       lastSmsSyncCount,
@@ -405,6 +423,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       isLoading,
       isSyncingSms,
       smsSyncStatus,
+      smsSyncProgressCurrent,
+      smsSyncProgressTotal,
       smsSampleSenders,
       lastSmsReadCount,
       lastSmsSyncCount,
