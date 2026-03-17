@@ -301,31 +301,65 @@ function PrimaryCircleActions({ colors, onScanBill, onQuickAdd, onAutoTrack }: {
     transform: [{ scale: baseScale.value * pulse3.value }],
   }));
 
+  const purple = colors.accentPurple || colors.accent || '#A855F7';
+  const purpleDim = colors.accentPurpleDim || (purple + '1F');
+  const blue = colors.accentBlue || '#3B82F6';
+  const blueDim = colors.accentBlueDim || (blue + '1F');
+  const amber = colors.warning || '#F59E0B';
+  const amberDim = colors.warningDim || (amber + '1F');
+
   return (
     <View style={styles.primaryCircleRow}>
       <Pressable onPress={onQuickAdd} style={styles.primaryCircleItem}>
-        <Animated.View style={[styles.primaryCircleOuter, { backgroundColor: '#F5E9FF' }, circleStyle1]}>
-          <View style={[styles.primaryCircleInner, { backgroundColor: '#A855F7' + '10', borderColor: '#A855F7' + '40' }]}>
-            <Ionicons name="mic" size={22} color="#7C3AED" />
-          </View>
+        <Animated.View
+          style={[
+            styles.primaryCircleFill,
+            {
+              backgroundColor: purpleDim,
+              borderColor: purple + '33',
+              shadowColor: purple,
+            },
+            circleStyle1,
+          ]}
+        >
+          <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
+          <Ionicons name="mic" size={22} color={purple} />
         </Animated.View>
-        <Text style={[styles.primaryCircleLabel, { color: colors.text }]}>Voice Reminder</Text>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Voice Reminder</Text>
       </Pressable>
       <Pressable onPress={onScanBill} style={styles.primaryCircleItem}>
-        <Animated.View style={[styles.primaryCircleOuter, { backgroundColor: '#E0F2FE' }, circleStyle2]}>
-          <View style={[styles.primaryCircleInner, { backgroundColor: '#3B82F6' + '10', borderColor: '#3B82F6' + '40' }]}>
-            <Ionicons name="camera" size={22} color="#2563EB" />
-          </View>
+        <Animated.View
+          style={[
+            styles.primaryCircleFill,
+            {
+              backgroundColor: blueDim,
+              borderColor: blue + '33',
+              shadowColor: blue,
+            },
+            circleStyle2,
+          ]}
+        >
+          <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
+          <Ionicons name="camera" size={22} color={blue} />
         </Animated.View>
-        <Text style={[styles.primaryCircleLabel, { color: colors.text }]}>Scan Bill</Text>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Scan Bill</Text>
       </Pressable>
       <Pressable onPress={onAutoTrack} style={styles.primaryCircleItem}>
-        <Animated.View style={[styles.primaryCircleOuter, { backgroundColor: '#FEF3C7' }, circleStyle3]}>
-          <View style={[styles.primaryCircleInner, { backgroundColor: '#F59E0B' + '10', borderColor: '#F59E0B' + '40' }]}>
-            <Ionicons name="sparkles" size={22} color="#D97706" />
-          </View>
+        <Animated.View
+          style={[
+            styles.primaryCircleFill,
+            {
+              backgroundColor: amberDim,
+              borderColor: amber + '33',
+              shadowColor: amber,
+            },
+            circleStyle3,
+          ]}
+        >
+          <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
+          <Ionicons name="sparkles" size={22} color={amber} />
         </Animated.View>
-        <Text style={[styles.primaryCircleLabel, { color: colors.text }]}>Quick Entry</Text>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Quick Entry</Text>
       </Pressable>
     </View>
   );
@@ -451,6 +485,7 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const bottomInset = Math.max(insets.bottom, 4);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -582,7 +617,7 @@ export default function HomeScreen() {
               title="Refreshing…"
             />
           }
-          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: 30 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: bottomInset + 44 }]}
         >
           <TopReminderAlert
             colors={colors}
@@ -670,7 +705,7 @@ export default function HomeScreen() {
         }
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 12, paddingBottom: 30 },
+          { paddingTop: topInset + 12, paddingBottom: bottomInset + 44 },
         ]}
       >
         <TopReminderAlert
@@ -1183,27 +1218,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  primaryCircleOuter: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+  primaryCircleFill: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.6,
+    borderWidth: 1,
+    shadowOpacity: 0.22,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
+    shadowOffset: { width: 0, height: 10 },
+    // elevation: 6,
   },
-  primaryCircleInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    backgroundColor: 'rgba(255,255,255,0.65)',
+  primaryCircleInnerWhiteBorder: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    right: 2,
+    bottom: 2,
+    borderRadius: 33,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.90)',
   },
   primaryCircleLabel: {
     fontFamily: 'Inter_500Medium',

@@ -575,6 +575,7 @@ export default function BillsScreen() {
   const [snoozeBillId, setSnoozeBillId] = useState<string | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const bottomInset = Math.max(insets.bottom, 4);
 
   const filteredBills = useMemo(() => {
     if (activeFilter === 'all') return bills;
@@ -627,7 +628,7 @@ export default function BillsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: 30 },
+          { paddingTop: topInset + 16, paddingBottom: bottomInset + 28 },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>

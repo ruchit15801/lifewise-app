@@ -64,6 +64,7 @@ export default function ReportsScreen() {
   const [selectedYear] = useState(now.getFullYear());
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const bottomInset = Math.max(insets.bottom, 4);
 
   const monthTxs = useMemo(() =>
     transactions.filter(tx => {
@@ -107,7 +108,7 @@ export default function ReportsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: 30 },
+          { paddingTop: topInset + 16, paddingBottom: bottomInset + 28 },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>

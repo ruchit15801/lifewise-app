@@ -81,6 +81,7 @@ export default function TransactionsScreen() {
   const [activeFilter, setActiveFilter] = useState('all');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const bottomInset = Math.max(insets.bottom, 4);
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') return transactions;
@@ -204,7 +205,7 @@ export default function TransactionsScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingBottom: 30,
+          paddingBottom: bottomInset + 28,
         }}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
