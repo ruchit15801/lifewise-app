@@ -4,14 +4,14 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 /**
  * Gets the base URL for the Express API server.
  * Uses EXPO_PUBLIC_DOMAIN if set; otherwise fallback for local dev.
- * On Android emulator use EXPO_PUBLIC_DOMAIN=10.0.2.2:5000 to reach host.
- * On physical device use your computer's IP e.g. 192.168.1.5:5000
+ * On Android emulator use EXPO_PUBLIC_DOMAIN=10.0.2.2:5001 to reach host.
+ * On physical device use your computer's IP e.g. 192.168.1.5:5001
  */
 export function getApiUrl(): string {
   let host =
     process.env.EXPO_PUBLIC_DOMAIN ||
     process.env.EXPO_PUBLIC_API_URL ||
-    "127.0.0.1:5000";
+    "127.0.0.1:5001";
 
   host = host.replace(/^https?:\/\//, "").split("/")[0];
   const isLocal =

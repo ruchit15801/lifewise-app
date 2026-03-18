@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, TextInput, ScrollView } from 'react-native';
+import React, { useMemo, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,10 +14,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme-context';
 import { useExpenses } from '@/lib/expense-context';
 import { type Bill, type RepeatType, type ReminderType } from '@/lib/data';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Voice = require('react-native-voice');
+import { Audio } from 'expo-av';
+import { getApiUrl } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth-context';
+import { scheduleLocalNotification } from '@/lib/notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type VoiceState = 'idle' | 'listening' | 'review' | 'confirming';
+type VoiceState = 'idle' | 'recording' | 'review' | 'transcribing' | 'confirming';
 
 interface ParsedReminder {
   title: string;
@@ -26,62 +30,33 @@ interface ParsedReminder {
   reminderType: ReminderType;
 }
 
-function parseVoiceReminder(input: string): ParsedReminder {
-  const text = input.toLowerCase();
-  let title = input.trim();
+function timeLabelFromDate(d: Date) {
+  const hour24 = d.getHours();
+  const minute = d.getMinutes();
+  const hour12 = ((hour24 + 11) % 12) + 1;
+  const suffix = hour24 >= 12 ? 'PM' : 'AM';
+  const mm = String(minute).padStart(2, '0');
+  return `${hour12}:${mm} ${suffix}`;
+}
 
-  const prefixMatch = text.match(/remind me to (.+)/i);
-  if (prefixMatch && prefixMatch[1]) {
-    title = prefixMatch[1].trim();
+function parsedFromServer(p: {
+  title: string;
+  isoDate: string;
+  hour: number;
+  minute: number;
+  repeatType: RepeatType;
+  reminderType: ReminderType;
+}): ParsedReminder {
+  const dt = new Date(`${p.isoDate}T00:00:00.000Z`);
+  if (!Number.isNaN(dt.getTime())) {
+    dt.setHours(p.hour ?? 9, p.minute ?? 0, 0, 0);
   }
-
-  let repeatType: RepeatType = 'none';
-  if (text.includes('every day') || text.includes('daily')) repeatType = 'daily';
-  else if (text.includes('every week') || text.includes('weekly')) repeatType = 'weekly';
-  else if (text.includes('every month') || text.includes('monthly')) repeatType = 'monthly';
-  else if (text.includes('every year') || text.includes('yearly')) repeatType = 'yearly';
-
-  const now = new Date();
-  let date: Date | undefined;
-  if (text.includes('today')) {
-    date = new Date(now);
-  } else if (text.includes('tomorrow')) {
-    date = new Date(now);
-    date.setDate(date.getDate() + 1);
-  }
-
-  let timeLabel: string | undefined;
-  const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s?(am|pm)?/i);
-  if (timeMatch) {
-    const h = parseInt(timeMatch[1], 10);
-    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-    const ampm = (timeMatch[3] || '').toLowerCase();
-    let hour24 = h;
-    if (ampm === 'pm' && h < 12) hour24 = h + 12;
-    if (ampm === 'am' && h === 12) hour24 = 0;
-    const d = date ? new Date(date) : new Date(now);
-    d.setHours(hour24, m, 0, 0);
-    date = d;
-    const mm = m.toString().padStart(2, '0');
-    const hour12 = ((hour24 + 11) % 12) + 1;
-    const suffix = hour24 >= 12 ? 'PM' : 'AM';
-    timeLabel = `${hour12}:${mm} ${suffix}`;
-  } else if (text.includes('evening')) {
-    timeLabel = '7:00 PM';
-  } else if (text.includes('morning')) {
-    timeLabel = '9:00 AM';
-  }
-
-  let reminderType: ReminderType = 'custom';
-  if (text.includes('bill') || text.includes('pay')) reminderType = 'bill';
-  if (text.includes('subscription')) reminderType = 'subscription';
-
   return {
-    title: title || 'Reminder',
-    date,
-    timeLabel,
-    repeatType,
-    reminderType,
+    title: String(p.title || 'Reminder'),
+    date: Number.isNaN(dt.getTime()) ? undefined : dt,
+    timeLabel: Number.isNaN(dt.getTime()) ? undefined : timeLabelFromDate(dt),
+    repeatType: p.repeatType || 'none',
+    reminderType: p.reminderType || 'custom',
   };
 }
 
@@ -89,17 +64,24 @@ export default function VoiceReminderScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { token } = useAuth();
   const { addReminder, reminderSettings } = useExpenses();
   const [state, setState] = useState<VoiceState>('idle');
   const [spokenText, setSpokenText] = useState('');
+  const [draftText, setDraftText] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isOfflineSaved, setIsOfflineSaved] = useState(false);
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
+  const [serverParsed, setServerParsed] = useState<ParsedReminder | null>(null);
 
   const ringPulse = useSharedValue(1);
   const micScale = useSharedValue(1);
 
   const ringStyle = useAnimatedStyle(() => ({
     transform: [{ scale: ringPulse.value }],
-    opacity: state === 'listening' ? 0.9 : 0.4,
+    opacity: state === 'recording' ? 0.9 : 0.35,
   }));
 
   const micStyle = useAnimatedStyle(() => ({
@@ -107,39 +89,30 @@ export default function VoiceReminderScreen() {
   }));
 
   const parsed = useMemo(() => {
-    if (!spokenText.trim()) return null;
-    return parseVoiceReminder(spokenText.trim());
-  }, [spokenText]);
+    if (serverParsed) return serverParsed;
+    return null;
+  }, [serverParsed]);
 
   const headerTop = Platform.OS === 'web' ? 40 : insets.top + 8;
 
   useEffect(() => {
-    if (!Voice || Platform.OS === 'web') return;
-
-    Voice.onSpeechResults = (e: any) => {
-      const value: string[] = e.value || [];
-      if (value.length) {
-        setSpokenText(value[0]);
-        setError(null);
-      }
-    };
-    Voice.onSpeechError = () => {
-      setError('Could not hear clearly. Please try again.');
-      setState('idle');
-    };
-
     return () => {
-      try {
-        Voice.destroy();
-      } catch {
-        // ignore
+      // Cleanup recording if screen unmounts mid-record
+      if (recording) {
+        recording.stopAndUnloadAsync().catch(() => {});
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleStartListening() {
+  async function handleStartRecording() {
     setError(null);
-    setState('listening');
+    setDetectedLanguage(null);
+    setServerParsed(null);
+    setIsEditing(false);
+    setDraftText('');
+    setSpokenText('');
+    setState('recording');
     ringPulse.value = withRepeat(
       withSequence(withTiming(1.08, { duration: 800 }), withTiming(1, { duration: 800 })),
       -1,
@@ -151,28 +124,154 @@ export default function VoiceReminderScreen() {
       true,
     );
 
-    if (Voice && Platform.OS !== 'web') {
-      try {
-        Voice.start('en-IN');
-      } catch {
-        setError('Microphone not available right now.');
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        setError('Microphone permission is required.');
         setState('idle');
+        return;
       }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const rec = new Audio.Recording();
+      // Enable metering so the pulse feels "live" while recording.
+      await rec.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        android: {
+          ...(Audio.RecordingOptionsPresets.HIGH_QUALITY.android as any),
+          isMeteringEnabled: true,
+        },
+        ios: {
+          ...(Audio.RecordingOptionsPresets.HIGH_QUALITY.ios as any),
+          isMeteringEnabled: true,
+        },
+      } as any);
+      await rec.startAsync();
+      setRecording(rec);
+    } catch {
+      setError('Microphone not available right now.');
+      setState('idle');
     }
   }
 
-  function handleStopListening() {
-    if (Voice && Platform.OS !== 'web') {
-      try {
-        Voice.stop();
-      } catch {
-        // ignore
+  async function handleStopRecording() {
+    const rec = recording;
+    setRecording(null);
+    if (!rec) {
+      setState('idle');
+      return;
+    }
+
+    setState('transcribing');
+    try {
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      if (!uri) {
+        setError('Could not read recorded audio. Please try again.');
+        setState('idle');
+        return;
       }
+
+      if (!token) {
+        setError('Please login to use voice reminders.');
+        setState('idle');
+        return;
+      }
+
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/reminders/voice/parse', baseUrl).toString();
+      const audioBlob = await (await fetch(uri)).blob();
+      const form = new FormData();
+      form.append('audio', audioBlob as any, 'voice.m4a');
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => null))?.message || 'Voice processing failed. Please try again.';
+        setError(msg);
+        setState('idle');
+        return;
+      }
+
+      const json = (await res.json()) as {
+        text?: string;
+        language?: string | null;
+        parsed?: {
+          title: string;
+          isoDate: string;
+          hour: number;
+          minute: number;
+          repeatType: RepeatType;
+          reminderType: ReminderType;
+        };
+      };
+
+      const text = (json.text || '').trim();
+      if (!text) {
+        setError("Sorry, I couldn't understand. Please try again.");
+        setState('idle');
+        return;
+      }
+      setSpokenText(text);
+      setDraftText(text);
+      setIsEditing(false);
+      setDetectedLanguage(json.language || null);
+
+      if (json.parsed?.isoDate) {
+        setServerParsed(parsedFromServer(json.parsed));
+      } else {
+        setServerParsed(null);
+      }
+
+      setError(null);
+      setState('review');
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/network request failed/i.test(msg)) {
+        setError(
+          'Backend not reachable. Start backend and set EXPO_PUBLIC_DOMAIN to your PC IP (e.g. 192.168.1.9:5001).',
+        );
+      } else {
+        setError('Microphone or network error. Please try again.');
+      }
+      setState('idle');
     }
-    if (!spokenText.trim()) {
-      setError('I could not hear anything. Please try again.');
+  }
+
+  async function reparseDraftWithBackend(nextText: string) {
+    if (!token) return;
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/reminders/parse', baseUrl).toString();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: nextText }),
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        title: string;
+        isoDate: string;
+        hour: number;
+        minute: number;
+        repeatType: RepeatType;
+        reminderType: ReminderType;
+      };
+      if (json?.isoDate) setServerParsed(parsedFromServer(json));
+    } catch {
+      // ignore, keep previous parse
     }
-    setState('review');
   }
 
   async function handleConfirm() {
@@ -198,7 +297,27 @@ export default function VoiceReminderScreen() {
         status: 'active',
         reminderDaysBefore: reminderSettings.defaultReminderDays ?? [1, 0],
       };
+      // Save to backend (best-effort). If offline, we still store locally.
       addReminder(newBill);
+
+      // Local notification (best-effort)
+      if (parsed.date) {
+        await scheduleLocalNotification({
+          title: 'Reminder',
+          body: parsed.title,
+          data: { type: 'reminder' },
+          triggerAt: parsed.date,
+        }).catch(() => {});
+      }
+
+      // Offline fallback: persist the draft so it can be recreated later if network fails.
+      // (We can't reliably detect offline here; this is a lightweight safety net.)
+      await AsyncStorage.setItem(
+        '@lifewise_last_voice_reminder_draft',
+        JSON.stringify({ at: Date.now(), bill: newBill }),
+      ).catch(() => {});
+      setIsOfflineSaved(true);
+
       router.back();
     } catch {
       setError('Could not create this reminder. Please try again.');
@@ -207,151 +326,165 @@ export default function VoiceReminderScreen() {
   }
 
   const titleLine =
-    state === 'listening'
-      ? 'Listening...'
+    state === 'recording'
+      ? 'Recording...'
+      : state === 'transcribing'
+        ? 'Processing...'
       : state === 'review'
         ? 'Here’s what I heard'
         : 'What should I remind you about?';
 
+  const showTranscript = state === 'review' && !!(isEditing ? draftText.trim() : spokenText.trim());
+  const heroText = (isEditing ? draftText : spokenText).trim();
+  const canInteract = state !== 'transcribing' && state !== 'confirming';
+  const hasTranscript = !!spokenText.trim();
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { paddingTop: headerTop, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={[styles.headerCancel, { color: colors.textSecondary }]}>Cancel</Text>
+    <LinearGradient
+      colors={['#0B1220', '#22114D', '#0B1220']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
+      <View style={[styles.header, { paddingTop: headerTop }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12} disabled={!canInteract}>
+          <Text style={[styles.headerCancel, { color: 'rgba(255,255,255,0.75)' }]}>Cancel</Text>
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Voice Reminder</Text>
+        <Text style={[styles.headerTitle, { color: '#FFFFFF' }]}>Voice Reminder • Premium</Text>
         <View style={{ width: 56 }} />
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 24,
-          paddingTop: 32,
-          paddingBottom: insets.bottom + 24,
-        }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.centerBlock}>
+      <View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <View style={styles.centerStage}>
           <Pressable
-            onPress={state === 'listening' ? handleStopListening : handleStartListening}
+            onPress={state === 'recording' ? handleStopRecording : handleStartRecording}
             hitSlop={20}
+            disabled={!canInteract}
           >
-            <Animated.View
-              style={[
-                styles.micOuter,
-                ringStyle,
-                { backgroundColor: colors.accentDim, shadowColor: colors.accent },
-              ]}
-            >
-              <Animated.View style={[styles.micInner, micStyle, { backgroundColor: colors.accent }]}>
-                <Ionicons name="mic" size={32} color="#FFFFFF" />
+            <Animated.View style={[styles.micOuter, ringStyle]}>
+              <Animated.View style={[styles.micInner, micStyle]}>
+                {state === 'transcribing' ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Ionicons name={state === 'recording' ? 'stop' : 'mic'} size={30} color="#FFFFFF" />
+                )}
               </Animated.View>
             </Animated.View>
           </Pressable>
 
-          <Text style={[styles.promptTitle, { color: colors.text }]}>{titleLine}</Text>
-          <Text style={[styles.promptSubtitle, { color: colors.textSecondary }]}>
-            Speak naturally, like you’re talking to a person.
-          </Text>
+          <Text style={styles.stageTitle}>{titleLine}</Text>
 
-          <View style={[styles.textBox, { borderColor: colors.inputBorder, backgroundColor: colors.card }]}>
-            <Text style={[styles.transcriptText, { color: spokenText ? colors.text : colors.textTertiary }]}>
-              {spokenText || 'Your voice sentence will appear here.'}
-            </Text>
+          <View style={styles.transcriptWrap}>
+            {isEditing ? (
+              <TextInput
+                value={draftText}
+                onChangeText={setDraftText}
+                placeholder="Type your reminder…"
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                style={styles.transcriptInput}
+                multiline
+                autoFocus
+              />
+            ) : (
+              <Text
+                style={[styles.transcriptHero, !showTranscript && styles.transcriptHeroPlaceholder]}
+                numberOfLines={5}
+              >
+                {state === 'recording'
+                  ? 'Listening…'
+                  : state === 'transcribing'
+                    ? 'Transcribing…'
+                    : showTranscript
+                      ? heroText
+                      : 'Tap the mic and speak.'}
+              </Text>
+            )}
           </View>
 
-          <Pressable
-            onPress={() => {
-              // Simple inline editor via prompt-like UX for now.
-              // On native this will just focus text input in future iterations.
-              const sample = 'Remind me to take medicine at 8 PM';
-              setSpokenText(spokenText || sample);
-              setState('review');
-              setError(null);
-            }}
-            style={styles.editLinkWrap}
-          >
-            <Text style={[styles.editLink, { color: colors.accent }]}>
-              Edit text
-            </Text>
-          </Pressable>
+          {!!error && <Text style={styles.errorText}>{error}</Text>}
+          {state === 'review' && detectedLanguage && (
+            <Text style={styles.langPill}>Detected: {detectedLanguage.toUpperCase()}</Text>
+          )}
+        </View>
 
-          {error && (
-            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+        <View style={styles.bottomSheet}>
+          {state === 'review' && parsed ? (
+            <View style={styles.confirmCard}>
+              <Text style={styles.confirmTitle} numberOfLines={1}>{parsed.title}</Text>
+              <View style={styles.confirmMetaRow}>
+                <View style={styles.metaPill}>
+                  <Ionicons name="time" size={14} color="rgba(255,255,255,0.85)" />
+                  <Text style={styles.metaText}>{parsed.timeLabel || 'Time not set'}</Text>
+                </View>
+                <View style={styles.metaPill}>
+                  <Ionicons name="repeat" size={14} color="rgba(255,255,255,0.85)" />
+                  <Text style={styles.metaText}>
+                    {parsed.repeatType === 'none' ? 'One-time' : parsed.repeatType}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {state === 'review' && hasTranscript && (
+            <View style={styles.actionsRow}>
+              <Pressable
+                onPress={async () => {
+                  if (!canInteract) return;
+                  if (!isEditing) {
+                    setDraftText(spokenText);
+                    setIsEditing(true);
+                    return;
+                  }
+                  setSpokenText(draftText);
+                  setIsEditing(false);
+                  await reparseDraftWithBackend(draftText);
+                }}
+                style={[styles.secondaryBtn, !showTranscript && { opacity: 0.45 }]}
+                disabled={!showTranscript || !canInteract}
+              >
+                <Ionicons name={isEditing ? 'checkmark' : 'pencil'} size={16} color="#FFFFFF" />
+                <Text style={styles.secondaryBtnText}>{isEditing ? 'Done' : 'Edit'}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  if (!canInteract) return;
+                  setSpokenText('');
+                  setDraftText('');
+                  setIsEditing(false);
+                  setDetectedLanguage(null);
+                  setServerParsed(null);
+                  setError(null);
+                  setState('idle');
+                }}
+                style={styles.ghostBtn}
+                disabled={!canInteract}
+              >
+                <Text style={styles.ghostBtnText}>Reset</Text>
+              </Pressable>
+            </View>
           )}
 
-          <View style={styles.examples}>
-            <Text style={[styles.examplesLabel, { color: colors.textTertiary }]}>Examples</Text>
-            <Text style={[styles.exampleLine, { color: colors.textSecondary }]}>
-              "Remind me to take medicine at 8 PM"
-            </Text>
-            <Text style={[styles.exampleLine, { color: colors.textSecondary }]}>
-              "Pay electricity bill tomorrow"
-            </Text>
-            <Text style={[styles.exampleLine, { color: colors.textSecondary }]}>
-              "Call doctor on Friday morning"
-            </Text>
-          </View>
-        </View>
-
-        {parsed && (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>
-              {parsed.title}
-            </Text>
-            <View style={styles.cardRow}>
-              <Ionicons name="calendar" size={16} color={colors.textSecondary} />
-              <Text style={[styles.cardText, { color: colors.textSecondary }]}>
-                {parsed.date ? parsed.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Date: Not set'}
-              </Text>
-            </View>
-            <View style={styles.cardRow}>
-              <Ionicons name="time" size={16} color={colors.textSecondary} />
-              <Text style={[styles.cardText, { color: colors.textSecondary }]}>
-                {parsed.timeLabel ? `Time: ${parsed.timeLabel}` : 'Time: Not set'}
-              </Text>
-            </View>
-            <View style={styles.cardRow}>
-              <Ionicons name="repeat" size={16} color={colors.textSecondary} />
-              <Text style={[styles.cardText, { color: colors.textSecondary }]}>
-                {parsed.repeatType === 'none' ? 'One-time' : parsed.repeatType.charAt(0).toUpperCase() + parsed.repeatType.slice(1)}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.bottomButtons}>
           <Pressable
-            style={[styles.secondaryBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
-            onPress={state === 'listening' ? handleStopListening : handleStartListening}
-          >
-            <Ionicons
-              name={state === 'listening' ? 'square' : 'mic'}
-              size={18}
-              color={colors.text}
-            />
-            <Text style={[styles.secondaryBtnText, { color: colors.text }]}>
-              {state === 'listening' ? 'Stop Listening' : 'Tap to Speak'}
-            </Text>
-          </Pressable>
-          <Pressable
-            disabled={!parsed || state === 'confirming'}
+            disabled={!parsed || !canInteract || state !== 'review'}
             onPress={handleConfirm}
-            style={[
-              styles.primaryBtn,
-              {
-                backgroundColor: !parsed || state === 'confirming' ? colors.accentDim : colors.accent,
-              },
-            ]}
+            style={[styles.primaryBtn, (!parsed || !canInteract) && { opacity: 0.5 }]}
           >
-            <Text style={[styles.primaryBtnText, { color: '#FFFFFF' }]}>
-              {state === 'confirming' ? 'Saving...' : 'Confirm Reminder'}
-            </Text>
+            <LinearGradient
+              colors={['#A855F7', '#3B82F6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.primaryBtnGradient}
+            >
+              <Text style={styles.primaryBtnText}>
+                {state === 'confirming' ? 'Saving…' : 'Confirm'}
+              </Text>
+            </LinearGradient>
           </Pressable>
         </View>
-      </ScrollView>
-    </View>
+      </View>
+    </LinearGradient>
   );
 }
 
@@ -363,7 +496,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomWidth: 1,
   },
   headerCancel: {
     fontFamily: 'Inter_500Medium',
@@ -373,21 +505,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
   },
-  centerBlock: {
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 24,
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
-  micOuter: {
-    width: 132,
-    height: 132,
-    borderRadius: 66,
+  centerStage: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOpacity: 0.35,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 10,
+    paddingTop: 10,
+  },
+  micOuter: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(168, 85, 247, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   micInner: {
     width: 92,
@@ -395,108 +531,173 @@ const styles = StyleSheet.create({
     borderRadius: 46,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(168, 85, 247, 0.95)',
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 8,
   },
-  promptTitle: {
-    marginTop: 16,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 18,
+  stageTitle: {
+    marginTop: 18,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 22,
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
     textAlign: 'center',
   },
-  promptSubtitle: {
+  stageSubtitle: {
+    marginTop: 6,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
+    color: 'rgba(255,255,255,0.68)',
     textAlign: 'center',
-    marginTop: 4,
   },
-  textBox: {
-    marginTop: 20,
+  transcriptWrap: {
+    marginTop: 22,
+    width: '100%',
+    paddingHorizontal: 8,
+  },
+  transcriptHero: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 28,
+    lineHeight: 34,
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    letterSpacing: -0.6,
+  },
+  transcriptHeroPlaceholder: {
+    color: 'rgba(255,255,255,0.35)',
+    fontFamily: 'Inter_600SemiBold',
+  },
+  transcriptInput: {
+    minHeight: 110,
     borderRadius: 18,
     borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    alignSelf: 'stretch',
-  },
-  transcriptText: {
-    minHeight: 60,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-  },
-  editLinkWrap: {
-    marginTop: 6,
-  },
-  editLink: {
+    color: '#FFFFFF',
     fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    textDecorationLine: 'underline',
+    fontSize: 16,
+    lineHeight: 22,
     textAlign: 'center',
   },
   errorText: {
-    marginTop: 8,
+    marginTop: 14,
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     textAlign: 'center',
+    color: '#FB7185',
   },
-  examples: {
-    marginTop: 20,
-    alignSelf: 'stretch',
-  },
-  examplesLabel: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  exampleLine: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  card: {
-    marginTop: 24,
-    borderRadius: 18,
+  langPill: {
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    padding: 16,
-    gap: 8,
-  },
-  cardTitle: {
+    borderColor: 'rgba(255,255,255,0.10)',
+    color: 'rgba(255,255,255,0.78)',
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    marginBottom: 4,
+    fontSize: 12,
+    overflow: 'hidden',
   },
-  cardRow: {
+  bottomSheet: {
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  confirmCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    padding: 14,
+    marginBottom: 12,
+  },
+  confirmTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.92)',
+    marginBottom: 10,
+    letterSpacing: -0.2,
+  },
+  confirmMetaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cardText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-  },
-  bottomButtons: {
-    marginTop: 28,
     gap: 10,
   },
+  metaPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  metaText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.82)',
+    textTransform: 'capitalize' as const,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
   secondaryBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 999,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingVertical: 10,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 12,
   },
   secondaryBtnText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: '#FFFFFF',
   },
-  primaryBtn: {
-    borderRadius: 999,
+  ghostBtn: {
     paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.08)',
+  },
+  ghostBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  primaryBtn: {
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  primaryBtnGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
   },
   primaryBtnText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_800ExtraBold',
     fontSize: 15,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 });
 

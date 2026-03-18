@@ -30,6 +30,7 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || 'asst_WmTjqjLyo3ki1MFHtqDtal6R';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const S3_BUCKET = process.env.AWS_S3_BUCKET;
+const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
 
 const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
 const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
@@ -170,6 +171,99 @@ function getOpenAIKey(): string | undefined {
     process.env.OPENAI_TOKEN ||
     process.env.OPEN_AI_API_KEY
   );
+}
+
+async function parseReminderWithAI(text: string): Promise<{
+  title: string;
+  isoDate: string; // YYYY-MM-DD
+  hour: number; // 0-23
+  minute: number; // 0-59
+  repeatType: RepeatType;
+  reminderType: ReminderType;
+}> {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const defaultIso = tomorrow.toISOString().slice(0, 10);
+
+  const openAIKey = getOpenAIKey();
+  if (!openAIKey) {
+    return {
+      title: text.trim().slice(0, 80) || 'Reminder',
+      isoDate: defaultIso,
+      hour: 9,
+      minute: 0,
+      repeatType: 'none',
+      reminderType: 'custom',
+    };
+  }
+
+  const prompt =
+    'You are a reminder parser for a mobile app. Given a natural language reminder in English or Hinglish, extract:\n' +
+    '- title (short)\n' +
+    '- isoDate (YYYY-MM-DD)\n' +
+    '- hour (0-23)\n' +
+    '- minute (0-59)\n' +
+    '- repeatType one of: none,daily,weekly,monthly,yearly\n' +
+    '- reminderType one of: bill,subscription,custom\n' +
+    'Rules:\n' +
+    '- If no date mentioned, assume tomorrow.\n' +
+    '- If no time mentioned, use 9:00.\n' +
+    '- If user says "every day"/"daily" etc, set repeatType accordingly.\n' +
+    '- If text mentions bill/payment, set reminderType=bill. If subscription, reminderType=subscription. Else custom.\n' +
+    'Return ONLY strict JSON with keys: title, isoDate, hour, minute, repeatType, reminderType.\n' +
+    'Input: ' +
+    JSON.stringify(text);
+
+  try {
+    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openAIKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+      }),
+    });
+
+    if (!aiRes.ok) throw new Error('openai_parse_failed');
+    const json = await aiRes.json();
+    const content = json.choices?.[0]?.message?.content;
+    if (!content) throw new Error('openai_empty');
+    const parsed = JSON.parse(content);
+
+    const title = String(parsed.title || text).trim().slice(0, 80) || 'Reminder';
+    const isoDate = String(parsed.isoDate || defaultIso).slice(0, 10);
+    const hour = Math.max(0, Math.min(23, Number(parsed.hour)));
+    const minute = Math.max(0, Math.min(59, Number(parsed.minute)));
+    const repeatType = (String(parsed.repeatType || 'none') as RepeatType) || 'none';
+    const reminderType = (String(parsed.reminderType || 'custom') as ReminderType) || 'custom';
+
+    return {
+      title,
+      isoDate,
+      hour: Number.isFinite(hour) ? hour : 9,
+      minute: Number.isFinite(minute) ? minute : 0,
+      repeatType: (['none', 'daily', 'weekly', 'monthly', 'yearly'] as const).includes(repeatType)
+        ? repeatType
+        : 'none',
+      reminderType: (['bill', 'subscription', 'custom'] as const).includes(reminderType)
+        ? reminderType
+        : 'custom',
+    };
+  } catch {
+    return {
+      title: text.trim().slice(0, 80) || 'Reminder',
+      isoDate: defaultIso,
+      hour: 9,
+      minute: 0,
+      repeatType: 'none',
+      reminderType: 'custom',
+    };
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -858,73 +952,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'text is required' });
       }
 
-      let title = text.trim();
-      let due = new Date();
-      due.setDate(due.getDate() + 1);
-
-      const openAIKey = getOpenAIKey();
-      if (openAIKey) {
-        try {
-          const prompt =
-            'You are a reminder parser. Given a natural language reminder in English or Hinglish, ' +
-            'extract: title, isoDate (YYYY-MM-DD), and hour (0-23). ' +
-            'If no date is mentioned, assume tomorrow. If no time, use 9. ' +
-            'Reply ONLY with strict JSON: {"title": "...", "isoDate": "...", "hour": 9}. Input: ' +
-            JSON.stringify(text);
-
-          const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${openAIKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: OPENAI_MODEL,
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0,
-            }),
-          });
-
-          if (aiRes.ok) {
-            const json = await aiRes.json();
-            const content = json.choices?.[0]?.message?.content;
-            if (content) {
-              try {
-                const parsed = JSON.parse(content);
-                if (parsed.title) title = String(parsed.title);
-                if (parsed.isoDate) {
-                  const parsedDate = new Date(parsed.isoDate);
-                  if (!Number.isNaN(parsedDate.getTime())) {
-                    due = parsedDate;
-                  }
-                }
-                if (typeof parsed.hour === 'number') {
-                  due.setHours(parsed.hour, 0, 0, 0);
-                } else {
-                  due.setHours(9, 0, 0, 0);
-                }
-              } catch {
-                // ignore JSON parse error, fallback to defaults
-              }
-            }
-          }
-        } catch {
-          // ignore AI failure, fallback to defaults
-        }
-      } else {
-        due.setHours(9, 0, 0, 0);
+      const parsed = await parseReminderWithAI(text);
+      const due = new Date(`${parsed.isoDate}T00:00:00.000Z`);
+      if (Number.isNaN(due.getTime())) {
+        return res.status(400).json({ message: 'Could not parse reminder date' });
       }
+      due.setHours(parsed.hour, parsed.minute, 0, 0);
 
       const doc = {
         userId: req.userId,
-        name: title.slice(0, 80),
+        name: parsed.title.slice(0, 80),
         amount: 0,
         dueDate: due.toISOString(),
         category: 'bills' as CategoryType,
         isPaid: false,
         icon: 'flash',
-        reminderType: 'custom' as ReminderType,
-        repeatType: 'none' as RepeatType,
+        reminderType: parsed.reminderType,
+        repeatType: parsed.repeatType,
         status: 'active' as ReminderStatus,
         snoozedUntil: undefined,
         reminderDaysBefore: [0],
@@ -939,6 +983,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
+
+  // Parse reminder text (no save) - used for voice confirm/edit flows
+  app.post('/api/reminders/parse', authMiddleware, async (req, res) => {
+    try {
+      const { text } = req.body as { text?: string };
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ message: 'text is required' });
+      }
+      const parsed = await parseReminderWithAI(text);
+      return res.json(parsed);
+    } catch (err) {
+      console.error('Parse reminder error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // Voice reminder: upload audio -> transcribe -> parse (no save)
+  app.post(
+    '/api/reminders/voice/parse',
+    authMiddleware,
+    upload.single('audio'),
+    async (req: any, res: any) => {
+      try {
+        const openAIKey = getOpenAIKey();
+        if (!openAIKey) {
+          return res.status(500).json({ message: 'Voice is not configured. Set OPENAI_API_KEY.' });
+        }
+
+        const file = req.file as Express.Multer.File | undefined;
+        if (!file || !file.buffer) {
+          return res.status(400).json({ message: 'audio file is required' });
+        }
+
+        // Transcribe with OpenAI Whisper
+        const form = new FormData();
+        const blob = new Blob([file.buffer], { type: file.mimetype || 'audio/m4a' });
+        form.append('file', blob, file.originalname || 'voice.m4a');
+        form.append('model', OPENAI_TRANSCRIBE_MODEL);
+        // Ask for detected language + segments (Whisper decides language automatically)
+        form.append('response_format', 'verbose_json');
+
+        const tRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openAIKey}` },
+          body: form as any,
+        });
+
+        if (!tRes.ok) {
+          const errText = await tRes.text().catch(() => '');
+          console.error('OpenAI transcribe error:', errText);
+          return res.status(500).json({ message: 'Could not transcribe audio. Please try again.' });
+        }
+
+        const tJson = (await tRes.json()) as { text?: string; language?: string };
+        const text = String(tJson.text || '').trim();
+        if (!text) {
+          return res.status(400).json({ message: 'No speech detected. Please try again.' });
+        }
+
+        const parsed = await parseReminderWithAI(text);
+        return res.json({ text, language: tJson.language || null, parsed });
+      } catch (err) {
+        console.error('Voice parse error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    },
+  );
 
   // ----- Leaks (computed from transactions) -----
   const LEAK_SUGGESTIONS: Record<string, string> = {

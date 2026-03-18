@@ -3,14 +3,19 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/lib/theme-context";
 
 function ClassicTabLayout() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const isIOS = Platform.OS === "ios";
   const activeColor = "#7C3AED"; // unified purple accent
   const inactiveColor = "#9CA3AF";
+  const tabBarBottom = 12 + (insets.bottom || 0);
+  // OUTER spacing only (distance from screen edges)
+  const OUTER_GUTTER = 32;
 
   return (
     <Tabs
@@ -21,13 +26,16 @@ function ClassicTabLayout() {
         tabBarShowLabel: false,
         tabBarStyle: {
           position: "absolute" as const,
-          left: 16,
-          right: 16,
-          bottom: isIOS ? 26 : 18,
+          left: 0,
+          right: 0,
+          marginHorizontal: OUTER_GUTTER + Math.max(insets.left || 0, insets.right || 0),
+          bottom: tabBarBottom,
           height: 64,
           borderRadius: 999,
-          paddingHorizontal: 24,
-          paddingVertical: 8,
+          // No inner padding; spacing comes from equal-width tab items
+          paddingHorizontal: 0,
+          paddingTop: 0,
+          paddingBottom: 0,
           backgroundColor: colors.tabBarBg,
           borderTopWidth: 0,
           elevation: 8,
@@ -37,8 +45,18 @@ function ClassicTabLayout() {
           shadowOffset: { width: 0, height: 10 },
         },
         tabBarItemStyle: {
+          flex: 1,
+          height: "100%",
+          paddingVertical: 0,
+          paddingHorizontal: 0,
           justifyContent: "center",
           alignItems: "center",
+        },
+        tabBarIconStyle: {
+          width: "100%",
+          height: "100%",
+          marginTop: 0,
+          marginBottom: 0,
         },
         tabBarBackground: () =>
           isIOS ? (

@@ -240,7 +240,7 @@ function setupErrorHandler(app: express.Application) {
 
   setupErrorHandler(app);
 
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = parseInt(process.env.SERVER_PORT || process.env.PORT || "5001", 10);
   const tryHost = process.env.HOST || "0.0.0.0";
   function onListen() {
     log(`LifeWise backend: http://127.0.0.1:${port}`);

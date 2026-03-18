@@ -21,6 +21,7 @@ import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import {
   Bill,
   ReminderType,
@@ -562,6 +563,7 @@ export default function BillsScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const {
     bills, isLoading, toggleBillPaid, addReminder, editReminder, deleteReminder,
     snoozeReminder, reminderSettings, updateReminderSettings,
@@ -575,7 +577,6 @@ export default function BillsScreen() {
   const [snoozeBillId, setSnoozeBillId] = useState<string | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomInset = Math.max(insets.bottom, 4);
 
   const filteredBills = useMemo(() => {
     if (activeFilter === 'all') return bills;
@@ -628,7 +629,7 @@ export default function BillsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: bottomInset + 28 },
+          { paddingTop: topInset + 16, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>

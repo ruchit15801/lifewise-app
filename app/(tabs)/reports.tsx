@@ -16,6 +16,7 @@ import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import {
   CATEGORIES,
   getCategoryBreakdown,
@@ -56,6 +57,7 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
 
 export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, isLoading, monthlyBudget } = useExpenses();
@@ -64,7 +66,6 @@ export default function ReportsScreen() {
   const [selectedYear] = useState(now.getFullYear());
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomInset = Math.max(insets.bottom, 4);
 
   const monthTxs = useMemo(() =>
     transactions.filter(tx => {
@@ -108,7 +109,7 @@ export default function ReportsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: bottomInset + 28 },
+          { paddingTop: topInset + 16, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>

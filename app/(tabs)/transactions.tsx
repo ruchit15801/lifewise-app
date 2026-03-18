@@ -15,6 +15,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import {
   CATEGORIES,
   formatTime,
@@ -75,13 +76,13 @@ function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transac
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, isLoading } = useExpenses();
   const [activeFilter, setActiveFilter] = useState('all');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomInset = Math.max(insets.bottom, 4);
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') return transactions;
@@ -205,7 +206,7 @@ export default function TransactionsScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingBottom: bottomInset + 28,
+          paddingBottom: tabBarInset.bottom,
         }}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}

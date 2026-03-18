@@ -34,6 +34,7 @@ import { useExpenses } from '@/lib/expense-context';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import {
   CATEGORIES,
   getTodaySpending,
@@ -457,6 +458,7 @@ function AnimatedGreeting({ userName, colors }: { userName: string; colors: any 
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const {
     transactions,
     bills,
@@ -485,7 +487,6 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomInset = Math.max(insets.bottom, 4);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -617,7 +618,7 @@ export default function HomeScreen() {
               title="Refreshing…"
             />
           }
-          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: bottomInset + 44 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom }]}
         >
           <TopReminderAlert
             colors={colors}
@@ -705,7 +706,7 @@ export default function HomeScreen() {
         }
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 12, paddingBottom: bottomInset + 44 },
+          { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <TopReminderAlert

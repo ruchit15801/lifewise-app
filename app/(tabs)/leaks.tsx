@@ -14,6 +14,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import { CATEGORIES, MoneyLeak } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
 
@@ -63,12 +64,12 @@ function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; inde
 
 export default function LeaksScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const { leaks, isLoading } = useExpenses();
   const { colors } = useTheme();
   const { formatAmount } = useCurrency();
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomInset = Math.max(insets.bottom, 4);
   const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
   const potentialYearlySavings = totalLeaks * 12;
 
@@ -86,7 +87,7 @@ export default function LeaksScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: bottomInset + 28 },
+          { paddingTop: topInset + 16, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
