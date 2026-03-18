@@ -152,9 +152,11 @@ function AuthGate() {
   }, [isAuthenticated, token]);
 
   useEffect(() => {
+    let cancelled = false;
     let sub: { remove: () => void } | null = null;
+
     (async () => {
-      sub = await addNotificationResponseReceivedListener((response) => {
+      const nextSub = await addNotificationResponseReceivedListener((response) => {
         const data = response.notification.request.content.data as any;
         if (data?.type === "reminder" && data?.billId) {
           router.push({
@@ -163,9 +165,19 @@ function AuthGate() {
           } as any);
         }
       });
+
+      // If the component unmounted before the async attach completed, remove immediately.
+      if (cancelled) {
+        nextSub.remove();
+        return;
+      }
+      sub = nextSub;
     })();
 
-    return () => sub?.remove();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
   }, [router]);
 
   if (isLoading || showSplash) {

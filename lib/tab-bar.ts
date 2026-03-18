@@ -9,7 +9,9 @@ export function useTabBarContentInset() {
 
   const TAB_BAR_HEIGHT = 64;
   const TAB_BAR_BOTTOM_GAP = 12; // matches `tabBarBottom` base in tabs layout
-  const CONTENT_EXTRA = 8; // breathing room above the pill
+  // Extra breathing room above the pill. Keep this high enough for devices
+  // with ~0 bottom inset (older Android / no home indicator).
+  const CONTENT_EXTRA = 24;
 
   return {
     bottom: (insets.bottom || 0) + TAB_BAR_BOTTOM_GAP + TAB_BAR_HEIGHT + CONTENT_EXTRA,

@@ -244,7 +244,7 @@ function setupErrorHandler(app: express.Application) {
   const tryHost = process.env.HOST || "0.0.0.0";
   function onListen() {
     log(`LifeWise backend: http://127.0.0.1:${port}`);
-    if (tryHost === "0.0.0.0") log("  (Phone/emulator: set EXPO_PUBLIC_DOMAIN to your PC IP, e.g. 192.168.1.5:5000)");
+    if (tryHost === "0.0.0.0") log("  (Phone/emulator: set EXPO_PUBLIC_DOMAIN to your PC IP, e.g. 192.168.1.5:5001)");
   }
   server.on("error", (err: NodeJS.ErrnoException) => {
     if ((err.code === "ENOTSUP" || err.code === "EAFNOSUPPORT") && tryHost === "0.0.0.0") {

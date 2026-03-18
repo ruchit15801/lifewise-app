@@ -40,7 +40,8 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "./app.plugin.js"
+      "./app.plugin.js",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

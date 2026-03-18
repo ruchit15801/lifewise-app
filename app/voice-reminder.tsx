@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -9,6 +9,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme-context';
@@ -38,6 +39,24 @@ function timeLabelFromDate(d: Date) {
   const mm = String(minute).padStart(2, '0');
   return `${hour12}:${mm} ${suffix}`;
 }
+
+const TIME_OPTIONS: { id: string; label: string; hour?: number; minute?: number }[] = [
+  { id: '6am', label: '6:00 AM', hour: 6, minute: 0 },
+  { id: '9am', label: '9:00 AM', hour: 9, minute: 0 },
+  { id: '12pm', label: '12:00 PM', hour: 12, minute: 0 },
+  { id: '3pm', label: '3:00 PM', hour: 15, minute: 0 },
+  { id: '6pm', label: '6:00 PM', hour: 18, minute: 0 },
+  { id: '9pm', label: '9:00 PM', hour: 21, minute: 0 },
+  { id: 'custom', label: 'Custom…' },
+];
+
+const REPEAT_OPTIONS: { id: RepeatType; label: string }[] = [
+  { id: 'none', label: 'One-time' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'monthly', label: 'Monthly' },
+  { id: 'yearly', label: 'Yearly' },
+];
 
 function parsedFromServer(p: {
   title: string;
@@ -75,6 +94,10 @@ export default function VoiceReminderScreen() {
   const [isOfflineSaved, setIsOfflineSaved] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
   const [serverParsed, setServerParsed] = useState<ParsedReminder | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [tempTime, setTempTime] = useState<Date | null>(null);
+  const [showRepeatPicker, setShowRepeatPicker] = useState(false);
+  const [tempRepeat, setTempRepeat] = useState<RepeatType>('none');
 
   const ringPulse = useSharedValue(1);
   const micScale = useSharedValue(1);
@@ -280,25 +303,37 @@ export default function VoiceReminderScreen() {
   }
 
   async function handleConfirm() {
-    if (!parsed) {
+    const effective =
+      parsed ??
+      (spokenText.trim()
+        ? {
+            title: spokenText.trim(),
+            date: new Date(),
+            timeLabel: timeLabelFromDate(new Date()),
+            repeatType: 'none' as RepeatType,
+            reminderType: 'custom' as ReminderType,
+          }
+        : null);
+
+    if (!effective) {
       setError('Could not understand this reminder. Please edit the text.');
       return;
     }
     setState('confirming');
     try {
       const now = new Date();
-      const baseDate = parsed.date ?? now;
+      const baseDate = effective.date ?? now;
       const dueDateIso = baseDate.toISOString();
 
       const newBill: Omit<Bill, 'id'> = {
-        name: parsed.title,
+        name: effective.title,
         amount: 0,
         dueDate: dueDateIso,
-        category: parsed.reminderType === 'bill' ? 'bills' : 'others',
+        category: effective.reminderType === 'bill' ? 'bills' : 'others',
         isPaid: false,
-        icon: parsed.reminderType === 'bill' ? 'receipt' : 'create',
-        reminderType: parsed.reminderType,
-        repeatType: parsed.repeatType,
+        icon: effective.reminderType === 'bill' ? 'receipt' : 'create',
+        reminderType: effective.reminderType,
+        repeatType: effective.repeatType,
         status: 'active',
         reminderDaysBefore: reminderSettings.defaultReminderDays ?? [1, 0],
       };
@@ -306,12 +341,12 @@ export default function VoiceReminderScreen() {
       addReminder(newBill);
 
       // Local notification (best-effort)
-      if (parsed.date) {
+      if (effective.date) {
         await scheduleLocalNotification({
           title: 'Reminder',
-          body: parsed.title,
+          body: effective.title,
           data: { type: 'reminder' },
-          triggerAt: parsed.date,
+          triggerAt: effective.date,
         }).catch(() => {});
       }
 
@@ -344,18 +379,28 @@ export default function VoiceReminderScreen() {
   const canInteract = state !== 'transcribing' && state !== 'confirming';
   const hasTranscript = !!spokenText.trim();
 
+  const effectiveParsed = parsed ?? (spokenText.trim()
+    ? {
+        title: spokenText.trim(),
+        date: new Date(),
+        timeLabel: timeLabelFromDate(new Date()),
+        repeatType: 'none' as RepeatType,
+        reminderType: 'custom' as ReminderType,
+      }
+    : null);
+
   return (
     <LinearGradient
-      colors={['#0B1220', '#22114D', '#0B1220']}
+      colors={["#F5F3FF", "#E0F2FE", "#FDF2F8"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
       <View style={[styles.header, { paddingTop: headerTop }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} disabled={!canInteract}>
-          <Text style={[styles.headerCancel, { color: 'rgba(255,255,255,0.75)' }]}>Cancel</Text>
+          <Text style={[styles.headerCancel]}>Cancel</Text>
         </Pressable>
-        <Text style={[styles.headerTitle, { color: '#FFFFFF' }]}>Voice Reminder • Premium</Text>
+        <Text style={[styles.headerTitle]}>Voice Reminder</Text>
         <View style={{ width: 56 }} />
       </View>
 
@@ -366,14 +411,25 @@ export default function VoiceReminderScreen() {
             hitSlop={20}
             disabled={!canInteract}
           >
-            <Animated.View style={[styles.micOuter, ringStyle]}>
-              <Animated.View style={[styles.micInner, micStyle]}>
-                {state === 'transcribing' ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Ionicons name={state === 'recording' ? 'stop' : 'mic'} size={30} color="#FFFFFF" />
-                )}
-              </Animated.View>
+            <Animated.View style={[styles.micOuterShadow, ringStyle]}>
+              <LinearGradient
+                colors={["#A855F7", "#60A5FA"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.micOuterGradient}
+              >
+                <Animated.View style={[styles.micInner, micStyle]}>
+                  {state === 'transcribing' ? (
+                    <ActivityIndicator color="#4F46E5" />
+                  ) : (
+                    <Ionicons
+                      name={state === 'recording' ? 'stop' : 'mic'}
+                      size={30}
+                      color="#4F46E5"
+                    />
+                  )}
+                </Animated.View>
+              </LinearGradient>
             </Animated.View>
           </Pressable>
 
@@ -385,7 +441,7 @@ export default function VoiceReminderScreen() {
                 value={draftText}
                 onChangeText={setDraftText}
                 placeholder="Type your reminder…"
-                placeholderTextColor="rgba(255,255,255,0.45)"
+                placeholderTextColor="rgba(15,23,42,0.35)"
                 style={styles.transcriptInput}
                 multiline
                 autoFocus
@@ -413,21 +469,57 @@ export default function VoiceReminderScreen() {
         </View>
 
         <View style={styles.bottomSheet}>
-          {state === 'review' && parsed ? (
+          {state === 'review' && effectiveParsed ? (
             <View style={styles.confirmCard}>
-              <Text style={styles.confirmTitle} numberOfLines={1}>{parsed.title}</Text>
-              <View style={styles.confirmMetaRow}>
-                <View style={styles.metaPill}>
-                  <Ionicons name="time" size={14} color="rgba(255,255,255,0.85)" />
-                  <Text style={styles.metaText}>{parsed.timeLabel || 'Time not set'}</Text>
+              <Text style={styles.confirmTitle} numberOfLines={1}>{effectiveParsed.title}</Text>
+              {!isEditing && (
+                <View style={styles.schedulePanel}>
+                  <Pressable
+                    style={styles.scheduleRow}
+                    onPress={() => {
+                      if (!canInteract) return;
+                      setTempTime(effectiveParsed.date ?? new Date());
+                      setShowTimePicker(true);
+                    }}
+                  >
+                    <View style={styles.scheduleLeft}>
+                      <Ionicons name="time" size={16} color="#4F46E5" />
+                      <Text style={styles.scheduleLabel}>Time</Text>
+                    </View>
+                    <View style={styles.scheduleRight}>
+                      <Text style={styles.scheduleValue}>
+                        {effectiveParsed.timeLabel || 'Select time'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                    </View>
+                  </Pressable>
+
+                  <View style={styles.scheduleDivider} />
+
+                  <Pressable
+                    style={styles.scheduleRow}
+                    onPress={() => {
+                      if (!canInteract) return;
+                      setTempRepeat(effectiveParsed.repeatType);
+                      setShowRepeatPicker(true);
+                    }}
+                  >
+                    <View style={styles.scheduleLeft}>
+                      <Ionicons name="repeat" size={16} color="#4F46E5" />
+                      <Text style={styles.scheduleLabel}>Repeat</Text>
+                    </View>
+                    <View style={styles.scheduleRight}>
+                      <Text style={styles.scheduleValue}>
+                        {effectiveParsed.repeatType === 'none'
+                          ? 'One-time'
+                          : effectiveParsed.repeatType.charAt(0).toUpperCase() +
+                            effectiveParsed.repeatType.slice(1)}
+                      </Text>
+                      <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                    </View>
+                  </Pressable>
                 </View>
-                <View style={styles.metaPill}>
-                  <Ionicons name="repeat" size={14} color="rgba(255,255,255,0.85)" />
-                  <Text style={styles.metaText}>
-                    {parsed.repeatType === 'none' ? 'One-time' : parsed.repeatType}
-                  </Text>
-                </View>
-              </View>
+              )}
             </View>
           ) : null}
 
@@ -448,7 +540,7 @@ export default function VoiceReminderScreen() {
                 style={[styles.secondaryBtn, !showTranscript && { opacity: 0.45 }]}
                 disabled={!showTranscript || !canInteract}
               >
-                <Ionicons name={isEditing ? 'checkmark' : 'pencil'} size={16} color="#FFFFFF" />
+                <Ionicons name={isEditing ? 'checkmark' : 'pencil'} size={16} color="#4F46E5" />
                 <Text style={styles.secondaryBtnText}>{isEditing ? 'Done' : 'Edit'}</Text>
               </Pressable>
 
@@ -466,29 +558,131 @@ export default function VoiceReminderScreen() {
                 style={styles.ghostBtn}
                 disabled={!canInteract}
               >
+                <Ionicons name="refresh" size={16} color="#E11D48" />
                 <Text style={styles.ghostBtnText}>Reset</Text>
               </Pressable>
             </View>
           )}
 
           <Pressable
-            disabled={!parsed || !canInteract || state !== 'review'}
+            disabled={!effectiveParsed || !canInteract || state !== 'review'}
             onPress={handleConfirm}
-            style={[styles.primaryBtn, (!parsed || !canInteract) && { opacity: 0.5 }]}
+            style={[styles.primaryBtn, (!effectiveParsed || !canInteract) && { opacity: 0.5 }]}
           >
             <LinearGradient
-              colors={['#A855F7', '#3B82F6']}
+              colors={["#A855F7", "#60A5FA"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.primaryBtnGradient}
             >
               <Text style={styles.primaryBtnText}>
-                {state === 'confirming' ? 'Saving…' : 'Confirm'}
+                {state === 'confirming' ? 'Saving…' : 'Save reminder'}
               </Text>
             </LinearGradient>
           </Pressable>
         </View>
       </View>
+
+      {/* Time picker dropdown */}
+      <Modal transparent visible={showTimePicker} animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select time</Text>
+            <View style={styles.timePickerWrap}>
+              <DateTimePicker
+                value={tempTime ?? new Date()}
+                mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, selected) => {
+                  if (selected) setTempTime(selected);
+                }}
+              />
+            </View>
+            <View style={styles.modalActionsRow}>
+              <Pressable onPress={() => setShowTimePicker(false)} style={styles.modalTextButton}>
+                <Text style={styles.modalTextButtonLabel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (!tempTime) {
+                    setShowTimePicker(false);
+                    return;
+                  }
+                  setServerParsed((prev) => {
+                    const base = prev?.date ?? new Date();
+                    const next = new Date(base);
+                    next.setHours(tempTime.getHours(), tempTime.getMinutes(), 0, 0);
+                    const baseParsed = prev ?? {
+                      title: spokenText.trim() || 'Reminder',
+                      repeatType: 'none' as RepeatType,
+                      reminderType: 'custom' as ReminderType,
+                    };
+                    return {
+                      ...baseParsed,
+                      date: next,
+                      timeLabel: timeLabelFromDate(next),
+                    };
+                  });
+                  setShowTimePicker(false);
+                }}
+                style={[styles.modalPrimaryButton]}
+              >
+                <Text style={styles.modalPrimaryButtonLabel}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Repeat picker dropdown */}
+      <Modal transparent visible={showRepeatPicker} animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Repeat</Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {REPEAT_OPTIONS.map((opt) => {
+                const isActive = tempRepeat === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    onPress={() => setTempRepeat(opt.id)}
+                    style={[styles.repeatRow, isActive && styles.repeatRowActive]}
+                  >
+                    <Text style={[styles.repeatLabel, isActive && styles.repeatLabelActive]}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.modalActionsRow}>
+              <Pressable onPress={() => setShowRepeatPicker(false)} style={styles.modalTextButton}>
+                <Text style={styles.modalTextButtonLabel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setServerParsed((prev) => {
+                    const baseParsed = prev ?? {
+                      title: spokenText.trim() || 'Reminder',
+                      date: new Date(),
+                      timeLabel: timeLabelFromDate(new Date()),
+                      reminderType: 'custom' as ReminderType,
+                    };
+                    return {
+                      ...baseParsed,
+                      repeatType: tempRepeat,
+                    };
+                  });
+                  setShowRepeatPicker(false);
+                }}
+                style={styles.modalPrimaryButton}
+              >
+                <Text style={styles.modalPrimaryButtonLabel}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -505,10 +699,12 @@ const styles = StyleSheet.create({
   headerCancel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 14,
+    color: '#6B7280',
   },
   headerTitle: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
+    color: '#111827',
   },
   content: {
     flex: 1,
@@ -523,30 +719,48 @@ const styles = StyleSheet.create({
   micOuter: {
     width: 140,
     height: 140,
-    borderRadius: 70,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(168, 85, 247, 0.14)',
+    backgroundColor: '#EEF2FF',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  micOuterShadow: {
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  micOuterGradient: {
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    padding: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   micInner: {
     width: 92,
     height: 92,
     borderRadius: 46,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(168, 85, 247, 0.95)',
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    // No shadows/elevation in this modern light UI
   },
   stageTitle: {
     marginTop: 18,
+    marginBottom: 0,
     fontFamily: 'Inter_700Bold',
     fontSize: 22,
-    color: '#FFFFFF',
+    color: '#111827',
     letterSpacing: -0.3,
     textAlign: 'center',
   },
@@ -566,23 +780,23 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 28,
     lineHeight: 34,
-    color: 'rgba(255,255,255,0.92)',
+    color: '#111827',
     textAlign: 'center',
     letterSpacing: -0.6,
   },
   transcriptHeroPlaceholder: {
-    color: 'rgba(255,255,255,0.35)',
+    color: '#9CA3AF',
     fontFamily: 'Inter_600SemiBold',
   },
   transcriptInput: {
     minHeight: 110,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#FFFFFF',
+    color: '#111827',
     fontFamily: 'Inter_500Medium',
     fontSize: 16,
     lineHeight: 22,
@@ -593,17 +807,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     textAlign: 'center',
-    color: '#FB7185',
+    color: '#DC2626',
   },
   langPill: {
     marginTop: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#EEF2FF',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    color: 'rgba(255,255,255,0.78)',
+    borderColor: '#C7D2FE',
+    color: '#4F46E5',
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
     overflow: 'hidden',
@@ -615,39 +829,126 @@ const styles = StyleSheet.create({
   confirmCard: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     padding: 14,
     marginBottom: 12,
   },
   confirmTitle: {
     fontFamily: 'Inter_700Bold',
     fontSize: 16,
-    color: 'rgba(255,255,255,0.92)',
+    color: '#111827',
     marginBottom: 10,
     letterSpacing: -0.2,
   },
   confirmMetaRow: {
     flexDirection: 'row',
+    gap: 12,
+  },
+  schedulePanel: {
+    marginTop: 8,
+    borderRadius: 18,
+    backgroundColor: '#F2F7FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    paddingVertical: 6,
+  },
+  scheduleRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  scheduleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  scheduleRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
   },
-  metaPill: {
+  scheduleLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: '#4F46E5',
+  },
+  scheduleValue: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    color: '#111827',
+  },
+  scheduleDivider: {
+    height: 1,
+    backgroundColor: '#DBEAFE',
+    marginHorizontal: 12,
+  },
+  dropdownRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'space-between',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 4,
   },
-  metaText: {
+  dropdownLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dropdownRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dropdown: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginTop: 4,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  dropdownAccent: {
+    width: 6,
+    backgroundColor: '#A855F7',
+    alignSelf: 'stretch',
+  },
+  dropdownBody: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dropdownLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  dropdownLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  dropdownValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownValueText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.82)',
-    textTransform: 'capitalize' as const,
+    fontSize: 13,
+    color: '#111827',
   },
   actionsRow: {
     flexDirection: 'row',
@@ -664,33 +965,34 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 12,
   },
   secondaryBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    color: '#FFFFFF',
+    color: '#111827',
   },
   ghostBtn: {
     paddingVertical: 12,
     paddingHorizontal: 10,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: '#F9FAFB',
   },
   ghostBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    color: 'rgba(255,255,255,0.85)',
+    color: '#111827',
   },
   primaryBtn: {
     borderRadius: 18,
     overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   primaryBtnGradient: {
     paddingVertical: 14,
@@ -703,6 +1005,81 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+  },
+  modalTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  timePickerWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  modalActionsRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTextButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  modalTextButtonLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  modalPrimaryButton: {
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    backgroundColor: '#4F46E5',
+  },
+  modalPrimaryButtonLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  repeatRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F8FAFC',
+    marginBottom: 8,
+  },
+  repeatRowActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+  },
+  repeatLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: '#111827',
+  },
+  repeatLabelActive: {
+    fontFamily: 'Inter_600SemiBold',
+    color: '#4F46E5',
   },
 });
 

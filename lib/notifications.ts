@@ -8,9 +8,18 @@ function isExpoGo() {
 }
 
 let handlerConfigured = false;
+
 async function getNotificationsModule() {
+  // Expo Go (especially Android, SDK 53+) no longer supports expo-notifications
+  // for remote push tokens and now throws a hard runtime error when the module
+  // is imported. To keep the app running in Expo Go, never import the module
+  // at all in that environment and simply no-op all notification features.
+  if (isExpoGo()) {
+    console.log("[Push] Notifications module disabled in Expo Go (using no-op implementation).");
+    return null;
+  }
+
   try {
-    // Lazy-load so Expo Go doesn't crash at module import time.
     const mod = await import("expo-notifications");
     if (!handlerConfigured) {
       mod.setNotificationHandler({

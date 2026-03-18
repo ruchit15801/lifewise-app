@@ -199,7 +199,7 @@ async function parseReminderWithAI(text: string): Promise<{
   }
 
   const prompt =
-    'You are a reminder parser for a mobile app. Given a natural language reminder in English or Hinglish, extract:\n' +
+    'You are a reminder parser for a mobile app. Given a natural language reminder in ANY language (including Hindi and Gujarati), extract:\n' +
     '- title (short)\n' +
     '- isoDate (YYYY-MM-DD)\n' +
     '- hour (0-23)\n' +
