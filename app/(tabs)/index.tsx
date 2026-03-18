@@ -325,7 +325,7 @@ function PrimaryCircleActions({ colors, onScanBill, onQuickAdd, onAutoTrack }: {
           ]}
         >
           <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
-          <Ionicons name="mic" size={22} color={purple} />
+          <Ionicons name="mic" size={24} color={purple} />
         </Animated.View>
         <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Voice Reminder</Text>
       </Pressable>
@@ -342,9 +342,9 @@ function PrimaryCircleActions({ colors, onScanBill, onQuickAdd, onAutoTrack }: {
           ]}
         >
           <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
-          <Ionicons name="camera" size={22} color={blue} />
+          <Ionicons name="camera" size={24} color={blue} />
         </Animated.View>
-        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Scan Bill</Text>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Scan Bills</Text>
       </Pressable>
       <Pressable onPress={onAutoTrack} style={styles.primaryCircleItem}>
         <Animated.View
@@ -359,9 +359,9 @@ function PrimaryCircleActions({ colors, onScanBill, onQuickAdd, onAutoTrack }: {
           ]}
         >
           <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
-          <Ionicons name="sparkles" size={22} color={amber} />
+          <Ionicons name="chatbubble-ellipses" size={24} color={amber} />
         </Animated.View>
-        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Quick Entry</Text>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Wise AI</Text>
       </Pressable>
     </View>
   );
@@ -565,8 +565,7 @@ export default function HomeScreen() {
   const todayKey = new Date().toDateString();
   const upcomingBills = bills
     .filter((b) => !b.isPaid && b.status !== 'paid')
-    .filter((b) => new Date(b.dueDate).toDateString() === todayKey)
-    .slice(0, 3);
+    .filter((b) => new Date(b.dueDate).toDateString() === todayKey);
 
   const showComingSoon = () => {
     if (Platform.OS === 'web') {
@@ -592,10 +591,6 @@ export default function HomeScreen() {
           }
           contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom }]}
         >
-          <TopReminderAlert
-            colors={colors}
-            upcomingBills={upcomingBills}
-          />
           <MustSmsSyncBanner
             colors={colors}
             isSyncingSms={isSyncingSms || isLoading}
@@ -631,6 +626,55 @@ export default function HomeScreen() {
             <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>Balance Left</Text>
             <Text style={[styles.seniorHeroAmount, { color: colors.text }]}>{formatAmount(Math.max(0, monthlyBudget - monthlySpend))}</Text>
           </View>
+
+          {upcomingBills.length > 0 && (
+            <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(450) : undefined}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Today’s Reminders</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
+                {upcomingBills.map((bill) => {
+                  const dueDate = new Date(bill.dueDate);
+                  const intent = getReminderIntentFromBill(bill);
+                  const policy = getIntentPolicy(intent);
+                  const repeatLabel = REPEAT_OPTIONS.find((r) => r.key === bill.repeatType)?.label || '';
+                  const showDue = policy.showDue;
+                  const showRepeat = policy.showRepeat;
+                  const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+                  const dueText = dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                  const dueOrRepeatText =
+                    showDue && showRepeat
+                      ? `${dueText} • ${repeatLabel}`
+                      : showDue
+                        ? dueText
+                        : showRepeat
+                          ? repeatLabel
+                          : '';
+
+                  return (
+                    <Pressable
+                      key={bill.id}
+                      onPress={() => router.push(`/bill-details/${bill.id}`)}
+                      style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
+                      <View style={[styles.reminderPillIcon, { backgroundColor: colors.warningDim }]}>
+                        <Ionicons name={bill.icon as any} size={18} color={colors.warning} />
+                      </View>
+                      <View style={styles.reminderPillInfo}>
+                        <Text style={[styles.reminderPillName, { color: colors.text }]} numberOfLines={1}>
+                          {bill.name}
+                        </Text>
+                        {!!dueOrRepeatText ? (
+                          <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>{dueOrRepeatText}</Text>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.reminderPillAmount, { color: colors.accent, opacity: showAmount ? 1 : 0 }]}>
+                        {formatAmount(bill.amount)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </Animated.View>
+          )}
 
           <View style={styles.seniorGrid}>
             <Pressable onPress={() => router.push('/(tabs)/transactions')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -681,10 +725,6 @@ export default function HomeScreen() {
           { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom },
         ]}
       >
-        <TopReminderAlert
-          colors={colors}
-          upcomingBills={upcomingBills}
-        />
         <MustSmsSyncBanner
           colors={colors}
           isSyncingSms={isSyncingSms || isLoading}
@@ -721,7 +761,7 @@ export default function HomeScreen() {
             colors={colors}
             onScanBill={handleScanBill}
             onQuickAdd={() => router.push('/voice-reminder')}
-            onAutoTrack={syncSmsFromDevice}
+            onAutoTrack={() => router.push('/assistant')}
           />
         </Animated.View>
 
@@ -874,7 +914,14 @@ export default function HomeScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
             <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
             <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
-            <QuickAccessCard icon="chatbubble-ellipses" label="Assistant" subtitle="Smart Advice" color="#3B82F6" onPress={() => router.push('/assistant')} colors={colors} />
+            <QuickAccessCard
+              icon="add-circle"
+              label="Quick Add"
+              subtitle="Create a reminder"
+              color={colors.accent}
+              onPress={() => setShowQuickAdd(true)}
+              colors={colors}
+            />
           </ScrollView>
         </Animated.View>
 
@@ -1226,14 +1273,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryCircleFill: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     shadowOpacity: 0.22,
-    shadowRadius: 16,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     // elevation: 6,
   },
@@ -1243,7 +1290,7 @@ const styles = StyleSheet.create({
     left: 2,
     right: 2,
     bottom: 2,
-    borderRadius: 33,
+    borderRadius: 38,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.90)',
   },

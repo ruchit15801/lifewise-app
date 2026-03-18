@@ -60,6 +60,8 @@ const CATEGORY_OPTIONS: { key: CategoryType; label: string }[] = [
   { key: 'healthcare', label: 'Healthcare' },
   { key: 'shopping', label: 'Shopping' },
   { key: 'education', label: 'Education' },
+  { key: 'investment', label: 'Investment' },
+  { key: 'transport', label: 'Transport' },
   { key: 'others', label: 'Others' },
 ];
 
@@ -255,6 +257,30 @@ function AddEditModal({
   const [daysOffset, setDaysOffset] = useState('7');
   const [showIconPicker, setShowIconPicker] = useState(false);
 
+  const deriveReminderTypeFromCategory = (cat: CategoryType): ReminderType => {
+    if (cat === 'bills') return 'bill';
+    if (cat === 'entertainment') return 'subscription';
+    return 'custom';
+  };
+
+  const defaultIconForCategory = (cat: CategoryType): string | null => {
+    // Map categories to the intent icons used by `getReminderIntentFromBill`.
+    switch (cat) {
+      case 'bills':
+        return REMINDER_TYPE_CONFIG.bill.icon;
+      case 'entertainment':
+        return REMINDER_TYPE_CONFIG.subscription.icon;
+      case 'healthcare':
+        return 'medkit';
+      case 'investment':
+        return 'trending-up';
+      case 'transport':
+        return 'globe';
+      default:
+        return null;
+    }
+  };
+
   React.useEffect(() => {
     if (editBill) {
       setName(editBill.name);
@@ -276,11 +302,24 @@ function AddEditModal({
     }
   }, [editBill, visible, reminderSettings]);
 
+  // Merge "Type" into "Category": category drives reminderType and default icon.
+  React.useEffect(() => {
+    setReminderType(deriveReminderTypeFromCategory(category));
+
+    const nextIcon = defaultIconForCategory(category);
+    if (nextIcon) setSelectedIcon(nextIcon);
+  }, [category]);
+
   const handleSave = () => {
     if (!name.trim() || !amount.trim()) return;
 
     const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) return;
+    if (isNaN(parsedAmount) || parsedAmount < 0) return;
+
+    // Some reminder intents don't require an amount (health/habits/travel/tasks/events).
+    const derivedIntent = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
+    const intentPolicy = getIntentPolicy(derivedIntent);
+    if (intentPolicy.shouldHaveAmount && parsedAmount <= 0) return;
 
     const parsedDays = parseInt(daysOffset || '7', 10);
     const safeDays = isFinite(parsedDays) && parsedDays >= 0 ? parsedDays : 7;
@@ -339,24 +378,6 @@ function AddEditModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Type</Text>
-            <View style={styles.typeRow}>
-              {(['bill', 'subscription', 'custom'] as ReminderType[]).map(type => {
-                const config = REMINDER_TYPE_CONFIG[type];
-                const isActive = reminderType === type;
-                return (
-                  <Pressable
-                    key={type}
-                    onPress={() => setReminderType(type)}
-                    style={[styles.typeChip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, isActive && { backgroundColor: config.color + '18', borderColor: config.color + '40' }]}
-                  >
-                    <Ionicons name={config.icon as any} size={16} color={isActive ? config.color : colors.textTertiary} />
-                    <Text style={[styles.typeChipText, { color: colors.textTertiary }, isActive && { color: config.color }]}>{config.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
