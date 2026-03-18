@@ -36,7 +36,7 @@ interface ExpenseContextValue {
   monthlyBudget: number;
   setMonthlyBudget: (budget: number) => void;
   quickAddReminder: (text: string) => Promise<void>;
-  addReminder: (bill: Omit<Bill, 'id'>) => void;
+  addReminder: (bill: Omit<Bill, 'id'>) => Promise<Bill | null>;
   editReminder: (bill: Bill) => void;
   deleteReminder: (billId: string) => void;
   snoozeReminder: (billId: string, days: number) => void;
@@ -275,7 +275,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token, bills]);
 
-  const addReminder = useCallback(async (billData: Omit<Bill, 'id'>) => {
+  const addReminder = useCallback(async (billData: Omit<Bill, 'id'>): Promise<Bill | null> => {
     if (!token) return;
     try {
       const res = await fetchWithAuth(token, '/api/bills', {
@@ -286,10 +286,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const created = await res.json();
         setBills((prev) => [...prev, created]);
+        return created as Bill;
       }
     } catch {
       // optional: add locally with generateId for optimistic UI
     }
+    return null;
   }, [token]);
 
   const editReminder = useCallback(async (updatedBill: Bill) => {

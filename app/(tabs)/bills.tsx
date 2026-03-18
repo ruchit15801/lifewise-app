@@ -17,11 +17,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
 import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
+import { getIntentPolicy, getReminderIntentFromBill, type ReminderIntent } from '@/lib/reminder-intent';
 import {
   Bill,
   ReminderType,
@@ -34,12 +36,20 @@ import {
   getDaysUntil,
 } from '@/lib/data';
 
-type FilterType = 'all' | 'bill' | 'subscription' | 'custom';
+type FilterType = ReminderIntent;
 
 const FILTER_TABS: { key: FilterType; label: string; icon: string }[] = [
   { key: 'all', label: 'All', icon: 'apps' },
-  { key: 'bill', label: 'Bills', icon: 'receipt' },
-  { key: 'subscription', label: 'Subs', icon: 'refresh' },
+  { key: 'bills', label: 'Bills', icon: 'receipt' },
+  { key: 'health', label: 'Health', icon: 'medkit' },
+  { key: 'family', label: 'Family', icon: 'people' },
+  { key: 'work', label: 'Work', icon: 'newspaper' },
+  { key: 'tasks', label: 'Tasks', icon: 'shield-checkmark' },
+  { key: 'subscriptions', label: 'Subs', icon: 'refresh' },
+  { key: 'finance', label: 'Finance', icon: 'trending-up' },
+  { key: 'habits', label: 'Habits', icon: 'water' },
+  { key: 'travel', label: 'Travel', icon: 'globe' },
+  { key: 'events', label: 'Events', icon: 'film' },
   { key: 'custom', label: 'Custom', icon: 'create' },
 ];
 
@@ -66,6 +76,7 @@ function ReminderCard({
   onEdit,
   onDelete,
   index,
+  onPress,
 }: {
   bill: Bill;
   onMarkPaid: () => void;
@@ -73,6 +84,7 @@ function ReminderCard({
   onEdit: () => void;
   onDelete: () => void;
   index: number;
+  onPress?: () => void;
 }) {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
@@ -81,16 +93,46 @@ function ReminderCard({
   const daysLeft = getDaysUntil(effectiveDate);
   const urgencyColor = bill.status === 'paid' ? colors.accentMint : bill.status === 'snoozed' ? colors.accentBlue : getUrgencyColor(daysLeft, colors);
   const dueDate = new Date(bill.dueDate);
-  const typeConfig = REMINDER_TYPE_CONFIG[bill.reminderType];
   const isPaid = bill.status === 'paid' || bill.isPaid;
   const isSnoozed = bill.status === 'snoozed';
 
   const repeatLabel = REPEAT_OPTIONS.find(r => r.key === bill.repeatType)?.label || '';
+  const intent = getReminderIntentFromBill(bill);
+  const policy = getIntentPolicy(intent);
+  const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+  const intentMeta = (() => {
+    switch (intent) {
+      case 'bills':
+        return { label: 'Bills', color: '#F59E0B' };
+      case 'subscriptions':
+        return { label: 'Subscriptions', color: '#3B82F6' };
+      case 'health':
+        return { label: 'Health', color: '#10B981' };
+      case 'habits':
+        return { label: 'Habits', color: '#22C55E' };
+      case 'family':
+        return { label: 'Family', color: '#EC4899' };
+      case 'work':
+        return { label: 'Work', color: '#3B82F6' };
+      case 'tasks':
+        return { label: 'Tasks', color: '#F59E0B' };
+      case 'finance':
+        return { label: 'Finance', color: '#8B5CF6' };
+      case 'travel':
+        return { label: 'Travel', color: '#60A5FA' };
+      case 'events':
+        return { label: 'Events', color: '#A855F7' };
+      case 'custom':
+      default:
+        return { label: 'Custom', color: '#4F46E5' };
+    }
+  })();
 
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(150 + index * 60).duration(400) : undefined}>
-      <View style={[styles.reminderCard, { backgroundColor: colors.card, borderColor: colors.border }, isPaid && styles.reminderCardPaid]}>
-        <View style={styles.reminderTop}>
+      <Pressable onPress={onPress} disabled={!onPress}>
+        <View style={[styles.reminderCard, { backgroundColor: colors.card, borderColor: colors.border }, isPaid && styles.reminderCardPaid]}>
+          <View style={styles.reminderTop}>
           <View style={[styles.reminderIcon, { backgroundColor: urgencyColor + '15' }]}>
             <Ionicons name={bill.icon as any} size={22} color={urgencyColor} />
           </View>
@@ -99,26 +141,34 @@ function ReminderCard({
               {bill.name}
             </Text>
             <View style={styles.reminderMetaRow}>
-              <View style={[styles.typeBadge, { backgroundColor: typeConfig.color + '15' }]}>
-                <Text style={[styles.typeBadgeText, { color: typeConfig.color }]}>{typeConfig.label}</Text>
+              <View style={[styles.typeBadge, { backgroundColor: intentMeta.color + '15' }]}>
+                <Text style={[styles.typeBadgeText, { color: intentMeta.color }]}>{intentMeta.label}</Text>
               </View>
-              {repeatLabel !== 'One-time' && (
+              {policy.showRepeat && (
                 <View style={styles.repeatBadge}>
                   <Ionicons name="refresh" size={10} color={colors.textTertiary} />
                   <Text style={[styles.repeatText, { color: colors.textTertiary }]}>{repeatLabel}</Text>
                 </View>
               )}
             </View>
-            <Text style={[styles.reminderDue, { color: urgencyColor }]}>
-              {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
-              <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
-                {'  '}
-                {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {policy.showDue ? (
+              <Text style={[styles.reminderDue, { color: urgencyColor }]}>
+                {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
+                <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
+                  {'  '}
+                  {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </Text>
               </Text>
-            </Text>
+            ) : null}
           </View>
           <View style={styles.reminderRight}>
-            <Text style={[styles.reminderAmount, { color: colors.text }, isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const }]}>
+            <Text
+              style={[
+                styles.reminderAmount,
+                { color: colors.text, opacity: showAmount ? 1 : 0 },
+                isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const },
+              ]}
+            >
               {formatAmount(bill.amount)}
             </Text>
           </View>
@@ -175,7 +225,8 @@ function ReminderCard({
             </Text>
           </View>
         )}
-      </View>
+          </View>
+        </Pressable>
     </Animated.View>
   );
 }
@@ -564,6 +615,7 @@ export default function BillsScreen() {
   const { formatAmount } = useCurrency();
   const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarContentInset();
+  const router = useRouter();
   const {
     bills, isLoading, toggleBillPaid, addReminder, editReminder, deleteReminder,
     snoozeReminder, reminderSettings, updateReminderSettings,
@@ -580,7 +632,7 @@ export default function BillsScreen() {
 
   const filteredBills = useMemo(() => {
     if (activeFilter === 'all') return bills;
-    return bills.filter(b => b.reminderType === activeFilter);
+    return bills.filter(b => getReminderIntentFromBill(b) === activeFilter);
   }, [bills, activeFilter]);
 
   const activeBills = filteredBills
@@ -595,6 +647,14 @@ export default function BillsScreen() {
     .reduce((s, b) => s + b.amount, 0);
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const todayKey = new Date().toDateString();
+  const todayBills = filteredBills.filter(
+    (b) =>
+      b.status !== 'paid' &&
+      !b.isPaid &&
+      new Date(b.dueDate).toDateString() === todayKey,
+  );
 
   const handleDelete = (billId: string) => {
     if (Platform.OS === 'web') {
@@ -700,25 +760,68 @@ export default function BillsScreen() {
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
-          <View style={styles.filterRow}>
-            {FILTER_TABS.map(tab => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {FILTER_TABS.map((tab) => (
               <Pressable
                 key={tab.key}
                 onPress={() => setActiveFilter(tab.key)}
-                style={[styles.filterTab, { backgroundColor: colors.card, borderColor: colors.border }, activeFilter === tab.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
+                style={[
+                  styles.filterTab,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  activeFilter === tab.key && {
+                    backgroundColor: colors.accentDim,
+                    borderColor: colors.accent + '40',
+                  },
+                ]}
               >
                 <Ionicons
                   name={tab.icon as any}
                   size={15}
                   color={activeFilter === tab.key ? colors.accent : colors.textTertiary}
                 />
-                <Text style={[styles.filterTabText, { color: colors.textTertiary }, activeFilter === tab.key && { color: colors.accent }]}>
+                <Text
+                  style={[
+                    styles.filterTabText,
+                    { color: colors.textTertiary },
+                    activeFilter === tab.key && { color: colors.accent },
+                  ]}
+                >
                   {tab.label}
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         </Animated.View>
+
+        {todayBills.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Today ({todayBills.length})</Text>
+            {todayBills
+              .sort((a, b) => getDaysUntil(a.dueDate) - getDaysUntil(b.dueDate))
+              .map((bill, idx) => (
+                <ReminderCard
+                  key={bill.id}
+                  bill={bill}
+                  onPress={() => router.push(`/bill-details/${bill.id}`)}
+                  onMarkPaid={() => toggleBillPaid(bill.id)}
+                  onSnooze={() => {
+                    setSnoozeBillId(bill.id);
+                    setShowSnoozeModal(true);
+                  }}
+                  onEdit={() => {
+                    setEditBill(bill);
+                    setShowAddModal(true);
+                  }}
+                  onDelete={() => handleDelete(bill.id)}
+                  index={idx}
+                />
+              ))}
+          </>
+        )}
 
         {activeBills.length > 0 && (
           <>
@@ -729,6 +832,7 @@ export default function BillsScreen() {
               <ReminderCard
                 key={bill.id}
                 bill={bill}
+                onPress={() => router.push(`/bill-details/${bill.id}`)}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
                 onSnooze={() => { setSnoozeBillId(bill.id); setShowSnoozeModal(true); }}
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
@@ -748,6 +852,7 @@ export default function BillsScreen() {
               <ReminderCard
                 key={bill.id}
                 bill={bill}
+                onPress={() => router.push(`/bill-details/${bill.id}`)}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
                 onSnooze={() => { }}
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
@@ -920,15 +1025,18 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 24,
+    paddingHorizontal: 2,
+    paddingBottom: 12,
+    marginBottom: 10,
   },
   filterTab: {
-    flex: 1,
+    flex: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
     paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 14,
     borderWidth: 1,
   },

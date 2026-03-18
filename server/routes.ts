@@ -778,6 +778,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: (b.status as ReminderStatus) || 'active',
         snoozedUntil: b.snoozedUntil,
         reminderDaysBefore: b.reminderDaysBefore || [3, 1, 0],
+        imageUrl: b.imageUrl,
+        imageKey: b.imageKey,
+        source: b.source,
       }));
       return res.json(out);
     } catch (err) {
@@ -811,7 +814,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Scan Bill (image -> OCR -> bill reminder)
+  // Scan Bill Preview (image -> OCR -> validated fields, without creating a bill)
+  app.post(
+    '/api/bills/scan/preview',
+    authMiddleware,
+    upload.single('image'),
+    async (req: any, res: any) => {
+      try {
+        if (!S3_BUCKET) {
+          return res.status(500).json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
+        }
+
+        const file = req.file as Express.Multer.File | undefined;
+        if (!file || !file.buffer) {
+          return res.status(400).json({ message: 'image file is required' });
+        }
+
+        const key = `bills/${req.userId}/${Date.now()}-${file.originalname}`;
+
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype || 'image/jpeg',
+          }),
+        );
+
+        const texRes = await textract.send(
+          new DetectDocumentTextCommand({
+            Document: { Bytes: file.buffer },
+          }),
+        );
+
+        const lines =
+          texRes.Blocks?.filter((b) => b.BlockType === 'LINE').map((b) => b.Text || '').filter(Boolean) ?? [];
+        const fullText = lines.join('\n');
+
+        let title = lines.find((l) => /bill|invoice|electric/i.test(l)) || 'Scanned Bill';
+
+        // Extract amount (support more formats than only "₹ ...")
+        let amount = 0;
+        const currencyAmountMatch = fullText.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i);
+        if (currencyAmountMatch?.[1]) {
+          amount = Number(currencyAmountMatch[1].replace(/,/g, '')) || 0;
+        } else {
+          const contextualMatch =
+            fullText.match(
+              /(total|amount|payable|due|bill\s*amount|amount\s*due)\s*[:\s]*₹?\s*([\d,]+(?:\.\d{1,2})?)/i,
+            ) || fullText.match(/(total|amount|payable|due)\s+₹?\s*([\d,]+(?:\.\d{1,2})?)/i);
+
+          if (contextualMatch?.[2]) {
+            amount = Number(contextualMatch[2].replace(/,/g, '')) || 0;
+          }
+        }
+
+        // Detect due date (year optional in some bill formats)
+        let dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 7);
+
+        const dateMatchWithYear =
+          fullText.match(/due\s*date[:\s]*([0-9]{1,2}\s+\w+\s+\d{4})/i) ||
+          fullText.match(
+            /([0-9]{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4})/i,
+          );
+
+        const dateMatchNoYear = fullText.match(
+          /due\s*date[:\s]*([0-9]{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*)(?:\s*,?\s*(\d{4}))?/i,
+        );
+
+        if (dateMatchWithYear?.[1]) {
+          const parsed = new Date(dateMatchWithYear[1]);
+          if (!Number.isNaN(parsed.getTime())) dueDate = parsed;
+        } else if (dateMatchNoYear?.[1]) {
+          const yearToUse = dateMatchNoYear[3] ? Number(dateMatchNoYear[3]) : new Date().getFullYear();
+          const parsed = new Date(`${dateMatchNoYear[1]} ${yearToUse}`);
+          if (!Number.isNaN(parsed.getTime())) dueDate = parsed;
+        }
+
+        const hasDateLike = Boolean(dateMatchWithYear?.[1] || dateMatchNoYear?.[1]);
+
+        // Validate: reject random photos by requiring amount AND bill-like signals.
+        const hasBillLikeKeywords = /(invoice|receipt|bill|statement|amount|total|payable|due|payment|paid|gst|tax|account\s*(number|no)|customer|meter|electric|utility|telephone)/i.test(
+          fullText,
+        );
+
+        const hasTitleSignal = /(invoice|bill|electric|receipt)/i.test(title);
+
+        if (amount <= 0 || !(hasBillLikeKeywords || hasDateLike || hasTitleSignal)) {
+          return res.status(422).json({
+            message:
+              'This does not look like a bill photo. Please scan a real bill/invoice where amount and due date are visible.',
+          });
+        }
+
+        const preview = {
+          name: title.slice(0, 80),
+          amount,
+          dueDate: dueDate.toISOString(),
+          category: 'bills' as CategoryType,
+          icon: 'receipt',
+          reminderType: 'bill' as ReminderType,
+          repeatType: 'monthly' as RepeatType,
+          status: 'active' as ReminderStatus,
+          snoozedUntil: undefined,
+          reminderDaysBefore: [3, 1, 0],
+          source: 'scan_bill',
+          imageKey: key,
+          imageUrl: `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`,
+        };
+
+        return res.json({ preview });
+      } catch (err) {
+        console.error('Scan bill preview error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    },
+  );
+
+  // Scan Bill Commit (create a bill reminder from validated preview)
+  app.post('/api/bills/scan/commit', authMiddleware, async (req: any, res: any) => {
+    try {
+      const preview = req.body?.preview;
+      if (!preview) return res.status(400).json({ message: 'preview is required' });
+
+      const amount = Number(preview.amount) || 0;
+      if (amount <= 0) return res.status(422).json({ message: 'Invalid amount detected.' });
+
+      const due = new Date(preview.dueDate);
+      if (Number.isNaN(due.getTime())) return res.status(422).json({ message: 'Invalid due date detected.' });
+
+      const reminderDaysBefore = Array.isArray(preview.reminderDaysBefore) ? preview.reminderDaysBefore : [3, 1, 0];
+
+      const doc = {
+        userId: req.userId,
+        name: String(preview.name || 'Bill').slice(0, 80),
+        amount,
+        dueDate: due.toISOString(),
+        category: (preview.category as CategoryType) || 'bills',
+        isPaid: false,
+        icon: preview.icon || 'receipt',
+        reminderType: (preview.reminderType as ReminderType) || 'bill',
+        repeatType: (preview.repeatType as RepeatType) || 'monthly',
+        status: (preview.status as ReminderStatus) || 'active',
+        snoozedUntil: preview.snoozedUntil,
+        reminderDaysBefore,
+        source: preview.source || 'scan_bill',
+        imageKey: preview.imageKey,
+        imageUrl: preview.imageUrl,
+        createdAt: new Date(),
+      };
+
+      const result = await bills.insertOne(doc);
+      return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+    } catch (err) {
+      console.error('Scan bill commit error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // Scan Bill (legacy: image -> OCR -> bill reminder)
   app.post(
     '/api/bills/scan',
     authMiddleware,
@@ -855,25 +1017,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
           /bill|invoice|electric/i.test(l),
         ) || 'Scanned Bill';
 
+        // Extract amount (support more formats than only "₹ ...")
         let amount = 0;
-        const amountMatch =
-          fullText.match(/₹\s*([\d,]+(?:\.\d{1,2})?)/i) ||
-          fullText.match(/amount[:\s]*₹?\s*([\d,]+(?:\.\d{1,2})?)/i);
-        if (amountMatch && amountMatch[1]) {
-          amount = Number(amountMatch[1].replace(/,/g, '')) || 0;
+        const currencyAmountMatch = fullText.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i);
+        if (currencyAmountMatch?.[1]) {
+          amount = Number(currencyAmountMatch[1].replace(/,/g, '')) || 0;
+        } else {
+          const contextualMatch =
+            fullText.match(
+              /(total|amount|payable|due|bill\s*amount|amount\s*due)\s*[:\s]*₹?\s*([\d,]+(?:\.\d{1,2})?)/i,
+            ) || fullText.match(/(total|amount|payable|due)\s+₹?\s*([\d,]+(?:\.\d{1,2})?)/i);
+          if (contextualMatch?.[2]) {
+            amount = Number(contextualMatch[2].replace(/,/g, '')) || 0;
+          }
         }
 
+        // Detect due date (year optional in some bill formats)
         let dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + 7);
 
-        const dateMatch =
+        const dateMatchWithYear =
           fullText.match(/due\s*date[:\s]*([0-9]{1,2}\s+\w+\s+\d{4})/i) ||
           fullText.match(/([0-9]{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4})/i);
-        if (dateMatch && dateMatch[1]) {
-          const parsed = new Date(dateMatch[1]);
-          if (!Number.isNaN(parsed.getTime())) {
-            dueDate = parsed;
-          }
+
+        const dateMatchNoYear = fullText.match(
+          /due\s*date[:\s]*([0-9]{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*)(?:\s*,?\s*(\d{4}))?/i,
+        );
+
+        if (dateMatchWithYear?.[1]) {
+          const parsed = new Date(dateMatchWithYear[1]);
+          if (!Number.isNaN(parsed.getTime())) dueDate = parsed;
+        } else if (dateMatchNoYear?.[1]) {
+          const yearToUse = dateMatchNoYear[3] ? Number(dateMatchNoYear[3]) : new Date().getFullYear();
+          const parsed = new Date(`${dateMatchNoYear[1]} ${yearToUse}`);
+          if (!Number.isNaN(parsed.getTime())) dueDate = parsed;
+        }
+
+        const hasDateLike = Boolean(dateMatchWithYear?.[1] || dateMatchNoYear?.[1]);
+
+        // Validate: reject random photos by requiring amount AND bill-like signals.
+        // (Prevents success when user uploads a random/non-bill photo.)
+        const hasBillLikeKeywords = /(invoice|receipt|bill|statement|amount|total|payable|due|payment|paid|gst|tax|account\s*(number|no)|customer|meter|electric|utility|telephone)/i.test(
+          fullText,
+        );
+        const hasTitleSignal = /(invoice|bill|electric|receipt)/i.test(title);
+
+        if (amount <= 0 || !(hasBillLikeKeywords || hasDateLike || hasTitleSignal)) {
+          return res.status(422).json({
+            message:
+              'This does not look like a bill photo. Please scan a real bill/invoice where amount and due date are visible.',
+          });
         }
 
         const reminderDate = new Date(dueDate.getTime());
@@ -892,7 +1085,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           repeatType: 'monthly' as RepeatType,
           status: 'active' as ReminderStatus,
           snoozedUntil: undefined,
-          reminderDaysBefore: [2, 0],
+          reminderDaysBefore: [3, 1, 0],
           source: 'scan_bill',
           imageKey: key,
           imageUrl: `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`,

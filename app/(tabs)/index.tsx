@@ -15,7 +15,6 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import { getApiUrl, apiRequest } from '@/lib/query-client';
 import Animated, {
   FadeInDown,
@@ -35,12 +34,14 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
+import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
 import {
   CATEGORIES,
   getTodaySpending,
   getMonthlySpending,
   getGreetingPeriod,
   formatTime,
+  REPEAT_OPTIONS,
   CategoryType,
   type GreetingPeriod,
 } from '@/lib/data';
@@ -523,42 +524,9 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleScanBill = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets || !result.assets[0]) return;
-    const asset = result.assets[0];
-    try {
-      const baseUrl = getApiUrl();
-      const url = new URL('/api/bills/scan', baseUrl).toString();
-      const form = new FormData();
-      form.append('image', {
-        uri: asset.uri,
-        name: asset.fileName || 'bill.jpg',
-        type: asset.mimeType || 'image/jpeg',
-      } as any);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: form,
-      });
-      if (!res.ok) {
-        Alert.alert('Scan failed', 'Could not scan this bill. You can add it manually in Reminders.');
-        return;
-      }
-      await refreshData();
-      Alert.alert('Bill added', 'We scanned your bill and created a reminder.');
-    } catch {
-      Alert.alert('Scan failed', 'Network error while scanning bill.');
-    }
-  }, [token, refreshData]);
+  const handleScanBill = useCallback(() => {
+    router.push('/scan-bill');
+  }, [router]);
 
   // Never show a full-screen sync animation; we use a compact top banner instead.
 
@@ -594,7 +562,11 @@ export default function HomeScreen() {
     budgetHealthScore = 0;
   }
 
-  const upcomingBills = bills.filter(b => !b.isPaid && b.status !== 'paid').slice(0, 3);
+  const todayKey = new Date().toDateString();
+  const upcomingBills = bills
+    .filter((b) => !b.isPaid && b.status !== 'paid')
+    .filter((b) => new Date(b.dueDate).toDateString() === todayKey)
+    .slice(0, 3);
 
   const showComingSoon = () => {
     if (Platform.OS === 'web') {
@@ -812,19 +784,47 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
               {upcomingBills.map((bill) => {
                 const dueDate = new Date(bill.dueDate);
+                const intent = getReminderIntentFromBill(bill);
+                const policy = getIntentPolicy(intent);
+                const repeatLabel = REPEAT_OPTIONS.find((r) => r.key === bill.repeatType)?.label || '';
+                const showDue = policy.showDue;
+                const showRepeat = policy.showRepeat;
+                const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+                const dueText = dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                const dueOrRepeatText =
+                  showDue && showRepeat
+                    ? `${dueText} • ${repeatLabel}`
+                    : showDue
+                      ? dueText
+                      : showRepeat
+                        ? repeatLabel
+                        : '';
                 return (
-                  <View key={bill.id} style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Pressable
+                    key={bill.id}
+                    onPress={() => router.push(`/bill-details/${bill.id}`)}
+                    style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  >
                     <View style={[styles.reminderPillIcon, { backgroundColor: colors.warningDim }]}>
                       <Ionicons name={bill.icon as any} size={18} color={colors.warning} />
                     </View>
                     <View style={styles.reminderPillInfo}>
                       <Text style={[styles.reminderPillName, { color: colors.text }]} numberOfLines={1}>{bill.name}</Text>
-                      <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>
-                        {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </Text>
+                      {!!dueOrRepeatText ? (
+                        <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>
+                          {dueOrRepeatText}
+                        </Text>
+                      ) : null}
                     </View>
-                    <Text style={[styles.reminderPillAmount, { color: colors.accent }]}>{formatAmount(bill.amount)}</Text>
-                  </View>
+                    <Text
+                      style={[
+                        styles.reminderPillAmount,
+                        { color: colors.accent, opacity: showAmount ? 1 : 0 },
+                      ]}
+                    >
+                      {formatAmount(bill.amount)}
+                    </Text>
+                  </Pressable>
                 );
               })}
             </ScrollView>
@@ -833,33 +833,39 @@ export default function HomeScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(160).duration(500) : undefined}>
           <View style={styles.insightsRow}>
-            <InsightCard
-              icon="water"
-              iconColor={colors.danger}
-              bgColor={colors.dangerDim}
-              title="Leaks"
-              value={formatAmount(totalLeakAmount)}
-              subtitle="/month"
-              colors={colors}
-            />
-            <InsightCard
-              icon="notifications"
-              iconColor={colors.warning}
-              bgColor={colors.warningDim}
-              title="Due"
-              value={String(unpaidBills)}
-              subtitle="reminders"
-              colors={colors}
-            />
-            <InsightCard
-              icon="swap-horizontal"
-              iconColor={colors.accentBlue}
-              bgColor={colors.accentBlueDim}
-              title="Total"
-              value={String(transactions.length)}
-              subtitle="this month"
-              colors={colors}
-            />
+            <Pressable onPress={() => router.push('/(tabs)/leaks')} style={{ flex: 1 }}>
+              <InsightCard
+                icon="water"
+                iconColor={colors.danger}
+                bgColor={colors.dangerDim}
+                title="Leaks"
+                value={formatAmount(totalLeakAmount)}
+                subtitle="/month"
+                colors={colors}
+              />
+            </Pressable>
+            <Pressable onPress={() => router.push('/(tabs)/bills')} style={{ flex: 1 }}>
+              <InsightCard
+                icon="notifications"
+                iconColor={colors.warning}
+                bgColor={colors.warningDim}
+                title="Due"
+                value={String(unpaidBills)}
+                subtitle="reminders"
+                colors={colors}
+              />
+            </Pressable>
+            <Pressable onPress={() => router.push('/(tabs)/transactions')} style={{ flex: 1 }}>
+              <InsightCard
+                icon="swap-horizontal"
+                iconColor={colors.accentBlue}
+                bgColor={colors.accentBlueDim}
+                title="Total"
+                value={String(transactions.length)}
+                subtitle="this month"
+                colors={colors}
+              />
+            </Pressable>
           </View>
         </Animated.View>
 

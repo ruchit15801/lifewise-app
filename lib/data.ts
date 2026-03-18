@@ -30,6 +30,10 @@ export interface Bill {
   status: ReminderStatus;
   snoozedUntil?: string;
   reminderDaysBefore: number[];
+  // For scan-bill reminders.
+  imageUrl?: string;
+  imageKey?: string;
+  source?: string;
 }
 
 export interface MoneyLeak {

@@ -160,8 +160,8 @@ function AuthGate() {
         const data = response.notification.request.content.data as any;
         if (data?.type === "reminder" && data?.billId) {
           router.push({
-            pathname: "/(tabs)",
-            params: { billId: data.billId },
+            pathname: "/bill-details/[billId]",
+            params: { billId: String(data.billId) },
           } as any);
         }
       });
@@ -189,6 +189,7 @@ function AuthGate() {
       <StatusBar style={colors.statusBarStyle} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="bill-details/[billId]" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="settings" />
