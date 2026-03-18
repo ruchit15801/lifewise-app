@@ -747,7 +747,7 @@ export default function HomeScreen() {
           <PrimaryCircleActions
             colors={colors}
             onScanBill={handleScanBill}
-            onQuickAdd={() => setShowQuickAdd(true)}
+            onQuickAdd={() => router.push('/voice-reminder')}
             onAutoTrack={syncSmsFromDevice}
           />
         </Animated.View>
