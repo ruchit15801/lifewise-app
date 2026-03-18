@@ -79,12 +79,14 @@ export default function NotificationsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
           renderItem={({ item }) => (
-            <View
-              style={[
+            <Pressable
+              onPress={() => router.push(`/notification-details/${item.id}`)}
+              style={({ pressed }) => [
                 styles.item,
                 {
                   backgroundColor: colors.card,
                   borderColor: item.read ? colors.border : colors.accentDim,
+                  opacity: pressed ? 0.85 : 1,
                 },
               ]}
             >
@@ -121,7 +123,7 @@ export default function NotificationsScreen() {
                   {formatTimeAgo(item.createdAt)}
                 </Text>
               </View>
-            </View>
+            </Pressable>
           )}
         />
       )}

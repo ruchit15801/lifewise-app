@@ -578,12 +578,21 @@ export default function ReportsScreen() {
   const handleSelectFilterChip = (key: FilterKey) => {
     setShowCustomStartPicker(false);
     setShowCustomEndPicker(false);
+    if (key !== 'custom') {
+      // Close pickers when switching away from custom.
+      setDraftCustomStart(customStart);
+      setDraftCustomEnd(customEnd);
+    }
     setFilterKey(key);
 
     if (key === 'custom') {
       setDraftCustomStart(customStart);
       setDraftCustomEnd(customEnd);
       setShowCustomStartPicker(true);
+    }
+
+    if (key === 'year') {
+      setShowYearPicker(true);
     }
   };
 
@@ -666,7 +675,7 @@ export default function ReportsScreen() {
                       if (!d) return;
                       const next = new Date(d);
                       next.setHours(0, 0, 0, 0);
-                      setDraftCustomStart(next);
+                      setDraftCustomStart((prev) => (prev.getTime() === next.getTime() ? prev : next));
                     }}
                   />
                 </View>
@@ -683,7 +692,6 @@ export default function ReportsScreen() {
                         setCustomEnd(endOfDay(fixedStart));
                       }
                       setShowCustomStartPicker(false);
-                      setShowCustomEndPicker(true);
                     }}
                     style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
                   >
@@ -708,7 +716,7 @@ export default function ReportsScreen() {
                       if (!d) return;
                       const next = new Date(d);
                       next.setHours(23, 59, 59, 999);
-                      setDraftCustomEnd(next);
+                      setDraftCustomEnd((prev) => (prev.getTime() === next.getTime() ? prev : next));
                     }}
                   />
                 </View>
@@ -736,63 +744,51 @@ export default function ReportsScreen() {
           </Modal>
 
           {filterKey === 'custom' && (
-            <View style={styles.customRangeWrap}>
+            <View style={styles.customChipWrap}>
               <Pressable
-                style={[styles.pickRow, { backgroundColor: colors.card, borderColor: '#000000' }]}
+                style={[
+                  styles.customChip,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
                 onPress={() => {
                   setDraftCustomStart(customStart);
                   setDraftCustomEnd(customEnd);
+                  setShowCustomEndPicker(false);
                   setShowCustomStartPicker(true);
                 }}
               >
-                <Ionicons name="calendar" size={16} color={colors.accent} />
-                <Text style={[styles.pickRowText, { color: colors.textSecondary }]}>
-                  Start:{' '}
-                  {customStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </Text>
-                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.customChipLabel, { color: colors.textTertiary }]}>Start</Text>
+                  <Text style={[styles.customChipValue, { color: colors.text }]}>
+                    {customStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
               </Pressable>
 
               <Pressable
-                style={[styles.pickRow, { backgroundColor: colors.card, borderColor: '#000000' }]}
+                style={[
+                  styles.customChip,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
                 onPress={() => {
                   setDraftCustomStart(customStart);
                   setDraftCustomEnd(customEnd);
+                  setShowCustomStartPicker(false);
                   setShowCustomEndPicker(true);
                 }}
               >
-                <Ionicons name="calendar" size={16} color={colors.accent} />
-                <Text style={[styles.pickRowText, { color: colors.textSecondary }]}>
-                  End:{' '}
-                  {customEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </Text>
-                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.customChipLabel, { color: colors.textTertiary }]}>End</Text>
+                  <Text style={[styles.customChipValue, { color: colors.text }]}>
+                    {customEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
               </Pressable>
             </View>
           )}
 
-          {(filterKey === 'month' || filterKey === 'multiMonth' || filterKey === 'year') && (
-            <Pressable
-              onPress={() => setShowYearPicker(true)}
-              style={[styles.pickRow, { backgroundColor: colors.card, borderColor: '#000000' }]}
-            >
-              <Ionicons name="wallet" size={16} color={colors.accent} />
-              <Text style={[styles.pickRowText, { color: colors.textSecondary }]} numberOfLines={1}>
-                Year: {selectedYear}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
-            </Pressable>
-          )}
-
           {(filterKey === 'month' || filterKey === 'multiMonth') && (
-            <View style={{ marginTop: 10 }}>
-              <View style={[styles.monthPickerHeader, { borderColor: '#000000' }]}>
-                <Ionicons name="calendar" size={16} color={colors.accent} />
-                <Text style={[styles.monthPickerHeaderText, { color: colors.textSecondary }]}>
-                  Select months
-                </Text>
-              </View>
-
+            <View style={{ marginTop: 4 }}>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -830,7 +826,6 @@ export default function ReportsScreen() {
                           isSelected && { color: colors.accent, fontFamily: 'Inter_600SemiBold' },
                         ]}
                       >
-                        {isSelected ? '☑ ' : '☐ '}
                         {m}
                       </Text>
                     </Pressable>
@@ -1135,7 +1130,7 @@ const styles = StyleSheet.create({
   screenSubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 14,
-    marginBottom: 24,
+    marginBottom: 10,
   },
   monthRow: {
     gap: 8,
@@ -1271,7 +1266,7 @@ const styles = StyleSheet.create({
   },
   dataCard: {
     borderRadius: 20,
-    padding: 6,
+    padding: 14,
     marginBottom: 28,
     borderWidth: 1,
   },
@@ -1539,7 +1534,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 0,
     borderRadius: 16,
-    borderWidth: 1,
+    borderWidth: 0,
   },
 
   customRangeLabel: {
@@ -1548,20 +1543,43 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  customChipWrap: {
+    marginTop: 0,
+    gap: 6,
+  },
+  customChip: {
+    borderRadius: 24,
+    borderWidth: 0,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 40,
+  },
+  customChipLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  customChipValue: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    marginTop: 1,
+  },
+
   // --- Time Filter Selector ---
   reportsTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 10,
+    marginBottom: 6,
   },
   filterChipsRow: {
-    marginBottom: 18,
+    marginBottom: 8,
   },
   filterChipsScroll: {
     gap: 10,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   filterChip: {
     flexDirection: 'row',

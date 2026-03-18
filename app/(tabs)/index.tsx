@@ -914,21 +914,13 @@ export default function HomeScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
             <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
             <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
-            <QuickAccessCard
-              icon="add-circle"
-              label="Quick Add"
-              subtitle="Create a reminder"
-              color={colors.accent}
-              onPress={() => setShowQuickAdd(true)}
-              colors={colors}
-            />
           </ScrollView>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(240).duration(500) : undefined}>
           <View style={[styles.lifeInsightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.lifeInsightIconWrap, { backgroundColor: colors.accentDim }]}>
-              <Ionicons name="sparkles" size={18} color={colors.accent} />
+            <View style={[styles.lifeInsightIconWrap, { backgroundColor: colors.accentBlueDim || colors.accentDim }]}>
+              <Ionicons name="wallet" size={18} color={colors.accentBlue || colors.accent} />
             </View>
             <View style={styles.lifeInsightContent}>
               <Text style={[styles.lifeInsightTitle, { color: colors.text }]}>Spending Insight</Text>
@@ -1273,24 +1265,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryCircleFill: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     shadowOpacity: 0.22,
-    shadowRadius: 18,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
     // elevation: 6,
   },
   primaryCircleInnerWhiteBorder: {
     position: 'absolute',
-    top: 2,
-    left: 2,
-    right: 2,
-    bottom: 2,
-    borderRadius: 38,
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderRadius: 42,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.90)',
   },
@@ -1298,6 +1290,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 11,
     marginTop: 8,
+    textAlign: 'center',
+    width: 88,
   },
   seniorHeroCard: { borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', marginBottom: 28, gap: 8 },
   seniorHeroLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },
