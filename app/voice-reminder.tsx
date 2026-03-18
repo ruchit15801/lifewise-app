@@ -184,9 +184,14 @@ export default function VoiceReminderScreen() {
 
       const baseUrl = getApiUrl();
       const url = new URL('/api/reminders/voice/parse', baseUrl).toString();
-      const audioBlob = await (await fetch(uri)).blob();
       const form = new FormData();
-      form.append('audio', audioBlob as any, 'voice.m4a');
+      // RN/Expo multipart uploads are most reliable with { uri, name, type }
+      // (Blob uploads often fail on Android with "Network request failed")
+      form.append('audio', {
+        uri,
+        name: 'voice.m4a',
+        type: 'audio/m4a',
+      } as any);
 
       const res = await fetch(url, {
         method: 'POST',
