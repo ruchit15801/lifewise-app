@@ -758,7 +758,7 @@ export default function ReportsScreen() {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.customChipLabel, { color: colors.textTertiary }]}>Start</Text>
+                  <Text style={[styles.customChipLabel, { color: colors.textTertiary }]}>Start date</Text>
                   <Text style={[styles.customChipValue, { color: colors.text }]}>
                     {customStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </Text>
@@ -778,7 +778,7 @@ export default function ReportsScreen() {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.customChipLabel, { color: colors.textTertiary }]}>End</Text>
+                  <Text style={[styles.customChipLabel, { color: colors.textTertiary }]}>End Date</Text>
                   <Text style={[styles.customChipValue, { color: colors.text }]}>
                     {customEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </Text>
@@ -875,7 +875,7 @@ export default function ReportsScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <View style={styles.summaryTop}>
+            <View style={styles.summaryTop }>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.summaryLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }]}>Total Spending</Text>
                 <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatAmount(totalSpent)}</Text>
@@ -888,7 +888,7 @@ export default function ReportsScreen() {
                   {comparison.lifeScoreDelta}
                 </Text>
               </View>
-              <View style={[styles.scoreCircle, { borderColor: colors.accentPurpleDim || colors.accentDim, backgroundColor: colors.accentDim }]}>
+              <View style={[styles.scoreCircle, { borderColor: colors.accentDim, backgroundColor: colors.accentDim }]}>
                 <Text style={[styles.scoreValue, { color: colors.accent }]}>{lifeScoreEstimate}</Text>
                 <Text style={[styles.scoreLabel, { color: colors.accent + 'AA' }]}>Life Score</Text>
               </View>
@@ -1162,11 +1162,13 @@ const styles = StyleSheet.create({
   monthChipText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
+    borderRadius: 20,
   },
   summaryCard: {
     borderRadius: 24,
     padding: 24,
     marginBottom: 32,
+    marginTop: 12,
     borderWidth: 1,
   },
   summaryTop: {
@@ -1261,20 +1263,20 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 18,
-    marginBottom: 14,
+    marginBottom: 10,
     letterSpacing: -0.2,
   },
   dataCard: {
     borderRadius: 20,
     padding: 14,
-    marginBottom: 28,
+    marginBottom: 18,
     borderWidth: 1,
   },
   trendCard: {
     borderRadius: 20,
     padding: 14,
     borderWidth: 1,
-    marginBottom: 28,
+    marginBottom: 18,
   },
   trendSubtitle: {
     fontFamily: 'Inter_500Medium',
@@ -1481,7 +1483,8 @@ const styles = StyleSheet.create({
   medsSmallLabel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 4,
+    lineHeight: 16,
   },
   medsPctText: {
     fontFamily: 'Inter_800ExtraBold',
@@ -1548,17 +1551,18 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   customChip: {
-    borderRadius: 24,
+    borderRadius: 14,
     borderWidth: 0,
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 2,
     minHeight: 40,
   },
   customChipLabel: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: 11,
   },
   customChipValue: {
     fontFamily: 'Inter_500Medium',

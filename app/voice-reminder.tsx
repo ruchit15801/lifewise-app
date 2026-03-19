@@ -492,6 +492,12 @@ export default function VoiceReminderScreen() {
         setError('Microphone or network error. Please try again.');
       }
       setState('idle');
+    } finally {
+      // Return app audio mode to playback-friendly defaults after recording.
+      Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      }).catch(() => {});
     }
   }
 

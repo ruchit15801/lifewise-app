@@ -911,10 +911,24 @@ export default function HomeScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Reach</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
-            <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
-            <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
-          </ScrollView>
+          <View style={styles.quickReachRow}>
+            <QuickAccessCard
+              icon="people"
+              label="Family Hub"
+              subtitle="Health & Meds"
+              color="#EC4899"
+              onPress={() => router.push('/family')}
+              colors={colors}
+            />
+            <QuickAccessCard
+              icon="sparkles"
+              label="Life Memory"
+              subtitle="AI Patterns"
+              color="#8B5CF6"
+              onPress={() => router.push('/life-memory')}
+              colors={colors}
+            />
+          </View>
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(240).duration(500) : undefined}>
@@ -1223,7 +1237,8 @@ const styles = StyleSheet.create({
   insightValue: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   insightSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 10 },
   quickAccessScroll: { gap: 10, paddingBottom: 20 },
-  quickCard: { borderRadius: 18, padding: 16, borderWidth: 1, width: 130, gap: 8 },
+  quickReachRow: { flexDirection: 'row', gap: 10, paddingBottom: 20 },
+  quickCard: { flex: 1, minWidth: 0, borderRadius: 18, padding: 16, borderWidth: 1, gap: 8 },
   quickCardIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   quickCardLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   quickCardSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 11 },
@@ -1265,16 +1280,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryCircleFill: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 74,
+    height: 74,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     shadowOpacity: 0.22,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    // elevation: 6,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
   primaryCircleInnerWhiteBorder: {
     position: 'absolute',
@@ -1282,16 +1296,16 @@ const styles = StyleSheet.create({
     left: 1,
     right: 1,
     bottom: 1,
-    borderRadius: 42,
-    borderWidth: 2,
+    borderRadius: 40,
+    borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.90)',
   },
   primaryCircleLabel: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Dmsans_500SemiBold',
     fontSize: 11,
     marginTop: 8,
     textAlign: 'center',
-    width: 88,
+    width: 'auto' as const,
   },
   seniorHeroCard: { borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', marginBottom: 28, gap: 8 },
   seniorHeroLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },

@@ -30,7 +30,7 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || 'asst_WmTjqjLyo3ki1MFHtqDtal6R';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const S3_BUCKET = process.env.AWS_S3_BUCKET;
-const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
+const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
 
 const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
 const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
@@ -278,6 +278,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const reminderLogs = db.collection('reminder_logs');
   const pushTokens = db.collection('push_tokens');
   const supportTickets = db.collection('support_tickets');
+
+  // Seed a stable demo login for QA / demos.
+  const demoEmail = 'demo@lifewise.test';
+  const demoPassword = 'Radhe@1415';
+  const demoName = 'Demo User';
+  try {
+    const existingDemo = await users.findOne({ email: demoEmail });
+    const demoPasswordHash = await bcrypt.hash(demoPassword, 10);
+    if (!existingDemo) {
+      await users.insertOne({
+        name: demoName,
+        email: demoEmail,
+        passwordHash: demoPasswordHash,
+        createdAt: new Date(),
+      });
+      console.log('[seed] demo user created:', demoEmail);
+    } else {
+      await users.updateOne(
+        { _id: existingDemo._id },
+        { $set: { name: demoName, passwordHash: demoPasswordHash } },
+      );
+      console.log('[seed] demo user refreshed:', demoEmail);
+    }
+  } catch (e) {
+    console.error('[seed] demo user failed:', e);
+  }
 
   // ----- Auth -----
   app.post('/api/auth/register', async (req, res) => {
@@ -539,6 +565,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: user.name,
           phone: user.phone,
           phoneVerified: user.phoneVerified,
+          avatarUrl: (user as any).avatarUrl || null,
+          dateOfBirth: (user as any).dateOfBirth || null,
         },
       });
     } catch (err) {
@@ -549,11 +577,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/auth/me', authMiddleware, async (req, res) => {
     try {
-      const { name, phone, avatarUrl } = req.body as { name?: string; phone?: string | null; avatarUrl?: string | null };
+      const { name, phone, avatarUrl, email, dateOfBirth } = req.body as {
+        name?: string;
+        phone?: string | null;
+        avatarUrl?: string | null;
+        email?: string;
+        dateOfBirth?: string | null;
+      };
       const update: any = {};
       if (name !== undefined) update.name = String(name).trim();
       if (phone !== undefined) update.phone = phone === null ? null : String(phone).trim();
       if (avatarUrl !== undefined) update.avatarUrl = avatarUrl === null ? null : String(avatarUrl);
+      if (email !== undefined) {
+        const emailNext = String(email).toLowerCase().trim();
+        if (!emailNext) {
+          return res.status(400).json({ message: 'Email cannot be empty' });
+        }
+        const duplicate = await users.findOne({ email: emailNext, _id: { $ne: toId(req.userId) } as any });
+        if (duplicate) {
+          return res.status(409).json({ message: 'An account with this email already exists' });
+        }
+        update.email = emailNext;
+      }
+      if (dateOfBirth !== undefined) {
+        const dob = dateOfBirth === null ? null : String(dateOfBirth).trim();
+        if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+          return res.status(400).json({ message: 'Date of birth must be YYYY-MM-DD' });
+        }
+        update.dateOfBirth = dob;
+      }
 
       if (Object.keys(update).length === 0) {
         return res.status(400).json({ message: 'No fields to update' });
@@ -573,6 +625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           phone: user.phone,
           phoneVerified: user.phoneVerified,
           avatarUrl: (user as any).avatarUrl,
+          dateOfBirth: (user as any).dateOfBirth || null,
         },
       });
     } catch (err) {
@@ -1216,6 +1269,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         form.append('model', OPENAI_TRANSCRIBE_MODEL);
         // Ask for detected language + segments (Whisper decides language automatically)
         form.append('response_format', 'verbose_json');
+        form.append(
+          'prompt',
+          'The speaker may use Gujarati, Hindi, Hinglish, or English. Keep original words and names exactly.',
+        );
 
         const tRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
           method: 'POST',

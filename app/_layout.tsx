@@ -1,10 +1,9 @@
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_700Bold,
   useFonts,
-} from "@expo-google-fonts/inter";
+} from "@expo-google-fonts/dm-sans";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useSegments, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -204,10 +203,14 @@ function AuthGate() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    // Keep Inter_* aliases so existing styles across the app
+    // automatically render with DM Sans without editing every file.
+    Inter_400Regular: DMSans_400Regular,
+    Inter_500Medium: DMSans_500Medium,
+    Inter_600SemiBold: DMSans_500Medium,
+    Inter_700Bold: DMSans_700Bold,
+    Inter_800ExtraBold: DMSans_700Bold,
+    Dmsans_500SemiBold: DMSans_500Medium,
   });
 
   useEffect(() => {

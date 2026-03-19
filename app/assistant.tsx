@@ -35,6 +35,32 @@ interface AnalysisCard {
   color: string;
 }
 
+function buildLocalAssistantReply(
+  query: string,
+  monthlySpend: number,
+  monthlyBudget: number,
+  billsDue: number,
+  topMerchant: string | null,
+): string {
+  const q = query.toLowerCase();
+  const budgetLeft = Math.max(0, monthlyBudget - monthlySpend);
+  const budgetUsedPct = monthlyBudget > 0 ? Math.round((monthlySpend / monthlyBudget) * 100) : 0;
+
+  if (q.includes('budget') || q.includes('afford') || q.includes('buy')) {
+    return `Budget check: You used about ${budgetUsedPct}% of your monthly budget. Remaining is ${budgetLeft.toLocaleString('en-IN')}. Keep bills due (${billsDue}) in mind before big purchases.`;
+  }
+  if (q.includes('merchant') || q.includes('where')) {
+    return topMerchant
+      ? `Your top merchant this period is ${topMerchant}. We can reduce spend there with a weekly cap.`
+      : 'I do not have enough merchant data yet. Add a few more transactions and ask again.';
+  }
+  if (q.includes('saving') || q.includes('savings')) {
+    return `You currently have about ${budgetLeft.toLocaleString('en-IN')} left from budget. Set aside a fixed percentage every week to improve savings consistency.`;
+  }
+
+  return `Quick summary: spent ${monthlySpend.toLocaleString('en-IN')} this month, ${billsDue} bill reminders due, and ${budgetLeft.toLocaleString('en-IN')} budget left.`;
+}
+
 const QUICK_CHIPS = [
   { label: 'Can I buy?', query: 'afford' },
   { label: 'Food spending', query: 'food' },
@@ -107,6 +133,10 @@ export default function AssistantScreen() {
         };
 
         const res = await apiRequest('POST', '/api/assistant/chat', payload, token);
+        if (!res.ok) {
+          throw new Error(`Assistant API failed (${res.status})`);
+        }
+
         const data = await res.json();
         const replyText: string =
           typeof data.reply === 'string'
@@ -122,9 +152,12 @@ export default function AssistantScreen() {
         setMessages(prev => [...prev, botMsg]);
       } catch (e) {
         console.error('Assistant error', e);
+        const billsDue = bills.filter((b) => !b.isPaid && b.status !== 'paid').length;
+        const topMerchant = merchantTotals.length > 0 ? merchantTotals[0][0] : null;
+        const fallback = buildLocalAssistantReply(query, monthlySpend, monthlyBudget, billsDue, topMerchant);
         const errorMsg: Message = {
           id: (Date.now() + 2).toString(),
-          text: 'Network issue or assistant error. Please try again in a moment.',
+          text: fallback,
           isUser: false,
         };
         setMessages(prev => [...prev, errorMsg]);
@@ -134,7 +167,7 @@ export default function AssistantScreen() {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     },
-    [inputText, token, messages],
+    [inputText, token, messages, bills, merchantTotals, monthlySpend, monthlyBudget],
   );
 
   const handleBack = () => {

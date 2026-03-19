@@ -254,7 +254,11 @@ function AddEditModal({
   const [repeatType, setRepeatType] = useState<RepeatType>('monthly');
   const [category, setCategory] = useState<CategoryType>('bills');
   const [selectedIcon, setSelectedIcon] = useState('flash');
-  const [daysOffset, setDaysOffset] = useState('7');
+  const [dueDate, setDueDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(9, 0, 0, 0);
+    return d;
+  });
   const [showIconPicker, setShowIconPicker] = useState(false);
 
   const deriveReminderTypeFromCategory = (cat: CategoryType): ReminderType => {
@@ -289,8 +293,8 @@ function AddEditModal({
       setRepeatType(editBill.repeatType);
       setCategory(editBill.category);
       setSelectedIcon(editBill.icon);
-      const days = getDaysUntil(editBill.dueDate);
-      setDaysOffset(Math.max(1, days).toString());
+      const d = new Date(editBill.dueDate);
+      if (!Number.isNaN(d.getTime())) setDueDate(d);
     } else {
       setName('');
       setAmount('');
@@ -298,7 +302,9 @@ function AddEditModal({
       setRepeatType('monthly');
       setCategory('bills');
       setSelectedIcon('flash');
-      setDaysOffset('7');
+      const d = new Date();
+      d.setHours(9, 0, 0, 0);
+      setDueDate(d);
     }
   }, [editBill, visible, reminderSettings]);
 
@@ -311,21 +317,15 @@ function AddEditModal({
   }, [category]);
 
   const handleSave = () => {
-    if (!name.trim() || !amount.trim()) return;
+    if (!name.trim()) return;
 
-    const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount < 0) return;
+    const parsedAmount = amount.trim() ? parseFloat(amount) : 0;
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) return;
 
     // Some reminder intents don't require an amount (health/habits/travel/tasks/events).
     const derivedIntent = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
     const intentPolicy = getIntentPolicy(derivedIntent);
     if (intentPolicy.shouldHaveAmount && parsedAmount <= 0) return;
-
-    const parsedDays = parseInt(daysOffset || '7', 10);
-    const safeDays = isFinite(parsedDays) && parsedDays >= 0 ? parsedDays : 7;
-
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + safeDays);
 
     if (editBill) {
       onSave({
@@ -362,7 +362,11 @@ function AddEditModal({
     onClose();
   };
 
-  const canSave = name.trim() && amount.trim();
+  const derivedIntentForSave = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
+  const intentPolicyForSave = getIntentPolicy(derivedIntentForSave);
+  const canSave =
+    !!name.trim() &&
+    (!intentPolicyForSave.shouldHaveAmount || (amount.trim() && Number(amount) > 0));
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -400,18 +404,23 @@ function AddEditModal({
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due in (days)</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-                  value={daysOffset}
-                  onChangeText={setDaysOffset}
-                  placeholder="7"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="numeric"
-                />
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due Date</Text>
+                <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+                  <Text style={[styles.dateLikeText, { color: colors.text }]}>
+                    {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                  <Ionicons name="calendar" size={18} color={colors.textTertiary} />
+                </View>
               </View>
             </View>
 
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Time</Text>
+            <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+              <Text style={[styles.dateLikeText, { color: colors.text }]}>
+                {dueDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+              <Ionicons name="time" size={18} color={colors.textTertiary} />
+            </View>
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Repeat</Text>
             <View style={styles.chipRow}>
               {REPEAT_OPTIONS.map(opt => (
@@ -639,7 +648,7 @@ export default function BillsScreen() {
   const router = useRouter();
   const {
     bills, isLoading, toggleBillPaid, addReminder, editReminder, deleteReminder,
-    snoozeReminder, reminderSettings, updateReminderSettings,
+    snoozeReminder, reminderSettings, updateReminderSettings, refreshData,
   } = useExpenses();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
@@ -670,7 +679,7 @@ export default function BillsScreen() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const todayKey = new Date().toDateString();
-  const todayBills = filteredBills.filter(
+  const todayBills = bills.filter(
     (b) =>
       b.status !== 'paid' &&
       !b.isPaid &&
@@ -688,11 +697,13 @@ export default function BillsScreen() {
     }
   };
 
-  const handleSave = (billData: Omit<Bill, 'id'> | Bill) => {
+  const handleSave = async (billData: Omit<Bill, 'id'> | Bill) => {
     if ('id' in billData) {
-      editReminder(billData as Bill);
+      await editReminder(billData as Bill);
     } else {
-      addReminder(billData);
+      await addReminder(billData);
+      setActiveFilter('all');
+      await refreshData();
     }
   };
 
@@ -1342,6 +1353,18 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 20,
+    includeFontPadding: false,
+  },
+  dateLikeInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateLikeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
   snoozeOverlay: {
     flex: 1,

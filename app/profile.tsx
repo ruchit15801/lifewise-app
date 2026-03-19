@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, Platform, Image } from 'react-native';
+import { StyleSheet, View, Text, TextInput, Pressable, Platform, Image, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -10,11 +10,13 @@ import { uploadAvatar } from './api-upload-avatar';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, updateProfile } = useAuth();
+  const { user, token, updateProfile } = useAuth();
   const { colors } = useTheme();
 
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [dateOfBirth, setDateOfBirth] = useState((user as any)?.dateOfBirth || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>((user as any)?.avatarUrl || null);
@@ -22,8 +24,10 @@ export default function ProfileScreen() {
   useEffect(() => {
     setName(user?.name || '');
     setPhone(user?.phone || '');
+    setEmail(user?.email || '');
+    setDateOfBirth((user as any)?.dateOfBirth || '');
     setAvatarUrl((user as any)?.avatarUrl || null);
-  }, [user?.name, user?.phone, (user as any)?.avatarUrl]);
+  }, [user?.name, user?.phone, user?.email, (user as any)?.dateOfBirth, (user as any)?.avatarUrl]);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
@@ -33,6 +37,8 @@ export default function ProfileScreen() {
     const res = await updateProfile({
       name: name.trim() || user?.name || '',
       phone: phone.trim() || null,
+      email: email.trim() || user?.email || '',
+      dateOfBirth: dateOfBirth.trim() || null,
       avatarUrl: avatarUrl || null,
     });
     setSaving(false);
@@ -58,9 +64,9 @@ export default function ProfileScreen() {
     });
     if (result.canceled || !result.assets || !result.assets[0]) return;
     try {
-      if (!user) return;
+      if (!user || !token) return;
       setSaving(true);
-      const url = await uploadAvatar((user as any).token ?? '', result.assets[0].uri);
+      const url = await uploadAvatar(token, result.assets[0].uri);
       setAvatarUrl(url);
       await updateProfile({ avatarUrl: url });
       setSaving(false);
@@ -80,79 +86,108 @@ export default function ProfileScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <View style={[styles.headerCard, { backgroundColor: colors.heroBg || '#EEF2FF' }]}>
-        <Pressable onPress={handlePickAvatar} style={[styles.avatarCircle, { backgroundColor: '#FFFFFF' }]}>
-          {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-          ) : (
-            <Ionicons name="person" size={34} color={colors.accent} />
-          )}
-          <View style={[styles.avatarEditBadge, { backgroundColor: colors.accent }]}>
-            <Ionicons name="camera" size={14} color="#FFFFFF" />
-          </View>
-        </Pressable>
-        <View style={styles.headerTextWrap}>
-          <Text style={[styles.headerName, { color: colors.textOnAccent || '#0F172A' }]}>
-            {name || user?.name || 'Your name'}
-          </Text>
-          <View style={styles.emailRow}>
-            <Text style={[styles.emailValue, { color: colors.textOnAccent || '#0F172A' }]} numberOfLines={1}>
-              {user?.email}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <View style={[styles.headerCard, { backgroundColor: colors.heroBg || '#EEF2FF' }]}>
+          <Pressable onPress={handlePickAvatar} style={[styles.avatarCircle, { backgroundColor: '#FFFFFF' }]}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Ionicons name="person" size={34} color={colors.accent} />
+            )}
+            <View style={[styles.avatarEditBadge, { backgroundColor: colors.accent }]}>
+              <Ionicons name="camera" size={14} color="#FFFFFF" />
+            </View>
+          </Pressable>
+          <View style={styles.headerTextWrap}>
+            <Text style={[styles.headerName, { color: colors.textOnAccent || '#0F172A' }]}>
+              {name || user?.name || 'Your name'}
             </Text>
-            <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(255,255,255,0.9)' }]}>
-              <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
-              <Text style={[styles.verifiedText, { color: colors.accent }]}>Verified</Text>
+            <View style={styles.emailRow}>
+              <Text style={[styles.emailValue, { color: colors.textOnAccent || '#0F172A' }]} numberOfLines={1}>
+                {user?.email}
+              </Text>
+              <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(255,255,255,0.9)' }]}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                <Text style={[styles.verifiedText, { color: colors.accent }]}>Verified</Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
 
-      <View style={styles.body}>
-        <View style={[styles.fieldCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
-          <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
-            <Ionicons name="person-outline" size={18} color={colors.textTertiary} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={name}
-              onChangeText={setName}
-              placeholder="Your name"
-              placeholderTextColor={colors.textTertiary}
-            />
+        <View style={styles.body}>
+          <View style={[styles.fieldCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
+            <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+              <Ionicons name="person-outline" size={18} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={name}
+                onChangeText={setName}
+                placeholder="Your name"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+
+            <Text style={[styles.label, { color: colors.textSecondary, marginTop: 14 }]}>Mobile Number</Text>
+            <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+              <Ionicons name="call-outline" size={18} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Add phone number"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <Text style={[styles.label, { color: colors.textSecondary, marginTop: 14 }]}>Email</Text>
+            <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+              <Ionicons name="mail-outline" size={18} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Add email"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <Text style={[styles.label, { color: colors.textSecondary, marginTop: 14 }]}>Date of Birth</Text>
+            <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+              <Ionicons name="calendar-outline" size={18} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={dateOfBirth}
+                onChangeText={setDateOfBirth}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+
+            {!!error && (
+              <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+            )}
+
+            <Pressable
+              onPress={handleSave}
+              disabled={saving}
+              style={[styles.saveBtn, { backgroundColor: colors.accent }]}
+            >
+              <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
+            </Pressable>
           </View>
-
-          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 18 }]}>Mobile Number</Text>
-          <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
-            <Ionicons name="call-outline" size={18} color={colors.textTertiary} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Add phone number"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          {!!error && (
-            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
-          )}
-
-          <Pressable
-            onPress={handleSave}
-            disabled={saving}
-            style={[styles.saveBtn, { backgroundColor: colors.accent }]}
-          >
-            <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
-          </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollContent: { paddingBottom: 24 },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 12,
@@ -179,9 +214,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   body: {
-    flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
   },
   card: {
     borderRadius: 20,
@@ -192,7 +226,7 @@ const styles = StyleSheet.create({
   fieldCard: {
     borderRadius: 20,
     borderWidth: 1,
-    padding: 18,
+    padding: 16,
   },
   avatarCircle: {
     width: 64,
@@ -220,6 +254,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
   },
   emailLabel: {
     fontFamily: 'Inter_500Medium',
@@ -232,6 +267,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 999,
     gap: 4,
+    flexShrink: 0,
   },
   verifiedText: {
     fontFamily: 'Inter_600SemiBold',
@@ -240,6 +276,8 @@ const styles = StyleSheet.create({
   emailValue: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
+    flexShrink: 1,
+    maxWidth: '78%',
   },
   label: {
     fontFamily: 'Inter_600SemiBold',
@@ -254,13 +292,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 7,
+    minHeight: 44,
     gap: 8,
   },
   input: {
     flex: 1,
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
+    paddingVertical: 0,
+    height: 20,
   },
   errorText: {
     marginTop: 10,
@@ -277,6 +318,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 15,
     color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 19,
+    includeFontPadding: false,
   },
 });
 

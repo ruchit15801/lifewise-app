@@ -240,18 +240,18 @@ export default function ScanBillScreen() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
-      <View style={[styles.header, { paddingTop: 10 }]}>
+    <View style={[styles.container, { backgroundColor: '#FFFFFF', paddingBottom: 40 }]}>
+      <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-left" size={24} color={colors.textSecondary} />
+          <Ionicons name="chevron-back" size={24} color={colors.textSecondary} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Scan Bill</Text>
-        <View style={{ width: 50 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.body}>
         {step === 'guide' && (
-          <View style={{ flex: 1 }}>
+          <View style={styles.guideStepWrap}>
             {Platform.OS !== 'web' && cameraPermission?.granted ? (
               <CameraView
                 ref={cameraRef}
@@ -261,36 +261,38 @@ export default function ScanBillScreen() {
               >
                 <View style={styles.cameraOverlay}>
                   <View style={styles.cameraTopText}>
-                    <Text style={{ color: '#4F46E5', fontFamily: 'Inter_600SemiBold' }}>
+                    <Text style={styles.guideTitle}>
                       Place the bill inside the frame
                     </Text>
-                    <Text style={{ marginTop: 6, color: colors.textTertiary, textAlign: 'center' }}>
+                    <Text style={styles.guideSubtitle}>
                       Make sure the bill text and due date are clearly visible.
                     </Text>
                   </View>
 
-                  <View style={styles.frameGuide} />
+                  {/* <View style={styles.frameGuide} /> */}
 
                   <View style={styles.cameraBottom}>
                     <View style={styles.flashRow}>
-                      <Text style={{ color: colors.textSecondary, fontFamily: 'Inter_600SemiBold' }}>Flash</Text>
+                      <Text style={styles.flashLabel}>Flash</Text>
                       <Switch value={flashOn} onValueChange={setFlashOn} />
                     </View>
 
                     <View style={styles.cameraControlsRow}>
                       <Pressable
                         onPress={takePictureFromCamera}
-                        style={styles.captureBtn}
+                        style={styles.captureButton}
                         hitSlop={12}
                       >
-                        <View style={styles.captureInner} />
+                        <View style={styles.captureButtonInner}>
+                          <Ionicons name="camera" size={24} color="#ffffff" />
+                        </View>
                       </Pressable>
 
                       <Pressable
                         onPress={openGallery}
-                        style={[styles.actionBtn, { backgroundColor: '#4F46E5', maxWidth: 140 }]}
+                        style={styles.uploadActionBtn}
                       >
-                        <Text style={styles.actionBtnText}>Upload</Text>
+                        <Text style={styles.uploadActionBtnText}>Upload from gallery</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -299,14 +301,14 @@ export default function ScanBillScreen() {
             ) : (
               <View style={styles.center}>
                 <View style={styles.frameGuide} />
-                <Text style={{ marginTop: 14, color: colors.textSecondary, fontFamily: 'Inter_600SemiBold' }}>
+                <Text style={[styles.fallbackTitle, { color: colors.textSecondary }]}>
                   Place the bill inside the frame
                 </Text>
-                <Text style={{ marginTop: 8, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 10 }}>
+                <Text style={[styles.fallbackSubtitle, { color: colors.textTertiary }]}>
                   Make sure the bill text and due date are clearly visible.
                 </Text>
 
-                <View style={{ marginTop: 18 }}>
+                <View style={styles.fallbackEnableWrap}>
                   <Pressable
                     style={[styles.actionBtn, { backgroundColor: colors.inputBg }]}
                     onPress={() => {
@@ -334,6 +336,7 @@ export default function ScanBillScreen() {
           <>
             <Image source={{ uri: photo.uri }} style={styles.previewImage} resizeMode="contain" />
 
+
             <View style={styles.actionsRow}>
               <Pressable
                 style={[styles.actionBtn, { backgroundColor: colors.inputBg }]}
@@ -358,10 +361,10 @@ export default function ScanBillScreen() {
         {step === 'processing' && (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={{ marginTop: 10, color: colors.textSecondary, fontFamily: 'Inter_600SemiBold' }}>
+            <Text style={[styles.processingTitle, { color: colors.textSecondary }]}>
               {PROCESS_MESSAGES[processingMsgIdx]}
             </Text>
-            <Text style={{ marginTop: 8, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 10 }}>
+            <Text style={[styles.processingSubtitle, { color: colors.textTertiary }]}>
               This should take a few seconds.
             </Text>
           </View>
@@ -407,7 +410,7 @@ export default function ScanBillScreen() {
             <Text style={[styles.modalTitle, { color: colors.text }]}>Your bill was scanned successfully</Text>
             {previewData ? (
               <>
-                <View style={{ marginTop: 12, gap: 6 }}>
+                <View style={styles.successInfoWrap}>
                   <Text style={[styles.modalRowLabel, { color: colors.textTertiary }]}>Bill name</Text>
                   <Text style={[styles.modalRowValue, { color: colors.text }]}>{previewData.name}</Text>
                   <Text style={[styles.modalRowLabel, { color: colors.textTertiary }]}>Amount</Text>
@@ -435,7 +438,7 @@ export default function ScanBillScreen() {
               </Pressable>
             </View>
             <Pressable
-              style={{ marginTop: 10, paddingVertical: 8, alignItems: 'center' }}
+              style={styles.successCancelBtn}
               onPress={() => {
                 setShowSuccessModal(false);
                 setStep('guide');
@@ -455,14 +458,18 @@ export default function ScanBillScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
+    paddingTop: 60,
+    paddingBottom: 10,
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerSpacer: { width: 20 },
   headerTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 16,
+    textAlign: 'center',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 18,
   },
   body: {
     flex: 1,
@@ -477,7 +484,7 @@ const styles = StyleSheet.create({
   },
   previewImage: {
     width: '100%',
-    height: 360,
+    height: '90%',
     marginTop: 10,
     borderRadius: 18,
     backgroundColor: '#F8FAFC',
@@ -498,6 +505,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 14,
     color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 18,
+    includeFontPadding: false,
   },
   frameGuide: {
     width: '100%',
@@ -508,6 +518,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(79,70,229,0.05)',
   },
   guideWrap: {
+    flex: 1,
+  },
+  guideStepWrap: {
     flex: 1,
   },
   camera: {
@@ -525,6 +538,16 @@ const styles = StyleSheet.create({
   cameraTopText: {
     alignItems: 'center',
   },
+  guideTitle: {
+    color: '#C1C1C1',
+    fontFamily: 'Inter_600SemiBold',
+  },
+  guideSubtitle: {
+    marginTop: 3,
+    color: '#8F8F8F',
+    textAlign: 'center',
+    fontSize: 11,
+  },
   cameraBottom: {
     gap: 12,
   },
@@ -534,11 +557,78 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 4,
   },
+  flashLabel: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
+  },
   cameraControlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  captureButton: {
+    backgroundColor: '#FFFFFF',
+    width: 70,
+    height: 70,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4F46E5',
+  },
+  uploadActionBtn: {
+    backgroundColor: '#4F46E5',
+    maxWidth: 200,
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadActionBtnText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 18,
+    includeFontPadding: false,
+  },
+  fallbackTitle: {
+    marginTop: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  fallbackSubtitle: {
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
+  fallbackEnableWrap: {
+    marginTop: 18,
+  },
+  processingTitle: {
+    marginTop: 10,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  processingSubtitle: {
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
+  successInfoWrap: {
+    marginTop: 12,
+    gap: 6,
+  },
+  successCancelBtn: {
+    marginTop: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
   },
   captureBtn: {
     width: 76,
@@ -593,11 +683,17 @@ const styles = StyleSheet.create({
   modalBtnLabel: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    includeFontPadding: false,
   },
   modalBtnLabelPrimary: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 13,
     color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 18,
+    includeFontPadding: false,
   },
   modalRowLabel: {
     fontFamily: 'Inter_600SemiBold',
