@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadAvatar } from './api-upload-avatar';
+import { uploadAvatar } from '@/lib/upload-avatar';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();

@@ -8,6 +8,7 @@ import {
   Text,
   Image,
   View,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';

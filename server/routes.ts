@@ -26,6 +26,7 @@ const JWT_EXPIRY = '7d';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-reply@lifewise.app>';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
+const APP_OPEN_URL = process.env.APP_OPEN_URL || APP_BASE_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || 'asst_WmTjqjLyo3ki1MFHtqDtal6R';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
@@ -281,28 +282,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Seed a stable demo login for QA / demos.
   const demoEmail = 'demo@lifewise.test';
-  const demoPassword = 'Radhe@1415';
+  const demoPassword = process.env.DEMO_USER_PASSWORD || 'Radhe@1415';
   const demoName = 'Demo User';
+  let demoUserId: string | null = null;
   try {
     const existingDemo = await users.findOne({ email: demoEmail });
     const demoPasswordHash = await bcrypt.hash(demoPassword, 10);
     if (!existingDemo) {
-      await users.insertOne({
+      const created = await users.insertOne({
         name: demoName,
         email: demoEmail,
         passwordHash: demoPasswordHash,
         createdAt: new Date(),
+        phone: '+919999000111',
+        phoneVerified: true,
+        settings: {
+          monthlyBudget: 45000,
+          reminderSettings: { defaultReminderDays: [7, 3, 1, 0], soundEnabled: true, vibrationEnabled: true },
+        },
       });
+      demoUserId = created.insertedId.toString();
       console.log('[seed] demo user created:', demoEmail);
     } else {
       await users.updateOne(
         { _id: existingDemo._id },
-        { $set: { name: demoName, passwordHash: demoPasswordHash } },
+        {
+          $set: {
+            name: demoName,
+            passwordHash: demoPasswordHash,
+            phone: (existingDemo as any).phone || '+919999000111',
+            phoneVerified: true,
+            settings: {
+              monthlyBudget: 45000,
+              reminderSettings: { defaultReminderDays: [7, 3, 1, 0], soundEnabled: true, vibrationEnabled: true },
+            },
+          },
+        },
       );
+      demoUserId = existingDemo._id?.toString?.() ?? String(existingDemo._id);
       console.log('[seed] demo user refreshed:', demoEmail);
     }
   } catch (e) {
     console.error('[seed] demo user failed:', e);
+  }
+
+  // Seed realistic static data for the demo user so all flows can be tested.
+  if (demoUserId) {
+    try {
+      const now = new Date();
+      const mkDate = (daysOffset: number, hour = 10, minute = 0) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() + daysOffset);
+        d.setHours(hour, minute, 0, 0);
+        return d.toISOString();
+      };
+
+      await Promise.all([
+        transactions.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+        bills.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+        notifications.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+        family.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+      ]);
+
+      await transactions.insertMany([
+        { userId: demoUserId, merchant: 'Swiggy', amount: 380, category: 'food', date: mkDate(-1, 20, 15), upiId: 'swiggy@upi', isDebit: true, description: 'Dinner order', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Uber', amount: 240, category: 'transport', date: mkDate(-2, 9, 20), upiId: 'uber@upi', isDebit: true, description: 'Office commute', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Netflix', amount: 649, category: 'entertainment', date: mkDate(-3, 8, 0), upiId: 'netflix@upi', isDebit: true, description: 'Monthly subscription', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Apollo Pharmacy', amount: 1120, category: 'healthcare', date: mkDate(-4, 18, 45), upiId: 'apollo@upi', isDebit: true, description: 'Medicines', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Salary Credit', amount: 85000, category: 'others', date: mkDate(-8, 10, 0), upiId: 'employer@hdfcbank', isDebit: false, description: 'Monthly salary', source: 'demo-seed' },
+      ] as any[]);
+
+      await bills.insertMany([
+        { userId: demoUserId, name: 'Electricity Bill', amount: 2350, dueDate: mkDate(0, 20, 0), category: 'bills', isPaid: false, icon: 'flash', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0], source: 'demo-seed' },
+        { userId: demoUserId, name: 'Netflix Premium', amount: 649, dueDate: mkDate(2, 9, 0), category: 'entertainment', isPaid: false, icon: 'refresh', reminderType: 'subscription', repeatType: 'monthly', status: 'active', reminderDaysBefore: [2, 1, 0], source: 'demo-seed' },
+        { userId: demoUserId, name: 'Health Checkup', amount: 0, dueDate: mkDate(1, 7, 30), category: 'healthcare', isPaid: false, icon: 'medkit', reminderType: 'custom', repeatType: 'yearly', status: 'active', reminderDaysBefore: [7, 1, 0], source: 'demo-seed' },
+        { userId: demoUserId, name: 'Passport Renewal', amount: 0, dueDate: mkDate(15, 11, 0), category: 'others', isPaid: false, icon: 'globe', reminderType: 'custom', repeatType: 'none', status: 'active', reminderDaysBefore: [10, 3, 1], source: 'demo-seed' },
+      ] as any[]);
+
+      await notifications.insertMany([
+        { userId: demoUserId, type: 'reminder', title: 'Electricity Bill', body: 'Due today at 8:00 PM', read: false, createdAt: new Date(), source: 'demo-seed', meta: { billName: 'Electricity Bill' } },
+        { userId: demoUserId, type: 'insight', title: 'Spending insight', body: 'Food spending is 14% higher this week.', read: false, createdAt: new Date(Date.now() - 1000 * 60 * 30), source: 'demo-seed' },
+      ] as any[]);
+
+      await family.insertMany([
+        { userId: demoUserId, name: 'Maa', relationship: 'mother', medicines: [], source: 'demo-seed', createdAt: new Date() },
+        { userId: demoUserId, name: 'Papa', relationship: 'father', medicines: [], source: 'demo-seed', createdAt: new Date() },
+      ] as any[]);
+
+      console.log('[seed] demo data refreshed for:', demoEmail);
+    } catch (seedErr) {
+      console.error('[seed] demo data failed:', seedErr);
+    }
   }
 
   // ----- Auth -----
@@ -1256,50 +1326,225 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!openAIKey) {
           return res.status(500).json({ message: 'Voice is not configured. Set OPENAI_API_KEY.' });
         }
-
+  
         const file = req.file as Express.Multer.File | undefined;
         if (!file || !file.buffer) {
           return res.status(400).json({ message: 'audio file is required' });
         }
-
-        // Transcribe with OpenAI Whisper
+  
+        // Prefer env-configured transcription model, then safe default.
+        const MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
+  
+        // Create form data
         const form = new FormData();
         const blob = new Blob([file.buffer], { type: file.mimetype || 'audio/m4a' });
+  
         form.append('file', blob, file.originalname || 'voice.m4a');
-        form.append('model', OPENAI_TRANSCRIBE_MODEL);
-        // Ask for detected language + segments (Whisper decides language automatically)
-        form.append('response_format', 'verbose_json');
+        form.append('model', MODEL);
+        form.append('response_format', 'json');
+  
+        // 🔥 Strong language control prompt
         form.append(
           'prompt',
-          'The speaker may use Gujarati, Hindi, Hinglish, or English. Keep original words and names exactly.',
+          [
+            'The speaker may use Gujarati, Hindi, or English.',
+            'CRITICAL RULES:',
+            '- Detect the spoken language accurately.',
+            '- If Gujarati is spoken, you MUST output ONLY in Gujarati script (ગુજરાતી લિપિ).',
+            '- NEVER convert Gujarati into Hindi (Devanagari).',
+            '- If Hindi is spoken, use Devanagari.',
+            '- If English is spoken, use Latin script.',
+            '- Do not translate.',
+            '- Preserve original spoken words exactly.'
+          ].join(' ')
         );
-
+  
         const tRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
           method: 'POST',
           headers: { Authorization: `Bearer ${openAIKey}` },
           body: form as any,
         });
-
+  
         if (!tRes.ok) {
           const errText = await tRes.text().catch(() => '');
           console.error('OpenAI transcribe error:', errText);
           return res.status(500).json({ message: 'Could not transcribe audio. Please try again.' });
         }
-
-        const tJson = (await tRes.json()) as { text?: string; language?: string };
-        const text = String(tJson.text || '').trim();
+  
+        const tJson = (await tRes.json()) as { text?: string; language?: string | null };
+        let text = String(tJson.text || '').trim();
+  
         if (!text) {
           return res.status(400).json({ message: 'No speech detected. Please try again.' });
         }
-
+  
+        // Normalize script so Gujarati speech is stored/displayed in Gujarati script.
+        const normalized = await normalizeTranscriptScript({
+          text,
+          languageHint: tJson.language || null,
+          apiKey: openAIKey,
+        });
+        text = normalized.text;
+  
+        // ============================
+        // 🔥 PARSE REMINDER
+        // ============================
+  
         const parsed = await parseReminderWithAI(text);
-        return res.json({ text, language: tJson.language || null, parsed });
+  
+        return res.json({
+          text,
+          language: normalized.language,
+          parsed,
+        });
+  
       } catch (err) {
         console.error('Voice parse error:', err);
         return res.status(500).json({ message: 'Server error.' });
       }
-    },
+    }
   );
+  
+  
+  // ============================
+  // 🔥 CONVERT HINDI → GUJARATI
+  // ============================
+  
+  async function convertToGujarati(text: string, apiKey: string) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Convert the given text into Gujarati script only. Do NOT translate meaning. Keep words same, only change script.'
+            },
+            {
+              role: 'user',
+              content: text
+            }
+          ],
+        }),
+      });
+  
+      const json = await response.json();
+  
+      return json?.choices?.[0]?.message?.content?.trim() || text;
+  
+    } catch (err) {
+      console.error('Gujarati conversion error:', err);
+      return text; // fallback safe
+    }
+  }
+
+  type DetectedLang = 'gu' | 'hi' | 'en' | 'mixed' | 'unknown';
+
+  function hasDevanagari(txt: string) {
+    return /[\u0900-\u097F]/.test(txt);
+  }
+
+  function hasGujaratiScript(txt: string) {
+    return /[\u0A80-\u0AFF]/.test(txt);
+  }
+
+  function hasLatinScript(txt: string) {
+    return /[A-Za-z]/.test(txt);
+  }
+
+  async function detectLanguageWithAI(text: string, apiKey: string): Promise<DetectedLang> {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Classify the dominant language of the user text. Return JSON only with key "language". Allowed values: gu, hi, en, mixed, unknown.',
+            },
+            { role: 'user', content: text },
+          ],
+        }),
+      });
+
+      if (!response.ok) return 'unknown';
+      const json = await response.json();
+      const raw = json?.choices?.[0]?.message?.content;
+      if (!raw) return 'unknown';
+      const parsed = JSON.parse(raw);
+      const val = String(parsed?.language || '').toLowerCase();
+      if (val === 'gu' || val === 'hi' || val === 'en' || val === 'mixed' || val === 'unknown') {
+        return val;
+      }
+      return 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  function normalizeHintLanguage(hint: string | null | undefined): DetectedLang {
+    const h = String(hint || '').toLowerCase();
+    if (h.startsWith('gu')) return 'gu';
+    if (h.startsWith('hi')) return 'hi';
+    if (h.startsWith('en')) return 'en';
+    return 'unknown';
+  }
+
+  async function normalizeTranscriptScript({
+    text,
+    languageHint,
+    apiKey,
+  }: {
+    text: string;
+    languageHint: string | null;
+    apiKey: string;
+  }): Promise<{ text: string; language: string | null }> {
+    let finalText = text.trim();
+    if (!finalText) return { text: '', language: null };
+
+    const hintLang = normalizeHintLanguage(languageHint);
+    const hasHiScript = hasDevanagari(finalText);
+    const hasGuScript = hasGujaratiScript(finalText);
+    const hasEnScript = hasLatinScript(finalText);
+
+    let detected: DetectedLang = hintLang;
+
+    // Fast script-based detection first.
+    if (hasGuScript && !hasHiScript && !hasEnScript) detected = 'gu';
+    else if (hasHiScript && !hasGuScript && !hasEnScript && detected === 'unknown') detected = 'hi';
+    else if (hasEnScript && !hasGuScript && !hasHiScript && detected === 'unknown') detected = 'en';
+
+    // Devanagari can still be Gujarati speech rendered in Hindi script; confirm via AI.
+    if (hasHiScript && !hasGuScript && (detected === 'unknown' || detected === 'hi')) {
+      const aiDetected = await detectLanguageWithAI(finalText, apiKey);
+      if (aiDetected !== 'unknown') detected = aiDetected;
+    }
+
+    if (hasHiScript && !hasGuScript && detected === 'gu') {
+      finalText = await convertToGujarati(finalText, apiKey);
+      if (hasGujaratiScript(finalText)) detected = 'gu';
+    }
+
+    return {
+      text: finalText,
+      language: detected === 'unknown' ? (languageHint || null) : detected,
+    };
+  }
 
   // ----- Leaks (computed from transactions) -----
   const LEAK_SUGGESTIONS: Record<string, string> = {
@@ -1897,7 +2142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     .sort((a, b) => a - b)
                     .map((d) => (d === 0 ? 'on due day' : `${d}d before`))
                     .join(', '),
-                  appUrl: APP_BASE_URL,
+                  appUrl: APP_OPEN_URL,
                 });
 
                 await sendReminderEmail({

@@ -84,6 +84,7 @@ export default function AssistantScreen() {
     },
   ]);
   const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -111,7 +112,7 @@ export default function AssistantScreen() {
   const handleSend = useCallback(
     async (text?: string) => {
       const query = text || inputText.trim();
-      if (!query || !token) return;
+      if (!query || !token || isTyping) return;
 
       const userMsg: Message = {
         id: Date.now().toString(),
@@ -119,17 +120,20 @@ export default function AssistantScreen() {
         isUser: true,
       };
 
+      // Optimistically add user message
       setMessages(prev => [...prev, userMsg]);
       setInputText('');
+      setIsTyping(true);
+
+      // Build conversation history including latest user message
+      const history = [...messages, userMsg];
 
       try {
         const payload = {
-          messages: messages
-            .map(m => ({
-              role: m.isUser ? 'user' as const : 'assistant' as const,
-              content: m.text,
-            }))
-            .concat([{ role: 'user' as const, content: query }]),
+          messages: history.map(m => ({
+            role: m.isUser ? ('user' as const) : ('assistant' as const),
+            content: m.text,
+          })),
         };
 
         const res = await apiRequest('POST', '/api/assistant/chat', payload, token);
@@ -161,13 +165,15 @@ export default function AssistantScreen() {
           isUser: false,
         };
         setMessages(prev => [...prev, errorMsg]);
+      } finally {
+        setIsTyping(false);
       }
 
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      }, 120);
     },
-    [inputText, token, messages, bills, merchantTotals, monthlySpend, monthlyBudget],
+    [inputText, token, messages, bills, merchantTotals, monthlySpend, monthlyBudget, isTyping],
   );
 
   const handleBack = () => {
@@ -252,6 +258,17 @@ export default function AssistantScreen() {
         }
       />
 
+      {isTyping && (
+        <View style={[styles.typingRow, { paddingBottom: bottomInset - 6 }]}>
+          <View style={[styles.botAvatar, { backgroundColor: colors.accentDim }]}>
+            <Ionicons name="sparkles" size={16} color={colors.accent} />
+          </View>
+          <View style={[styles.msgBubble, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <Text style={[styles.msgText, { color: colors.textSecondary }]}>Assistant is typing…</Text>
+          </View>
+        </View>
+      )}
+
       <View style={[styles.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: bottomInset }]}>
         <TextInput
           style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
@@ -285,6 +302,7 @@ const styles = StyleSheet.create({
   quickChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
   quickChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   msgRow: { flexDirection: 'row', marginBottom: 16, gap: 10, alignItems: 'flex-start' },
+  typingRow: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, gap: 10, alignItems: 'flex-start' },
   msgRowUser: { justifyContent: 'flex-end' },
   botAvatar: { width: 32, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   msgBubble: { maxWidth: '80%', borderRadius: 18, padding: 14 },
