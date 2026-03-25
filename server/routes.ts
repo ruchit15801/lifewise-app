@@ -304,11 +304,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reminderSettings: { defaultReminderDays: [7, 3, 1, 0], soundEnabled: true, vibrationEnabled: true },
         },
       });
-      demoUserId = (created.insertedId as any).toString();
+      demoUserId = (created as any).insertedId.toString();
       console.log('[seed] demo user created:', demoEmail);
     } else {
-      await users.updateOne(
-        { _id: existingDemo._id },
+      const result = await users.updateOne(
+        { _id: (existingDemo as any)._id },
         {
           $set: {
             name: demoName,
@@ -417,16 +417,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!phone || !otp) {
         return res.status(400).json({ message: 'Phone and OTP are required' });
       }
-      const record = await otpStore.findOne({ phone: String(phone).trim() });
+      const record = (await otpStore.findOne({ phone: String(phone).trim() })) as any;
       if (!record) {
         return res.status(400).json({ message: 'Invalid or expired OTP' });
       }
       const tenMin = 10 * 60 * 1000;
-      if (Date.now() - record.createdAt.getTime() > tenMin) {
-        await otpStore.deleteOne({ _id: record._id });
+      if (Date.now() - new Date(record.createdAt).getTime() > tenMin) {
+        await otpStore.deleteOne({ _id: (record as any)._id });
         return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
       }
-      if (record.otp !== String(otp)) {
+      if (String(record.otp) !== String(otp)) {
         return res.status(400).json({ message: 'Invalid OTP' });
       }
       const uid = toId(String((record as any).userId));
@@ -434,7 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await otpStore.deleteOne({ _id: (record as any)._id });
       const user = (await users.findOne({ _id: uid })) as any;
       if (!user) return res.status(500).json({ message: 'User not found' });
-      const userId = (user._id as any).toString();
+      const userId = (user as any)._id.toString();
       const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
       return res.json({
         user: { id: userId, email: user.email, name: user.name, phone: user.phone, phoneVerified: true },
@@ -455,7 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(404).json({ message: 'No account found for this phone' });
       const otp = generateOtp();
       await otpStore.deleteMany({ phone: phoneStr });
-      await otpStore.insertOne({ phone: phoneStr, otp, createdAt: new Date(), userId: user._id?.toString?.() ?? user._id });
+      await otpStore.insertOne({ phone: phoneStr, otp, createdAt: new Date(), userId: (user as any)._id?.toString?.() ?? (user as any)._id });
       await sendSmsOtp(phoneStr, otp);
       return res.json({ message: 'OTP sent' });
     } catch (err) {
@@ -478,7 +478,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!valid) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
-      const userId = user._id.toString();
+      const userId = (user as any)._id.toString();
       const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
       return res.json({
         user: { id: userId, email: user.email, name: user.name, phone: user.phone, phoneVerified: user.phoneVerified },
@@ -528,8 +528,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         user = { _id: result.insertedId, ...doc } as any;
       }
 
+      if (!user) {
+        return res.status(500).json({ message: 'User retrieval failed' });
+      }
+
       const userId = (user as any)._id.toString();
-      const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+      const userObj = user as any;
+      const token = jwt.sign({ userId, email: userObj.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
 
       return res.json({
         user: {
@@ -618,7 +623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         { upsert: true },
       );
-
+      console.log("[Push] Token registered for user:", (req as any).userId, "Platform:", platform || 'android');
       return res.json({ ok: true });
     } catch (err) {
       console.error('Save push token error:', err);
@@ -716,7 +721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!S3_BUCKET) {
           return res.status(500).json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
         }
-        const file = req.file as Express.Multer.File | undefined;
+        const file = (req as any).file;
         if (!file || !file.buffer) {
           return res.status(400).json({ message: 'avatar file is required' });
         }
@@ -781,6 +786,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ updated: result.modifiedCount || 0 });
     } catch (err) {
       console.error('Mark notifications read error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/notifications/mark-read-all', authMiddleware, async (req: any, res) => {
+    try {
+      const result = await notifications.updateMany(
+        { userId: (req as any).userId, read: false },
+        { $set: { read: true } },
+      );
+      return res.json({ updated: result.modifiedCount || 0 });
+    } catch (err) {
+      console.error('Mark all notifications read error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.delete('/api/notifications/:id', authMiddleware, async (req: any, res) => {
+    try {
+      const result = await notifications.deleteOne({
+        _id: toId(req.params.id),
+        userId: (req as any).userId,
+      });
+      if (result.deletedCount === 0) {
+        return res.status(404).json({ message: 'Notification not found' });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Delete notification error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
@@ -951,7 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(500).json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
         }
 
-        const file = req.file as Express.Multer.File | undefined;
+        const file = (req as any).file;
         if (!file || !file.buffer) {
           return res.status(400).json({ message: 'image file is required' });
         }
@@ -1353,7 +1387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(500).json({ message: 'Voice is not configured. Set OPENAI_API_KEY.' });
         }
   
-        const file = req.file as Express.Multer.File | undefined;
+        const file = (req as any).file;
         if (!file || !file.buffer) {
           return res.status(400).json({ message: 'audio file is required' });
         }
@@ -1586,23 +1620,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     Amazon: 'Use a wishlist and wait for sales',
   };
 
-  app.get('/api/leaks', authMiddleware, async (req, res) => {
+  app.get('/api/leaks', authMiddleware, async (req: any, res) => {
     try {
-      const list = await transactions.find({ userId: (req as any).userId, isDebit: true }).toArray();
-      const merchantFreq: Record<string, { count: number; total: number; category: CategoryType }> = {};
-      list.forEach((t: any) => {
+      const userId = (req as any).userId;
+      const [txList, billList] = await Promise.all([
+        transactions.find({ userId, isDebit: true }).sort({ date: -1 }).toArray(),
+        bills.find({ userId }).toArray()
+      ]);
+
+      const merchantFreq: Record<string, { count: number; total: number; category: CategoryType; amounts: number[]; lastDate: Date }> = {};
+      txList.forEach((t: any) => {
         const merchant = String(t.merchant || 'Unknown');
         if (!merchantFreq[merchant]) {
-          merchantFreq[merchant] = { count: 0, total: 0, category: (t.category as CategoryType) || 'others' };
+          merchantFreq[merchant] = { 
+            count: 0, 
+            total: 0, 
+            category: (t.category as CategoryType) || 'others',
+            amounts: [],
+            lastDate: new Date(t.date)
+          };
         }
         merchantFreq[merchant].count++;
         merchantFreq[merchant].total += t.amount;
+        merchantFreq[merchant].amounts.push(t.amount);
       });
+
       const leaks: any[] = [];
+      const now = new Date();
+
+      // 1. Transaction Frequency & Price Hikes
       Object.entries(merchantFreq).forEach(([merchant, data]) => {
+        // Frequency Leak
         if (data.count >= 3) {
           const freq = data.count >= 15 ? 'Daily' : data.count >= 8 ? 'Frequently' : 'Weekly';
-          const monthlyEstimate = Math.round(data.total);
+          const monthlyEstimate = Math.round(data.total / (data.count > 30 ? 1 : 1)); // Simplified for now
+          
+          let suggestion = LEAK_SUGGESTIONS[merchant] || 'Review if this expense is necessary';
+          
+          // Price Hike Detection (compare last 2 tx if they exist)
+          if (data.amounts.length >= 2) {
+            const latest = data.amounts[0];
+            const previous = data.amounts[1];
+            if (latest > previous * 1.15) { // 15% increase
+              suggestion = `⚠️ Price hike detected! ${merchant} increased by ${Math.round((latest/previous - 1) * 100)}%. ${suggestion}`;
+            }
+          }
+
           leaks.push({
             id: new ObjectId().toString(),
             merchant,
@@ -1611,10 +1674,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             monthlyEstimate,
             yearlyPrediction: monthlyEstimate * 12,
             transactionCount: data.count,
-            suggestion: LEAK_SUGGESTIONS[merchant] || 'Review if this expense is necessary',
+            suggestion,
           });
         }
       });
+
+      // 2. "Ghost" or "Inactive" Subscriptions
+      // If we have a bill reminder but no transaction in 45 days
+      billList.forEach((bill: any) => {
+        if (bill.reminderType === 'subscription' && bill.status !== 'cancelled') {
+          const txMatch = txList.find((t: any) => t.merchant.toLowerCase().includes(bill.name.toLowerCase()));
+          if (txMatch) {
+            const lastTxDate = new Date(txMatch.date);
+            const daysSinceLastPay = (now.getTime() - lastTxDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceLastPay > 45) {
+              leaks.push({
+                id: new ObjectId().toString(),
+                merchant: bill.name,
+                category: bill.category,
+                frequency: 'Inactive',
+                monthlyEstimate: bill.amount,
+                yearlyPrediction: bill.amount * 12,
+                transactionCount: 0,
+                suggestion: `You're paying for ${bill.name} but haven't used it for 45+ days. Consider cancelling.`,
+              });
+            }
+          }
+        }
+      });
+
       leaks.sort((a, b) => b.monthlyEstimate - a.monthlyEstimate);
       return res.json(leaks);
     } catch (err) {
@@ -2196,11 +2284,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     ? `Your ${bill.name || 'payment'} is due today.`
                     : `Your ${bill.name || 'payment'} is due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`;
 
+                const imageUrl = bill.imageUrl || `https://api.dicebear.com/7.x/shapes/png?seed=${bill.category || 'bill'}&backgroundColor=4f46e5`;
+
                 const meta = {
-                  billId: bill._id.toString(),
+                  billId: (bill as any)._id.toString(),
                   amount: bill.amount || 0,
                   dueDate: baseDate.toISOString(),
                   reminderType: bill.reminderType || 'bill',
+                  imageUrl,
                 };
 
                 await notifications.insertOne({
@@ -2221,20 +2312,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       .project<{ token: string }>({ token: 1, _id: 0 })
                       .toArray();
 
-                    const tokens = tokenDocs.map((t) => t.token).filter(Boolean);
+                    const tokens = tokenDocs.map((t: any) => t.token).filter(Boolean);
 
                     if (tokens.length) {
-                      await messaging.sendEachForMulticast({
-                        tokens,
-                        notification: {
-                          title,
-                          body,
-                        },
-                        data: {
-                          type: 'reminder',
-                          billId: meta.billId,
-                        },
-                      });
+                        await messaging.sendEachForMulticast({
+                          tokens,
+                          notification: {
+                            title,
+                            body,
+                            imageUrl,
+                          },
+                          android: {
+                            notification: {
+                              imageUrl,
+                              priority: 'high',
+                            },
+                          },
+                          data: {
+                            type: 'reminder',
+                            billId: meta.billId,
+                          },
+                        });
+                        console.log(`[Push] Multi-device send to ${tokens.length} tokens for user ${user.email}`);
                     }
                   } catch (err) {
                     console.error('FCM send error:', err);
@@ -2244,7 +2343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
               await reminderLogs.insertOne({
                 userId: user._id?.toString?.() ?? user._id,
-                billId: bill._id.toString(),
+                billId: (bill as any)._id.toString(),
                 channel,
                 dayOffset: daysLeft,
                 sentAt: new Date(),

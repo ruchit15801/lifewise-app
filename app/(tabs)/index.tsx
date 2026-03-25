@@ -197,9 +197,13 @@ function MustSmsSyncBanner({
 function TopReminderAlert({
   colors,
   upcomingBills,
+  onSnooze,
+  onCancel,
 }: {
   colors: any;
-  upcomingBills: { name: string; amount: number; dueDate: string }[];
+  upcomingBills: any[];
+  onSnooze: (id: string) => void;
+  onCancel: (id: string) => void;
 }) {
   if (!upcomingBills.length) return null;
 
@@ -214,11 +218,11 @@ function TopReminderAlert({
 
   let label: string;
   if (daysDiff === 0) {
-    label = `Today • ${next.name}`;
+    label = `Due Today • ${next.name}`;
   } else if (daysDiff === 1) {
-    label = `Tomorrow • ${next.name}`;
+    label = `Due Tomorrow • ${next.name}`;
   } else if (daysDiff > 1 && daysDiff <= 7) {
-    label = `This week • ${next.name}`;
+    label = `Due this week • ${next.name}`;
   } else if (daysDiff < 0) {
     label = `Overdue • ${next.name}`;
   } else {
@@ -240,23 +244,41 @@ function TopReminderAlert({
         },
       ]}
     >
-      <View style={styles.reminderAlertLeft}>
-        <Ionicons
-          name="alert-circle"
-          size={18}
-          color={colors.warning}
-          style={{ marginRight: 8 }}
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.reminderAlertTitle, { color: colors.text }]} numberOfLines={1}>
-            {label}
-          </Text>
-          <Text
-            style={[styles.reminderAlertSubtitle, { color: colors.textSecondary }]}
-            numberOfLines={1}
+      <View style={styles.reminderAlertRow}>
+        <View style={styles.reminderAlertLeft}>
+          <Ionicons
+            name="alert-circle"
+            size={18}
+            color={colors.warning}
+            style={{ marginRight: 8 }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.reminderAlertTitle, { color: colors.text }]} numberOfLines={1}>
+              {label}
+            </Text>
+            <Text
+              style={[styles.reminderAlertSubtitle, { color: colors.textSecondary }]}
+              numberOfLines={1}
+            >
+              {`Due ${dateLabel}`}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.reminderAlertActions}>
+          <Pressable 
+            onPress={() => onSnooze(next.id)}
+            style={({ pressed }) => [styles.alertActionBtn, { opacity: pressed ? 0.7 : 1, backgroundColor: colors.surfaceGlow }]}
           >
-            {`Due ${dateLabel}`}
-          </Text>
+            <Ionicons name="notifications-off-outline" size={14} color={colors.warning} />
+            <Text style={[styles.alertActionText, { color: colors.warning }]}>Snooze</Text>
+          </Pressable>
+          <Pressable 
+            onPress={() => onCancel(next.id)}
+            style={({ pressed }) => [styles.alertActionBtn, { opacity: pressed ? 0.7 : 1, backgroundColor: colors.dangerDim }]}
+          >
+            <Ionicons name="close" size={14} color={colors.danger} />
+            <Text style={[styles.alertActionText, { color: colors.danger }]}>Cancel</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -479,6 +501,8 @@ export default function HomeScreen() {
     refreshData,
     syncSmsFromDevice,
     quickAddReminder,
+    snoozeReminder,
+    cancelReminder,
   } = useExpenses();
   const { user, token } = useAuth();
   const { colors, isDark } = useTheme();
@@ -542,8 +566,9 @@ export default function HomeScreen() {
   const categoryTotals: Partial<Record<CategoryType, number>> = {};
   transactions.forEach(tx => {
     if (tx.isDebit) {
-      const cat = (CATEGORIES[tx.category] ? tx.category : 'others') as CategoryType;
-      categoryTotals[cat] = (categoryTotals[cat] || 0) + tx.amount;
+      const cat = (tx.category || 'others').toLowerCase() as CategoryType;
+      const safeCat = CATEGORIES[cat] ? cat : 'others';
+      categoryTotals[safeCat] = (categoryTotals[safeCat] || 0) + tx.amount;
     }
   });
   const sortedCategories = Object.entries(categoryTotals)
@@ -739,6 +764,23 @@ export default function HomeScreen() {
           { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom },
         ]}
       >
+        <TopReminderAlert
+          colors={colors}
+          upcomingBills={upcomingBills}
+          onSnooze={(id) => {
+            Alert.alert('Snooze Reminder', 'Snooze for how long?', [
+              { text: '1 Day', onPress: () => snoozeReminder(id, 1) },
+              { text: '3 Days', onPress: () => snoozeReminder(id, 3) },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          }}
+          onCancel={(id) => {
+            Alert.alert('Cancel Reminder', 'Are you sure you want to cancel this reminder?', [
+              { text: 'No', style: 'cancel' },
+              { text: 'Yes, Cancel', style: 'destructive', onPress: () => cancelReminder(id) },
+            ]);
+          }}
+        />
         <MustSmsSyncBanner
           colors={colors}
           isSyncingSms={isSyncingSms || isLoading}
@@ -1388,6 +1430,27 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
+  },
+  reminderAlertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reminderAlertActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  alertActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  alertActionText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
   },
   mustBanner: {
     alignSelf: 'stretch',

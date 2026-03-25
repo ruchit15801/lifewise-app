@@ -24,6 +24,7 @@ import { StatusBar } from "expo-status-bar";
 import {
   addNotificationResponseReceivedListener,
   registerForPushNotifications,
+  addPushTokenListener,
 } from "@/lib/notifications";
 
 SplashScreen.preventAutoHideAsync();
@@ -148,6 +149,17 @@ function AuthGate() {
     registerForPushNotifications(token).catch((e) => {
       console.log("[Push] Registration error", e);
     });
+
+    let sub: { remove: () => void } | null = null;
+    (async () => {
+      const nextSub = await addPushTokenListener((newToken) => {
+        console.log("[Push] Token refreshed:", newToken);
+        registerForPushNotifications(token);
+      });
+      sub = nextSub;
+    })();
+
+    return () => sub?.remove();
   }, [isAuthenticated, token]);
 
   useEffect(() => {

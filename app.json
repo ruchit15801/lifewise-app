@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.lifewise",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "READ_SMS",
         "RECEIVE_SMS"
@@ -32,6 +33,13 @@
       "favicon": "./logo.png"
     },
     "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#4F46E5"
+        }
+      ],
       [
         "expo-router",
         {

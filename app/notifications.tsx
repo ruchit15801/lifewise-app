@@ -66,7 +66,18 @@ export default function NotificationsScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.screenTitle, { color: colors.text }]}>Notifications</Text>
-        <View style={{ width: 24 }} />
+        <Pressable 
+          onPress={async () => {
+            if (items.some(n => !n.read)) {
+              await apiRequest('POST', '/api/notifications/mark-read-all', {}, token);
+              setItems(items.map(n => ({ ...n, read: true })));
+            }
+          }}
+          disabled={!items.some(n => !n.read)}
+          style={({ pressed }) => [{ opacity: pressed || !items.some(n => !n.read) ? 0.6 : 1 }]}
+        >
+          <Text style={[styles.markAllText, { color: colors.accent }]}>Mark all read</Text>
+        </Pressable>
       </View>
 
       {loading ? (
@@ -123,6 +134,19 @@ export default function NotificationsScreen() {
                   {formatTimeAgo(item.createdAt)}
                 </Text>
               </View>
+              <Pressable
+                onPress={async () => {
+                  try {
+                    await apiRequest('DELETE', `/api/notifications/${item.id}`, undefined, token);
+                    setItems(items.filter((n) => n.id !== item.id));
+                  } catch (err) {
+                    console.error('Delete notification UI error:', err);
+                  }
+                }}
+                style={({ pressed }) => [styles.deleteBtn, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.textTertiary} />
+              </Pressable>
             </Pressable>
           )}
         />
@@ -182,6 +206,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 4,
+  },
+  markAllText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+  },
+  deleteBtn: {
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
 });
 

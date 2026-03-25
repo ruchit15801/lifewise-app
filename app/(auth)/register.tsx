@@ -33,10 +33,18 @@ export default function RegisterScreen() {
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
   const handleRegister = async () => {
-    if (!name.trim() || !email.trim() || !password.trim()) {
+    const trimmedEmail = email.trim();
+    if (!name.trim() || !trimmedEmail || !password.trim()) {
       setError('Please fill in all fields');
       return;
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
     const hasMinLength = password.length >= 8;
     const hasUpper = /[A-Z]/.test(password);
     const hasLower = /[a-z]/.test(password);

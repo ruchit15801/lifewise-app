@@ -78,6 +78,7 @@ export default function BillDetailsScreen() {
   const [tempVendor, setTempVendor] = useState<string>(() => (bill?.vendorName || ''));
   const [tempBillNum, setTempBillNum] = useState<string>(() => (bill?.billNumber || ''));
   const [tempAccNum, setTempAccNum] = useState<string>(() => (bill?.accountNumber || ''));
+  const [editError, setEditError] = useState<string>('');
 
   // Pinch to zoom shared values
   const scale = useSharedValue(1);
@@ -128,8 +129,17 @@ export default function BillDetailsScreen() {
 
   async function onSaveEdit() {
     if (!bill) return;
+    if (!tempName.trim()) {
+      setEditError('Name is required');
+      return;
+    }
+    const amountNum = parseFloat(tempAmount);
+    if (isNaN(amountNum) || amountNum < 0) {
+      setEditError('Please enter a valid amount');
+      return;
+    }
+    setEditError('');
     const nextDue = new Date(tempTime);
-    const amountNum = parseFloat(tempAmount) || 0;
 
     const updated: Bill = {
       ...bill,
@@ -154,6 +164,7 @@ export default function BillDetailsScreen() {
     }).catch(() => {});
 
     setShowEditModal(false);
+    setEditError('');
   }
 
   function onToggleDone() {
@@ -454,6 +465,13 @@ export default function BillDetailsScreen() {
               </Pressable>
             </View>
 
+            {!!editError && (
+              <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', marginHorizontal: 20, marginBottom: 12 }]}>
+                <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                <Text style={[styles.errorText, { color: '#B91C1C' }]}>{editError}</Text>
+              </View>
+            )}
+
             <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
               <View style={styles.editGrid}>
                 <View style={styles.editSection}>
@@ -536,46 +554,13 @@ export default function BillDetailsScreen() {
           <DateTimePicker
             value={tempTime}
             mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             onChange={(_, date) => {
-              setShowTimePickerModal(false);
+              if (Platform.OS === 'android') setShowTimePickerModal(false);
               if (date) setTempTime(date);
             }}
           />
         )}
-      </Modal>
-
-      {/* Time picker modal */}
-      <Modal transparent visible={showTimePickerModal} animationType="fade">
-        <View style={styles.modalBackdropCentered}>
-          <View style={styles.modalCardCentered}>
-            <Text style={styles.modalTitle}>Select time</Text>
-            <View style={styles.timePickerWrap}>
-              <DateTimePicker
-                value={draftTime}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, d) => {
-                  if (!d) return;
-                  setDraftTime(d);
-                }}
-              />
-            </View>
-            <View style={styles.modalActionsRow}>
-              <Pressable onPress={() => setShowTimePickerModal(false)} style={styles.modalTextButton}>
-                <Text style={styles.modalTextButtonLabel}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setTempTime(draftTime);
-                  setShowTimePickerModal(false);
-                }}
-                style={styles.modalPrimaryButton}
-              >
-                <Text style={styles.modalPrimaryButtonLabel}>Save</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
       </Modal>
 
       {/* Repeat picker modal */}
@@ -679,109 +664,12 @@ export default function BillDetailsScreen() {
         </View>
       </Modal>
 
-      {bill && (
-        <UpdateModal
-          visible={showEditModal}
-          onClose={() => setShowEditModal(false)}
-          bill={bill}
-          onSave={onSaveEdit}
-        />
-      )}
       </View>
     </GestureHandlerRootView>
   );
 }
 
 
-interface UpdateModalProps {
-  visible: boolean;
-  onClose: () => void;
-  bill: Bill;
-  onSave: (updated: Partial<Bill>) => void;
-}
-
-function UpdateModal({ visible, onClose, bill, onSave }: UpdateModalProps) {
-  const [name, setName] = useState(bill.name);
-  const [amount, setAmount] = useState(bill.amount.toString());
-  const [billDate, setBillDate] = useState(bill.billDate || '');
-  const [vendor, setVendor] = useState(bill.vendorName || '');
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalBackdropFull}>
-        <View style={[styles.fullSheet, { backgroundColor: '#FFFFFF' }]}>
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitleBig}>Edit Details</Text>
-            <Pressable onPress={onClose}>
-              <Ionicons name="close" size={24} color="#64748B" />
-            </Pressable>
-          </View>
-
-          <ScrollView style={styles.sheetScroll}>
-            <View style={styles.editGrid}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Title</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Rent, Electric, etc."
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Amount</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="numeric"
-                  placeholder="0.00"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Vendor Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={vendor}
-                  onChangeText={setVendor}
-                  placeholder="Company Name"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Bill Date</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={billDate}
-                  onChangeText={setBillDate}
-                  placeholder="e.g. 2024-03-25"
-                />
-              </View>
-            </View>
-          </ScrollView>
-
-          <Pressable
-            style={styles.saveBtnAction}
-            onPress={() => {
-              onSave({
-                name,
-                amount: parseFloat(amount) || 0,
-                billDate,
-                vendorName: vendor,
-              });
-            }}
-          >
-            <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.saveGradientAction}>
-              <Text style={styles.saveBtnTextAction}>Save Changes</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
@@ -1470,6 +1358,18 @@ const styles = StyleSheet.create({
   repeatLabelActive: {
     color: '#4F46E5',
     fontFamily: 'Inter_600SemiBold',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+  },
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    flex: 1,
   },
 });
 

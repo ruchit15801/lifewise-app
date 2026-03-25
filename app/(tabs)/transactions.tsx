@@ -88,7 +88,7 @@ export default function TransactionsScreen() {
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') return transactions;
-    return transactions.filter(tx => tx.category === activeFilter);
+    return transactions.filter(tx => (tx.category || 'others').toLowerCase() === activeFilter.toLowerCase());
   }, [transactions, activeFilter]);
 
   const sections = useMemo(() => {

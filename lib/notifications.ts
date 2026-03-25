@@ -27,6 +27,8 @@ async function getNotificationsModule() {
           shouldShowAlert: true,
           shouldPlaySound: true,
           shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
         }),
       });
       handlerConfigured = true;
@@ -69,6 +71,7 @@ export async function registerForPushNotifications(token: string | null) {
   }
 
   const expoToken = (await Notifications.getExpoPushTokenAsync()).data;
+  console.log("FCM Token:", expoToken);
 
   if (!token) {
     return expoToken;
@@ -106,6 +109,16 @@ export async function addNotificationResponseReceivedListener(
   return Notifications.addNotificationResponseReceivedListener(listener);
 }
 
+export async function addPushTokenListener(
+  listener: (token: string) => void,
+) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) {
+    return { remove: () => {} };
+  }
+  return Notifications.addPushTokenListener((token) => listener(token.data));
+}
+
 export async function scheduleLocalNotification(opts: {
   title: string;
   body: string;
@@ -122,6 +135,6 @@ export async function scheduleLocalNotification(opts: {
       data: opts.data || {},
     },
     trigger: opts.triggerAt,
-  });
+  } as any);
 }
 

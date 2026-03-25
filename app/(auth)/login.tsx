@@ -31,13 +31,21 @@ export default function LoginScreen() {
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password.trim()) {
       setError('Please fill in all fields');
       return;
     }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
     setError('');
     setIsSubmitting(true);
-    const result = await login(email.trim(), password);
+    const result = await login(trimmedEmail, password);
     setIsSubmitting(false);
     if (!result.success) {
       setError(result.error || 'Login failed');

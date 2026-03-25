@@ -57,7 +57,7 @@ const CATEGORY_OPTIONS: { key: CategoryType; label: string }[] = [
   { key: 'bills', label: 'Bills & Utilities' },
   { key: 'entertainment', label: 'Entertainment' },
   { key: 'food', label: 'Food & Dining' },
-  { key: 'healthcare', label: 'Healthcare' },
+  { key: 'health', label: 'Healthcare' },
   { key: 'shopping', label: 'Shopping' },
   { key: 'education', label: 'Education' },
   { key: 'investment', label: 'Investment' },
@@ -274,7 +274,7 @@ function AddEditModal({
         return REMINDER_TYPE_CONFIG.bill.icon;
       case 'entertainment':
         return REMINDER_TYPE_CONFIG.subscription.icon;
-      case 'healthcare':
+      case 'health':
         return 'medkit';
       case 'investment':
         return 'trending-up';
@@ -1047,7 +1047,8 @@ const styles = StyleSheet.create({
   urgentWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
+    marginTop: 2,
   },
   urgentDot: {
     width: 8,

@@ -480,54 +480,59 @@ export default function ReportsScreen() {
     return { labels, dueCounts, paidCounts, maxDue, useDaily };
   }, [reportBills, rangeInfo, DAY_MS]);
 
-  const spendingPoints = monthlyBudget > 0
+  const spendingScore = monthlyBudget > 0
     ? clamp(Math.round(100 - (totalSpent / Math.max(1, (monthlyBudget / 30) * daysInPeriod)) * 100), 0, 100)
-    : 0;
+    : 100;
 
-  const billsPoints = Math.round(billsPaidRatio * 30);
-  const habitsPoints = Math.round(habitsConsistency * 20);
-  const medsPoints = Math.round(medicinesPointsTotal * 10);
+  const billsScore = reportBills.length > 0
+    ? Math.round((paidBills.length / reportBills.length) * 100)
+    : 100;
 
-  const lifeScoreDisplay = lifeScore?.score ?? 85; // Fallback to 85 as per existing UI logic if not loaded
-  const lifeScoreLabel = lifeScore?.score != null ? 'Official Score' : 'Estimated Score';
-  const lifeScoreEstimate = lifeScoreDisplay; // for internal use below
+  const healthScore = medicines.length > 0
+    ? Math.round((medicinesTaken / medicines.length) * 100)
+    : 100;
+
+  // Weighted Dynamic Score: Spending 50%, Bills 30%, Health 20%
+  const dynamicScore = Math.round(
+    spendingScore * 0.5 +
+    billsScore * 0.3 +
+    healthScore * 0.2
+  );
+
+  const lifeScoreDisplay = dynamicScore;
+  const lifeScoreLabel = 'Estimated Score';
+  const lifeScoreEstimate = lifeScoreDisplay;
 
   const lifeScorePrev = useMemo(() => {
-    const prevPaidBillsForScore = prevPaidBills;
-    const prevBillsForIntent = prevBills.filter((b) => getReminderIntentFromBill(b) === 'bills');
-    const prevBillsDueInIntent = prevBillsForIntent;
-    const prevBillsPaidInIntent = prevPaidBillsForScore.filter((b) => getReminderIntentFromBill(b) === 'bills');
-    const prevBillsPaidRatio =
-      prevBillsDueInIntent.length > 0 ? prevBillsPaidInIntent.length / prevBillsDueInIntent.length : 0;
+    const prevBillsCount = prevBills.length;
+    const prevPaidCount = prevPaidBills.length;
 
-    const prevHabitsCompleted = prevPaidBillsForScore.filter((b) => getReminderIntentFromBill(b) === 'habits').length;
-    const prevHabitsTotal = prevBills.filter((b) => getReminderIntentFromBill(b) === 'habits').length;
-    const prevHabitsConsistency = prevHabitsTotal > 0 ? prevHabitsCompleted / prevHabitsTotal : 0;
+    const prevSpendingScore = monthlyBudget > 0
+      ? clamp(Math.round(100 - (prevTotalSpent / Math.max(1, (monthlyBudget / 30) * daysInPeriod)) * 100), 0, 100)
+      : 100;
+
+    const prevBillsScore = prevBillsCount > 0
+      ? Math.round((prevPaidCount / prevBillsCount) * 100)
+      : 100;
 
     const prevMedicinesTaken = medicines.filter((m) => {
-      if (m.lastStatus !== 'taken') return false;
-      if (!m.lastTakenAt) return false;
+      if (m.lastStatus !== 'taken' || !m.lastTakenAt) return false;
       return prevPredicate(new Date(m.lastTakenAt));
     }).length;
-    const prevMedicinesRatio = medicines.length > 0 ? prevMedicinesTaken / medicines.length : 0;
 
-    const prevSpendingPoints = monthlyBudget > 0
-      ? clamp(Math.round(100 - (prevTotalSpent / Math.max(1, (monthlyBudget / 30) * daysInPeriod)) * 100), 0, 100)
-      : 0;
+    const prevHealthScore = medicines.length > 0
+      ? Math.round((prevMedicinesTaken / medicines.length) * 100)
+      : 100;
 
-    const prevBillsPoints = Math.round(prevBillsPaidRatio * 30);
-    const prevHabitsPoints = Math.round(prevHabitsConsistency * 20);
-    const prevMedsPoints = Math.round(prevMedicinesRatio * 10);
-
-    return clamp(Math.round(prevSpendingPoints * 0.7 + prevBillsPoints * 0.2 + prevHabitsPoints * 0.08 + prevMedsPoints * 0.02), 0, 100);
+    return Math.round(prevSpendingScore * 0.5 + prevBillsScore * 0.3 + prevHealthScore * 0.2);
   }, [prevPaidBills, prevBills, medicines, prevPredicate, prevTotalSpent, monthlyBudget, daysInPeriod]);
 
   const comparison = useMemo(() => {
     const spentDelta = totalSpent - prevTotalSpent;
     const remindersDelta = remindersCompleted - prevRemindersCompleted;
-    const lifeScoreDelta = lifeScoreEstimate - lifeScorePrev;
+    const lifeScoreDelta = dynamicScore - lifeScorePrev;
     return { spentDelta, remindersDelta, lifeScoreDelta };
-  }, [totalSpent, prevTotalSpent, remindersCompleted, prevRemindersCompleted, lifeScoreEstimate, lifeScorePrev]);
+  }, [totalSpent, prevTotalSpent, remindersCompleted, prevRemindersCompleted, dynamicScore, lifeScorePrev]);
 
   const trendBars = useMemo(() => {
     // Simple bar-style "chart" using Views (no extra chart libraries).
@@ -908,13 +913,11 @@ export default function ReportsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.summaryLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }]}>Total Spending</Text>
                 <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatAmount(totalSpent)}</Text>
-                <Text style={[styles.deltaText, { color: colors.textTertiary }]}>
+                <Text style={[styles.deltaText, { color: colors.textTertiary, lineHeight: 18 }]}>
                   Spent {comparison.spentDelta >= 0 ? '+' : '-'}
-                  {formatAmount(Math.abs(comparison.spentDelta))} vs {rangeInfo.prevLabel} • Reminders{' '}
-                  {comparison.remindersDelta >= 0 ? '+' : ''}
-                  {comparison.remindersDelta} • LifeScore{' '}
-                  {comparison.lifeScoreDelta >= 0 ? '+' : ''}
-                  {comparison.lifeScoreDelta}
+                  {formatAmount(Math.abs(comparison.spentDelta))} vs {rangeInfo.prevLabel}{'\n'}
+                  Reminders {comparison.remindersDelta >= 0 ? '+' : ''}{comparison.remindersDelta} • 
+                  LifeScore {comparison.lifeScoreDelta >= 0 ? '+' : ''}{comparison.lifeScoreDelta}
                 </Text>
               </View>
               <View style={[styles.scoreCircle, { borderColor: colors.accentDim, backgroundColor: colors.accentDim }]}>
@@ -971,17 +974,19 @@ export default function ReportsScreen() {
                   : 'Weekly spending'}
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendRow}>
-              {trendBars.values.map((v, idx) => {
-                const height = Math.round((v / trendBars.max) * 92) || 4;
-                return (
-                  <View key={`${idx}`} style={styles.trendBarWrap}>
-                    <View style={[styles.trendBar, { height, backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]} />
-                    <Text style={[styles.trendBarLabel, { color: colors.textTertiary }]} numberOfLines={1}>
-                      {trendBars.labels[idx]}
-                    </Text>
-                  </View>
-                );
-              })}
+                {trendBars.values.map((v, idx) => {
+                  const height = Math.round((v / trendBars.max) * 92) || 4;
+                  return (
+                    <View key={`${idx}`} style={styles.trendBarWrap}>
+                      <View style={[styles.trendBar, { height, backgroundColor: colors.accentDim, borderColor: colors.accent + '30' }]}>
+                        {v > 0 && <LinearGradient colors={[colors.accent, colors.accentDim]} style={{ flex: 1, borderRadius: 10 }} />}
+                      </View>
+                      <Text style={[styles.trendBarLabel, { color: colors.textTertiary }]} numberOfLines={1}>
+                        {trendBars.labels[idx]}
+                      </Text>
+                    </View>
+                  );
+                })}
             </ScrollView>
           </View>
         </Animated.View>
@@ -1076,7 +1081,7 @@ export default function ReportsScreen() {
               </Text>
             </View>
             <Text style={[styles.habitsFootnote, { color: colors.textSecondary, marginTop: 10 }]}>
-              Estimated from each medicine’s latest status (`taken`) and `lastTakenAt`.
+              Intelligence-driven health adherence calculated from real-time medicine intake and status tracking.
             </Text>
           </View>
         </Animated.View>
@@ -1232,21 +1237,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scoreCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 4,
   },
   scoreValue: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 22,
   },
   scoreLabel: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 10,
-    marginTop: 1,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 9,
+    marginTop: 2,
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
   savingsValue: {
     fontFamily: 'Inter_700Bold',
@@ -1263,15 +1271,16 @@ const styles = StyleSheet.create({
   },
   summaryStats: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 18,
+    justifyContent: 'space-between',
+    paddingTop: 24,
     flexWrap: 'wrap',
-    rowGap: 14,
+    rowGap: 20,
+    columnGap: 10,
   },
   summaryStat: {
     alignItems: 'center',
-    gap: 6,
-    width: '48%',
+    gap: 4,
+    width: '46%',
   },
   statIconWrap: {
     width: 36,
@@ -1288,6 +1297,7 @@ const styles = StyleSheet.create({
   summaryStatLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
+    textAlign: 'center',
   },
   sectionTitle: {
     fontFamily: 'Inter_600SemiBold',
@@ -1471,13 +1481,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timelineBarStack: {
-    width: 12,
-    borderRadius: 10,
+    width: 14,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(229,231,235,1)',
+    borderColor: 'rgba(229,231,235,0.5)',
     overflow: 'hidden',
     justifyContent: 'flex-end',
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0,0,0,0.03)',
   },
   timelineBarUnpaid: {
     width: '100%',
