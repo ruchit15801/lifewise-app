@@ -21,7 +21,8 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: 22
           script: |
-            cd  lifewise-app/
+            echo "-going to folder-"
+            cd lifewise-app
 
             echo "📥 Pull latest code"
             git pull origin main
