@@ -9,13 +9,14 @@ import { connectMongo, getDb } from './db/mongodb';
 import { getFirebaseMessaging } from './firebase-admin';
 import multer from 'multer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { TextractClient, DetectDocumentTextCommand } from '@aws-sdk/client-textract';
+import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
 
-function toId(id: string): ObjectId | string {
-  return /^[a-f0-9]{24}$/i.test(String(id)) ? new ObjectId(id) : String(id);
+function toId(id: any): any {
+  if (id instanceof ObjectId) return id;
+  return /^[a-f0-9]{24}$/i.test(String(id)) ? new ObjectId(id) : id;
 }
 
-type CategoryType = 'food' | 'shopping' | 'transport' | 'entertainment' | 'bills' | 'healthcare' | 'education' | 'investment' | 'others';
+type CategoryType = 'health' | 'bills' | 'family' | 'work' | 'tasks' | 'subscriptions' | 'finance' | 'habits' | 'travel' | 'events' | 'food' | 'shopping' | 'transport' | 'entertainment' | 'education' | 'investment' | 'others';
 type ReminderType = 'bill' | 'subscription' | 'custom';
 type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 type ReminderStatus = 'active' | 'paid' | 'snoozed';
@@ -26,10 +27,12 @@ const JWT_EXPIRY = '7d';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-reply@lifewise.app>';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
+const APP_OPEN_URL = process.env.APP_OPEN_URL || APP_BASE_URL;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || 'asst_WmTjqjLyo3ki1MFHtqDtal6R';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const S3_BUCKET = process.env.AWS_S3_BUCKET;
+const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
 
 const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
 const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
@@ -89,7 +92,7 @@ function authMiddleware(req: any, res: any, next: any) {
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
-    req.userId = decoded.userId;
+    (req as any).userId = decoded.userId;
     req.userEmail = decoded.email;
     next();
   } catch {
@@ -172,6 +175,99 @@ function getOpenAIKey(): string | undefined {
   );
 }
 
+async function parseReminderWithAI(text: string): Promise<{
+  title: string;
+  isoDate: string; // YYYY-MM-DD
+  hour: number; // 0-23
+  minute: number; // 0-59
+  repeatType: RepeatType;
+  reminderType: ReminderType;
+}> {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const defaultIso = tomorrow.toISOString().slice(0, 10);
+
+  const openAIKey = getOpenAIKey();
+  if (!openAIKey) {
+    return {
+      title: text.trim().slice(0, 80) || 'Reminder',
+      isoDate: defaultIso,
+      hour: 9,
+      minute: 0,
+      repeatType: 'none',
+      reminderType: 'custom',
+    };
+  }
+
+  const prompt =
+    'You are a reminder parser for a mobile app. Given a natural language reminder in ANY language (including Hindi and Gujarati), extract:\n' +
+    '- title (short)\n' +
+    '- isoDate (YYYY-MM-DD)\n' +
+    '- hour (0-23)\n' +
+    '- minute (0-59)\n' +
+    '- repeatType one of: none,daily,weekly,monthly,yearly\n' +
+    '- reminderType one of: bill,subscription,custom\n' +
+    'Rules:\n' +
+    '- If no date mentioned, assume tomorrow.\n' +
+    '- If no time mentioned, use 9:00.\n' +
+    '- If user says "every day"/"daily" etc, set repeatType accordingly.\n' +
+    '- If text mentions bill/payment, set reminderType=bill. If subscription, reminderType=subscription. Else custom.\n' +
+    'Return ONLY strict JSON with keys: title, isoDate, hour, minute, repeatType, reminderType.\n' +
+    'Input: ' +
+    JSON.stringify(text);
+
+  try {
+    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openAIKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+      }),
+    });
+
+    if (!aiRes.ok) throw new Error('openai_parse_failed');
+    const json = await aiRes.json();
+    const content = json.choices?.[0]?.message?.content;
+    if (!content) throw new Error('openai_empty');
+    const parsed = JSON.parse(content);
+
+    const title = String(parsed.title || text).trim().slice(0, 80) || 'Reminder';
+    const isoDate = String(parsed.isoDate || defaultIso).slice(0, 10);
+    const hour = Math.max(0, Math.min(23, Number(parsed.hour)));
+    const minute = Math.max(0, Math.min(59, Number(parsed.minute)));
+    const repeatType = (String(parsed.repeatType || 'none') as RepeatType) || 'none';
+    const reminderType = (String(parsed.reminderType || 'custom') as ReminderType) || 'custom';
+
+    return {
+      title,
+      isoDate,
+      hour: Number.isFinite(hour) ? hour : 9,
+      minute: Number.isFinite(minute) ? minute : 0,
+      repeatType: (['none', 'daily', 'weekly', 'monthly', 'yearly'] as const).includes(repeatType)
+        ? repeatType
+        : 'none',
+      reminderType: (['bill', 'subscription', 'custom'] as const).includes(reminderType)
+        ? reminderType
+        : 'custom',
+    };
+  } catch {
+    return {
+      title: text.trim().slice(0, 80) || 'Reminder',
+      isoDate: defaultIso,
+      hour: 9,
+      minute: 0,
+      repeatType: 'none',
+      reminderType: 'custom',
+    };
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   await connectMongo();
   const db = getDb();
@@ -184,6 +280,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const reminderLogs = db.collection('reminder_logs');
   const pushTokens = db.collection('push_tokens');
   const supportTickets = db.collection('support_tickets');
+  const medicineLogs = db.collection('medicine_logs');
+  const lifeScores = db.collection('life_scores');
+
+  // Seed a stable demo login for QA / demos.
+  const demoEmail = 'demo@lifewise.test';
+  const demoPassword = process.env.DEMO_USER_PASSWORD || 'Radhe@1415';
+  const demoName = 'Demo User';
+  let demoUserId: any = null;
+  try {
+    const existingDemo = await users.findOne({ email: demoEmail });
+    const demoPasswordHash = await bcrypt.hash(demoPassword, 10);
+    if (!existingDemo) {
+      const created = await users.insertOne({
+        name: demoName,
+        email: demoEmail,
+        passwordHash: demoPasswordHash,
+        createdAt: new Date(),
+        phone: '+919999000111',
+        phoneVerified: true,
+        settings: {
+          monthlyBudget: 45000,
+          reminderSettings: { defaultReminderDays: [7, 3, 1, 0], soundEnabled: true, vibrationEnabled: true },
+        },
+      });
+      demoUserId = (created as any).insertedId.toString();
+      console.log('[seed] demo user created:', demoEmail);
+    } else {
+      const result = await users.updateOne(
+        { _id: (existingDemo as any)._id },
+        {
+          $set: {
+            name: demoName,
+            passwordHash: demoPasswordHash,
+            phone: (existingDemo as any).phone || '+919999000111',
+            phoneVerified: true,
+            settings: {
+              monthlyBudget: 45000,
+              reminderSettings: { defaultReminderDays: [7, 3, 1, 0], soundEnabled: true, vibrationEnabled: true },
+            },
+          },
+        },
+      );
+      demoUserId = existingDemo._id?.toString?.() ?? String(existingDemo._id);
+      console.log('[seed] demo user refreshed:', demoEmail);
+    }
+  } catch (e) {
+    console.error('[seed] demo user failed:', e);
+  }
+
+  // Seed realistic static data for the demo user so all flows can be tested.
+  if (demoUserId) {
+    try {
+      const now = new Date();
+      const mkDate = (daysOffset: number, hour = 10, minute = 0) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() + daysOffset);
+        d.setHours(hour, minute, 0, 0);
+        return d.toISOString();
+      };
+
+      await Promise.all([
+        transactions.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+        bills.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+        notifications.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+        family.deleteMany({ userId: demoUserId, source: 'demo-seed' } as any),
+      ]);
+
+      await (transactions as any).insertMany([
+        { userId: demoUserId, merchant: 'Swiggy', amount: 380, category: 'others', date: mkDate(-1, 20, 15), upiId: 'swiggy@upi', isDebit: true, description: 'Dinner order', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Uber', amount: 240, category: 'travel', date: mkDate(-2, 9, 20), upiId: 'uber@upi', isDebit: true, description: 'Office commute', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Netflix', amount: 649, category: 'subscriptions', date: mkDate(-3, 8, 0), upiId: 'netflix@upi', isDebit: true, description: 'Monthly subscription', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Apollo Pharmacy', amount: 1120, category: 'health', date: mkDate(-4, 18, 45), upiId: 'apollo@upi', isDebit: true, description: 'Medicines', source: 'demo-seed' },
+        { userId: demoUserId, merchant: 'Salary Credit', amount: 85000, category: 'finance', date: mkDate(-8, 10, 0), upiId: 'employer@hdfcbank', isDebit: false, description: 'Monthly salary', source: 'demo-seed' },
+      ]);
+
+      await (bills as any).insertMany([
+        { userId: demoUserId, name: 'Electricity Bill', amount: 2350, dueDate: mkDate(0, 20, 0), category: 'bills', isPaid: false, icon: 'flash', reminderType: 'bill', repeatType: 'monthly', status: 'active', reminderDaysBefore: [3, 1, 0], source: 'demo-seed' },
+        { userId: demoUserId, name: 'Netflix Premium', amount: 649, dueDate: mkDate(2, 9, 0), category: 'subscriptions', isPaid: false, icon: 'refresh', reminderType: 'subscription', repeatType: 'monthly', status: 'active', reminderDaysBefore: [2, 1, 0], source: 'demo-seed' },
+        { userId: demoUserId, name: 'Health Checkup', amount: 0, dueDate: mkDate(1, 7, 30), category: 'health', isPaid: false, icon: 'medkit', reminderType: 'custom', repeatType: 'yearly', status: 'active', reminderDaysBefore: [7, 1, 0], source: 'demo-seed' },
+        { userId: demoUserId, name: 'Passport Renewal', amount: 0, dueDate: mkDate(15, 11, 0), category: 'tasks', isPaid: false, icon: 'globe', reminderType: 'custom', repeatType: 'none', status: 'active', reminderDaysBefore: [10, 3, 1], source: 'demo-seed' },
+      ]);
+
+      await notifications.insertMany([
+        { userId: demoUserId, type: 'reminder', title: 'Electricity Bill', body: 'Due today at 8:00 PM', read: false, createdAt: new Date(), source: 'demo-seed', meta: { billName: 'Electricity Bill' } },
+        { userId: demoUserId, type: 'insight', title: 'Spending insight', body: 'Food spending is 14% higher this week.', read: false, createdAt: new Date(Date.now() - 1000 * 60 * 30), source: 'demo-seed' },
+      ] as any[]);
+
+      await family.insertMany([
+        { userId: demoUserId, name: 'Maa', relationship: 'mother', medicines: [], source: 'demo-seed', createdAt: new Date() },
+        { userId: demoUserId, name: 'Papa', relationship: 'father', medicines: [], source: 'demo-seed', createdAt: new Date() },
+      ] as any[]);
+
+      console.log('[seed] demo data refreshed for:', demoEmail);
+    } catch (seedErr) {
+      console.error('[seed] demo data failed:', seedErr);
+    }
+  }
 
   // ----- Auth -----
   app.post('/api/auth/register', async (req, res) => {
@@ -224,24 +417,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!phone || !otp) {
         return res.status(400).json({ message: 'Phone and OTP are required' });
       }
-      const record = await otpStore.findOne({ phone: String(phone).trim() });
+      const record = (await otpStore.findOne({ phone: String(phone).trim() })) as any;
       if (!record) {
         return res.status(400).json({ message: 'Invalid or expired OTP' });
       }
       const tenMin = 10 * 60 * 1000;
-      if (Date.now() - record.createdAt.getTime() > tenMin) {
-        await otpStore.deleteOne({ _id: record._id });
+      if (Date.now() - new Date(record.createdAt).getTime() > tenMin) {
+        await otpStore.deleteOne({ _id: (record as any)._id });
         return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
       }
-      if (record.otp !== String(otp)) {
+      if (String(record.otp) !== String(otp)) {
         return res.status(400).json({ message: 'Invalid OTP' });
       }
-      const uid = toId(String(record.userId));
+      const uid = toId(String((record as any).userId));
       await users.updateOne({ _id: uid }, { $set: { phoneVerified: true } });
-      await otpStore.deleteOne({ _id: record._id });
-      const user = await users.findOne({ _id: uid });
+      await otpStore.deleteOne({ _id: (record as any)._id });
+      const user = (await users.findOne({ _id: uid })) as any;
       if (!user) return res.status(500).json({ message: 'User not found' });
-      const userId = user._id.toString();
+      const userId = (user as any)._id.toString();
       const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
       return res.json({
         user: { id: userId, email: user.email, name: user.name, phone: user.phone, phoneVerified: true },
@@ -262,7 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(404).json({ message: 'No account found for this phone' });
       const otp = generateOtp();
       await otpStore.deleteMany({ phone: phoneStr });
-      await otpStore.insertOne({ phone: phoneStr, otp, createdAt: new Date(), userId: user._id?.toString?.() ?? user._id });
+      await otpStore.insertOne({ phone: phoneStr, otp, createdAt: new Date(), userId: (user as any)._id?.toString?.() ?? (user as any)._id });
       await sendSmsOtp(phoneStr, otp);
       return res.json({ message: 'OTP sent' });
     } catch (err) {
@@ -285,7 +478,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!valid) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
-      const userId = user._id.toString();
+      const userId = (user as any)._id.toString();
       const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
       return res.json({
         user: { id: userId, email: user.email, name: user.name, phone: user.phone, phoneVerified: user.phoneVerified },
@@ -335,8 +528,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         user = { _id: result.insertedId, ...doc } as any;
       }
 
+      if (!user) {
+        return res.status(500).json({ message: 'User retrieval failed' });
+      }
+
       const userId = (user as any)._id.toString();
-      const token = jwt.sign({ userId, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+      const userObj = user as any;
+      const token = jwt.sign({ userId, email: userObj.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
 
       return res.json({
         user: {
@@ -414,10 +612,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       await pushTokens.updateOne(
-        { userId: req.userId, token },
+        { userId: (req as any).userId, token },
         {
           $set: {
-            userId: req.userId,
+            userId: (req as any).userId,
             token,
             platform: platform || 'android',
             updatedAt: new Date(),
@@ -425,7 +623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         { upsert: true },
       );
-
+      console.log("[Push] Token registered for user:", (req as any).userId, "Platform:", platform || 'android');
       return res.json({ ok: true });
     } catch (err) {
       console.error('Save push token error:', err);
@@ -435,7 +633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/auth/me', authMiddleware, async (req, res) => {
     try {
-      const user = await users.findOne({ _id: toId(req.userId) });
+      const user = await users.findOne({ _id: toId((req as any).userId) });
       if (!user) return res.status(401).json({ message: 'User not found' });
       const uid = (user as { _id: string | { toString: () => string } })._id;
       return res.json({
@@ -445,6 +643,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: user.name,
           phone: user.phone,
           phoneVerified: user.phoneVerified,
+          avatarUrl: (user as any).avatarUrl || null,
+          dateOfBirth: (user as any).dateOfBirth || null,
         },
       });
     } catch (err) {
@@ -455,18 +655,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/auth/me', authMiddleware, async (req, res) => {
     try {
-      const { name, phone, avatarUrl } = req.body as { name?: string; phone?: string | null; avatarUrl?: string | null };
+      const { name, phone, avatarUrl, email, dateOfBirth } = req.body as {
+        name?: string;
+        phone?: string | null;
+        avatarUrl?: string | null;
+        email?: string;
+        dateOfBirth?: string | null;
+      };
       const update: any = {};
       if (name !== undefined) update.name = String(name).trim();
       if (phone !== undefined) update.phone = phone === null ? null : String(phone).trim();
       if (avatarUrl !== undefined) update.avatarUrl = avatarUrl === null ? null : String(avatarUrl);
+      if (email !== undefined) {
+        const emailNext = String(email).toLowerCase().trim();
+        if (!emailNext) {
+          return res.status(400).json({ message: 'Email cannot be empty' });
+        }
+        const duplicate = await users.findOne({ email: emailNext, _id: { $ne: toId((req as any).userId) } as any });
+        if (duplicate) {
+          return res.status(409).json({ message: 'An account with this email already exists' });
+        }
+        update.email = emailNext;
+      }
+      if (dateOfBirth !== undefined) {
+        const dob = dateOfBirth === null ? null : String(dateOfBirth).trim();
+        if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+          return res.status(400).json({ message: 'Date of birth must be YYYY-MM-DD' });
+        }
+        update.dateOfBirth = dob;
+      }
 
       if (Object.keys(update).length === 0) {
         return res.status(400).json({ message: 'No fields to update' });
       }
 
-      await users.updateOne({ _id: toId(req.userId) }, { $set: update });
-      const user = await users.findOne({ _id: toId(req.userId) });
+      await users.updateOne({ _id: toId((req as any).userId) }, { $set: update });
+      const user = await users.findOne({ _id: toId((req as any).userId) });
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
@@ -479,6 +703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           phone: user.phone,
           phoneVerified: user.phoneVerified,
           avatarUrl: (user as any).avatarUrl,
+          dateOfBirth: (user as any).dateOfBirth || null,
         },
       });
     } catch (err) {
@@ -496,12 +721,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!S3_BUCKET) {
           return res.status(500).json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
         }
-        const file = req.file as Express.Multer.File | undefined;
+        const file = (req as any).file;
         if (!file || !file.buffer) {
           return res.status(400).json({ message: 'avatar file is required' });
         }
 
-        const key = `avatars/${req.userId}/${Date.now()}-${file.originalname}`;
+        const key = `avatars/${(req as any).userId}/${Date.now()}-${file.originalname}`;
 
         await s3.send(
           new PutObjectCommand({
@@ -514,7 +739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
 
         const url = `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
-        await users.updateOne({ _id: toId(req.userId) }, { $set: { avatarUrl: url } });
+        await users.updateOne({ _id: toId((req as any).userId) }, { $set: { avatarUrl: url } });
         return res.status(201).json({ url });
       } catch (err) {
         console.error('Upload avatar error:', err);
@@ -527,12 +752,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/notifications', authMiddleware, async (req, res) => {
     try {
       const list = await notifications
-        .find({ userId: req.userId })
+        .find({ userId: (req as any).userId })
         .sort({ createdAt: -1 })
         .limit(100)
         .toArray();
-      const out = list.map((n) => ({
-        id: n._id.toString(),
+      const out = list.map((n: any) => ({
+        id: (n._id || '').toString(),
         type: n.type || 'reminder',
         title: n.title,
         body: n.body,
@@ -555,12 +780,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const objectIds = ids.map((id) => toId(id));
       const result = await notifications.updateMany(
-        { _id: { $in: objectIds }, userId: req.userId },
+        { _id: { $in: objectIds as any }, userId: (req as any).userId },
         { $set: { read: true } },
       );
       return res.json({ updated: result.modifiedCount || 0 });
     } catch (err) {
       console.error('Mark notifications read error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/notifications/mark-read-all', authMiddleware, async (req: any, res) => {
+    try {
+      const result = await notifications.updateMany(
+        { userId: (req as any).userId, read: false },
+        { $set: { read: true } },
+      );
+      return res.json({ updated: result.modifiedCount || 0 });
+    } catch (err) {
+      console.error('Mark all notifications read error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.delete('/api/notifications/:id', authMiddleware, async (req: any, res) => {
+    try {
+      const result = await notifications.deleteOne({
+        _id: toId(req.params.id),
+        userId: (req as any).userId,
+      });
+      if (result.deletedCount === 0) {
+        return res.status(404).json({ message: 'Notification not found' });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Delete notification error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
@@ -574,7 +828,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const doc = {
-        userId: req.userId,
+        userId: (req as any).userId,
         subject: String(subject).slice(0, 120),
         message: String(message).slice(0, 4000),
         status: 'open',
@@ -593,8 +847,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ----- Transactions -----
   app.get('/api/transactions', authMiddleware, async (req, res) => {
     try {
-      const list = await transactions.find({ userId: req.userId }).sort({ date: -1 }).limit(500).toArray();
-      const out = list.map((t) => ({
+      const list = await transactions.find({ userId: (req as any).userId }).sort({ date: -1 }).limit(500).toArray();
+      const out = list.map((t: any) => ({
         id: t._id.toString(),
         merchant: t.merchant,
         amount: t.amount,
@@ -618,7 +872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'merchant and amount are required' });
       }
       const doc = {
-        userId: req.userId,
+        userId: (req as any).userId,
         merchant: String(merchant),
         amount: Number(amount),
         category: (category as CategoryType) || 'others',
@@ -646,21 +900,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ synced: 0, message: 'No transactions to sync' });
       }
       let synced = 0;
+      let skipped = 0;
       for (const t of txs) {
+        const merchant = String(t.merchant || t.sender || 'Unknown');
+        const amount = Number(t.amount) || 0;
+        const date = t.date ? new Date(t.date).toISOString() : new Date().toISOString();
+        const isDebit = t.isDebit !== false;
+
+        // Duplicate Check: Same user, merchant, amount, date, and type
+        const existing = await transactions.findOne({
+          userId: (req as any).userId,
+          merchant,
+          amount,
+          date,
+          isDebit,
+        });
+
+        if (existing) {
+          skipped++;
+          continue;
+        }
+
         const doc = {
-          userId: req.userId,
-          merchant: String(t.merchant || t.sender || 'Unknown'),
-          amount: Number(t.amount) || 0,
+          userId: (req as any).userId,
+          merchant,
+          amount,
+          date,
+          isDebit,
           category: (t.category as CategoryType) || 'others',
-          date: t.date ? new Date(t.date).toISOString() : new Date().toISOString(),
           upiId: t.upiId || '',
-          isDebit: t.isDebit !== false,
           description: t.description || String(t.message || ''),
         };
         await transactions.insertOne(doc);
         synced++;
       }
-      return res.json({ synced, message: `${synced} transaction(s) synced` });
+      return res.json({ synced, skipped, message: `${synced} synced, ${skipped} duplicates skipped` });
     } catch (err) {
       console.error('Sync from SMS error:', err);
       return res.status(500).json({ message: 'Server error.' });
@@ -670,8 +944,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ----- Bills -----
   app.get('/api/bills', authMiddleware, async (req, res) => {
     try {
-      const list = await bills.find({ userId: req.userId }).toArray();
-      const out = list.map((b) => ({
+      const list = await bills.find({ userId: (req as any).userId }).toArray();
+      const out = list.map((b: any) => ({
         id: b._id.toString(),
         name: b.name,
         amount: b.amount,
@@ -684,6 +958,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: (b.status as ReminderStatus) || 'active',
         snoozedUntil: b.snoozedUntil,
         reminderDaysBefore: b.reminderDaysBefore || [3, 1, 0],
+        imageUrl: b.imageUrl,
+        imageKey: b.imageKey,
+        source: b.source,
       }));
       return res.json(out);
     } catch (err) {
@@ -696,7 +973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const body = req.body;
       const doc = {
-        userId: req.userId,
+        userId: (req as any).userId,
         name: body.name || 'Bill',
         amount: Number(body.amount) || 0,
         dueDate: body.dueDate || new Date().toISOString(),
@@ -717,24 +994,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Scan Bill (image -> OCR -> bill reminder)
+  // Scan Bill Preview (image -> OCR -> validated fields, without creating a bill)
   app.post(
-    '/api/bills/scan',
+    '/api/bills/scan/preview',
     authMiddleware,
     upload.single('image'),
     async (req: any, res: any) => {
       try {
         if (!S3_BUCKET) {
-          return res
-            .status(500)
-            .json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
+          return res.status(500).json({ message: 'S3 bucket not configured. Set AWS_S3_BUCKET.' });
         }
-        const file = req.file as Express.Multer.File | undefined;
+
+        const file = (req as any).file;
         if (!file || !file.buffer) {
           return res.status(400).json({ message: 'image file is required' });
         }
 
-        const key = `bills/${req.userId}/${Date.now()}-${file.originalname}`;
+        const key = `bills/${(req as any).userId}/${Date.now()}-${file.originalname}`;
 
         await s3.send(
           new PutObjectCommand({
@@ -745,74 +1021,244 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }),
         );
 
-        const texRes = await textract.send(
-          new DetectDocumentTextCommand({
-            Document: { Bytes: file.buffer },
-          }),
-        );
-
-        const lines =
-          texRes.Blocks?.filter((b) => b.BlockType === 'LINE')
-            .map((b) => b.Text || '')
-            .filter(Boolean) ?? [];
-        const fullText = lines.join('\n');
-
-        let title = lines.find((l) =>
-          /bill|invoice|electric/i.test(l),
-        ) || 'Scanned Bill';
-
-        let amount = 0;
-        const amountMatch =
-          fullText.match(/₹\s*([\d,]+(?:\.\d{1,2})?)/i) ||
-          fullText.match(/amount[:\s]*₹?\s*([\d,]+(?:\.\d{1,2})?)/i);
-        if (amountMatch && amountMatch[1]) {
-          amount = Number(amountMatch[1].replace(/,/g, '')) || 0;
-        }
-
-        let dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 7);
-
-        const dateMatch =
-          fullText.match(/due\s*date[:\s]*([0-9]{1,2}\s+\w+\s+\d{4})/i) ||
-          fullText.match(/([0-9]{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4})/i);
-        if (dateMatch && dateMatch[1]) {
-          const parsed = new Date(dateMatch[1]);
-          if (!Number.isNaN(parsed.getTime())) {
-            dueDate = parsed;
-          }
-        }
-
-        const reminderDate = new Date(dueDate.getTime());
-        reminderDate.setDate(reminderDate.getDate() - 2);
-        reminderDate.setHours(9, 0, 0, 0);
-
-        const doc = {
-          userId: req.userId,
-          name: title.slice(0, 80),
-          amount,
-          dueDate: dueDate.toISOString(),
-          category: 'bills' as CategoryType,
-          isPaid: false,
-          icon: 'receipt',
-          reminderType: 'bill' as ReminderType,
-          repeatType: 'monthly' as RepeatType,
-          status: 'active' as ReminderStatus,
-          snoozedUntil: undefined,
-          reminderDaysBefore: [2, 0],
-          source: 'scan_bill',
-          imageKey: key,
-          imageUrl: `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`,
-          createdAt: new Date(),
+        // ============================
+        // 🧠 REGION-CONTROL ARCHITECTURE (Phase 6)
+        // ============================
+        const openAIKey = getOpenAIKey();
+        const ERROR_MESSAGE = "Unable to extract accurate bill details. Please upload a clearer or valid bill.";
+        
+        let finalResponse = {
+          bill_amount: 0,
+          due_date: "",
+          status: "error",
+          message: ERROR_MESSAGE
         };
 
-        const result = await bills.insertOne(doc);
-        return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+        try {
+          // Dynamic require for Sharp (handles installation delay)
+          let sharp: any;
+          try {
+            sharp = require('sharp');
+          } catch (e) {
+            console.warn("Sharp not yet available, falling back to raw buffer.");
+          }
+
+          // ⚙️ STEP 1: IMAGE PREPROCESSING
+          let processedBuffer = file.buffer;
+          if (sharp) {
+            try {
+              processedBuffer = await sharp(file.buffer)
+                .grayscale()
+                .normalize()
+                .sharpen()
+                .toBuffer();
+            } catch (e) {
+              console.error("Sharp Preprocessing Failed:", e);
+            }
+          }
+
+          // 📍 STEP 2: REGION CROPPING (Template-based)
+          // Coords provided by user for DGVCL matching
+          const regions = {
+            dueDate: { left: 1000, top: 200, width: 600, height: 300 }, // Expanded for safety
+            totalAmount: { left: 1000, top: 1300, width: 600, height: 400 }
+          };
+
+          let dueDateText = "";
+          let amountText = "";
+
+          if (sharp) {
+            try {
+              const dueBuffer = await sharp(processedBuffer).extract(regions.dueDate).toBuffer();
+              const amtBuffer = await sharp(processedBuffer).extract(regions.totalAmount).toBuffer();
+              
+              const [dueRes, amtRes] = await Promise.all([
+                textract.send(new AnalyzeDocumentCommand({ Document: { Bytes: dueBuffer }, FeatureTypes: ["FORMS"] })),
+                textract.send(new AnalyzeDocumentCommand({ Document: { Bytes: amtBuffer }, FeatureTypes: ["FORMS"] }))
+              ]);
+
+              dueDateText = (dueRes.Blocks || []).filter(b => b.BlockType === "LINE").map(b => b.Text).join(" ");
+              amountText = (amtRes.Blocks || []).filter(b => b.BlockType === "LINE").map(b => b.Text).join(" ");
+            } catch (e) {
+              console.error("Regional Cropping OCR Failed:", e);
+            }
+          }
+
+          // 🔍 STEP 3: FIELD EXTRACTION (Regex + Rules)
+          const extractDueDate = (text: string) => {
+            const match = text.match(/\d{2}-\d{2}-\d{4}/);
+            return match ? match[0] : null;
+          };
+
+          const extractAmount = (text: string) => {
+            const lines = text.split("\n");
+            for (let line of lines) {
+              if (line.toLowerCase().includes("total")) {
+                const match = line.match(/\d+\.\d{2}/);
+                if (match) return parseFloat(match[0]);
+              }
+            }
+            const numbers = text.match(/\d+\.\d{2}/g);
+            return numbers ? Math.max(...numbers.map(Number)) : null;
+          };
+
+          const regDueDate = extractDueDate(dueDateText);
+          const regAmount = extractAmount(amountText);
+
+          // 🧪 STEP 4: VALIDATION LAYER
+          const isValidAmount = (amt: number | null) => amt && amt > 100 && amt < 20000;
+          const isValidDate = (d: string | null) => d && /^\d{2}-\d{2}-\d{4}$/.test(d);
+
+          if (isValidAmount(regAmount) && isValidDate(regDueDate)) {
+            // SUCCESS: Regional Control worked
+            const [d, m, y] = regDueDate!.split('-');
+            const isoDueDate = new Date(`${y}-${m}-${d}`).toISOString();
+
+            const preview = {
+              name: 'Utility Bill (Verified)',
+              amount: regAmount!,
+              dueDate: isoDueDate,
+              category: 'bills' as CategoryType,
+              icon: 'receipt',
+              source: 'scan_bill',
+              imageKey: key,
+              imageUrl: `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`,
+            };
+
+            return res.json({ 
+              preview, 
+              metadata: { 
+                bill_amount: regAmount, 
+                due_date: regDueDate, 
+                confidence: 99, 
+                status: "success",
+                method: "region-control"
+              } 
+            });
+          }
+
+          // 🔁 STEP 5: FALLBACK (Phase 5 LLM Strategy)
+          console.log("Region-Control failed or low confidence, falling back to LLM...");
+          
+          if (openAIKey) {
+            const base64Image = file.buffer.toString('base64');
+            const prompt = `
+              - Identify CURRENT Total Bill Amount (Ignore Arrears/Advance).
+              - Identify Due Date (DD-MM-YYYY).
+              - Final JSON: {"bill_amount": number, "due_date": "DD-MM-YYYY", "status": "success", "confidence": number, "vendor": "string"}
+              - If not 100% sure, return status: "error"
+            `;
+
+            const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: [
+                  { type: 'text', text: prompt },
+                  { type: 'image_url', image_url: { url: `data:${file.mimetype || 'image/jpeg'};base64,${base64Image}` } }
+                ]}],
+                temperature: 0,
+                response_format: { type: "json_object" },
+              }),
+            });
+
+            const aiJson = await aiRes.json();
+            const p = JSON.parse(aiJson.choices?.[0]?.message?.content || "{}");
+
+            if (p.status === "success" && isValidAmount(p.bill_amount) && isValidDate(p.due_date)) {
+              const [d, m, y] = p.due_date.split('-');
+              const isoDueDate = new Date(`${y}-${m}-${d}`).toISOString();
+
+              const preview = {
+                name: p.vendor || 'Scanned Bill',
+                amount: p.bill_amount,
+                dueDate: isoDueDate,
+                category: 'bills' as CategoryType,
+                icon: 'receipt',
+                source: 'scan_bill',
+                imageKey: key,
+                imageUrl: `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`,
+              };
+
+              return res.json({ 
+                preview, 
+                metadata: { 
+                  bill_amount: p.bill_amount, 
+                  due_date: p.due_date, 
+                  confidence: p.confidence || 90, 
+                  status: "success",
+                  method: "llm-fallback"
+                } 
+              });
+            }
+          }
+
+          // FINAL FALLBACK: Explicit Failure
+          return res.status(422).json({
+            message: ERROR_MESSAGE,
+            status: "error"
+          });
+
+        } catch (err) {
+          console.error('Phase 6 Architecture Failure:', err);
+          return res.status(500).json({ message: ERROR_MESSAGE });
+        }
       } catch (err) {
-        console.error('Scan bill error:', err);
+        console.error('Scan bill preview error:', err);
         return res.status(500).json({ message: 'Server error.' });
       }
     },
   );
+
+  // Scan Bill Commit (create a bill reminder from validated preview)
+  app.post('/api/bills/scan/commit', authMiddleware, async (req: any, res: any) => {
+    try {
+      const preview = req.body?.preview;
+      if (!preview) return res.status(400).json({ message: 'preview is required' });
+
+      const amount = Number(preview.amount) || 0;
+      if (amount <= 0) return res.status(422).json({ message: 'Invalid amount detected.' });
+
+      const due = new Date(preview.dueDate);
+      if (Number.isNaN(due.getTime())) return res.status(422).json({ message: 'Invalid due date detected.' });
+
+      const reminderDaysBefore = Array.isArray(preview.reminderDaysBefore) ? preview.reminderDaysBefore : [3, 1, 0];
+
+      const doc = {
+        userId: (req as any).userId,
+        name: String(preview.name || 'Bill').slice(0, 80),
+        amount,
+        dueDate: due.toISOString(),
+        category: (preview.category as CategoryType) || 'bills',
+        isPaid: false,
+        icon: preview.icon || 'receipt',
+        reminderType: (preview.reminderType as ReminderType) || 'bill',
+        repeatType: (preview.repeatType as RepeatType) || 'monthly',
+        status: (preview.status as ReminderStatus) || 'active',
+        snoozedUntil: preview.snoozedUntil,
+        reminderDaysBefore,
+        source: preview.source || 'scan_bill',
+        imageKey: preview.imageKey,
+        imageUrl: preview.imageUrl,
+        // New details
+        vendorName: preview.vendorName,
+        billDate: preview.billDate,
+        billNumber: preview.billNumber,
+        accountNumber: preview.accountNumber,
+        lateFee: preview.lateFee,
+        taxAmount: preview.taxAmount,
+        phoneNumber: preview.phoneNumber,
+        createdAt: new Date(),
+      };
+
+      const result = await bills.insertOne(doc);
+      return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+    } catch (err) {
+      console.error('Scan bill commit error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
 
   app.put('/api/bills/:id', authMiddleware, async (req, res) => {
     try {
@@ -830,7 +1276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (body.status !== undefined) update.status = body.status;
       if (body.snoozedUntil !== undefined) update.snoozedUntil = body.snoozedUntil;
       if (body.reminderDaysBefore !== undefined) update.reminderDaysBefore = body.reminderDaysBefore;
-      const result = await bills.updateOne({ _id: toId(id), userId: req.userId }, { $set: update });
+      const result = await bills.updateOne({ _id: toId(id), userId: (req as any).userId }, { $set: update });
       if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
       return res.json({ ok: true });
     } catch (err) {
@@ -839,13 +1285,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/bills/:id', authMiddleware, async (req, res) => {
+  app.delete('/api/bills/:id', authMiddleware, async (req: any, res) => {
     try {
-      const result = await bills.deleteOne({ _id: toId(req.params.id), userId: req.userId });
+      const result = await bills.deleteOne({ _id: toId(req.params.id), userId: (req as any).userId });
       if (result.deletedCount === 0) return res.status(404).json({ message: 'Bill not found' });
       return res.json({ ok: true });
     } catch (err) {
       console.error('Delete bill error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/bills/:id/actions', authMiddleware, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { action, days } = req.body as { action: 'snooze' | 'cancel' | 'uncancel'; days?: number };
+      const userId = (req as any).userId;
+
+      if (action === 'snooze') {
+        const snoozeMinutes = Number(req.body.minutes);
+        const snoozedUntil = new Date();
+        
+        if (snoozeMinutes > 0) {
+          snoozedUntil.setMinutes(snoozedUntil.getMinutes() + snoozeMinutes);
+        } else {
+          const snoozeDays = Number(days) || 1;
+          snoozedUntil.setDate(snoozedUntil.getDate() + snoozeDays);
+        }
+        
+        const result = await bills.updateOne(
+          { _id: toId(id), userId },
+          { $set: { status: 'snoozed', snoozedUntil: snoozedUntil.toISOString(), isPaid: false } }
+        );
+        if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+        return res.json({ ok: true, snoozedUntil: snoozedUntil.toISOString() });
+      }
+
+      if (action === 'cancel') {
+        const result = await bills.updateOne(
+          { _id: toId(id), userId },
+          { $set: { status: 'cancelled', isPaid: false } }
+        );
+        if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+        return res.json({ ok: true });
+      }
+
+      if (action === 'uncancel') {
+        const result = await bills.updateOne(
+          { _id: toId(id), userId },
+          { $set: { status: 'active', isPaid: false } }
+        );
+        if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+        return res.json({ ok: true });
+      }
+
+      return res.status(400).json({ message: 'Invalid action' });
+    } catch (err) {
+      console.error('Bill action error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
@@ -858,73 +1354,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'text is required' });
       }
 
-      let title = text.trim();
-      let due = new Date();
-      due.setDate(due.getDate() + 1);
-
-      const openAIKey = getOpenAIKey();
-      if (openAIKey) {
-        try {
-          const prompt =
-            'You are a reminder parser. Given a natural language reminder in English or Hinglish, ' +
-            'extract: title, isoDate (YYYY-MM-DD), and hour (0-23). ' +
-            'If no date is mentioned, assume tomorrow. If no time, use 9. ' +
-            'Reply ONLY with strict JSON: {"title": "...", "isoDate": "...", "hour": 9}. Input: ' +
-            JSON.stringify(text);
-
-          const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${openAIKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: OPENAI_MODEL,
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0,
-            }),
-          });
-
-          if (aiRes.ok) {
-            const json = await aiRes.json();
-            const content = json.choices?.[0]?.message?.content;
-            if (content) {
-              try {
-                const parsed = JSON.parse(content);
-                if (parsed.title) title = String(parsed.title);
-                if (parsed.isoDate) {
-                  const parsedDate = new Date(parsed.isoDate);
-                  if (!Number.isNaN(parsedDate.getTime())) {
-                    due = parsedDate;
-                  }
-                }
-                if (typeof parsed.hour === 'number') {
-                  due.setHours(parsed.hour, 0, 0, 0);
-                } else {
-                  due.setHours(9, 0, 0, 0);
-                }
-              } catch {
-                // ignore JSON parse error, fallback to defaults
-              }
-            }
-          }
-        } catch {
-          // ignore AI failure, fallback to defaults
-        }
-      } else {
-        due.setHours(9, 0, 0, 0);
+      const parsed = await parseReminderWithAI(text);
+      const due = new Date(`${parsed.isoDate}T00:00:00.000Z`);
+      if (Number.isNaN(due.getTime())) {
+        return res.status(400).json({ message: 'Could not parse reminder date' });
       }
+      due.setHours(parsed.hour, parsed.minute, 0, 0);
 
       const doc = {
-        userId: req.userId,
-        name: title.slice(0, 80),
+        userId: (req as any).userId,
+        name: parsed.title.slice(0, 80),
         amount: 0,
         dueDate: due.toISOString(),
         category: 'bills' as CategoryType,
         isPaid: false,
         icon: 'flash',
-        reminderType: 'custom' as ReminderType,
-        repeatType: 'none' as RepeatType,
+        reminderType: parsed.reminderType,
+        repeatType: parsed.repeatType,
         status: 'active' as ReminderStatus,
         snoozedUntil: undefined,
         reminderDaysBefore: [0],
@@ -940,6 +1386,252 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Parse reminder text (no save) - used for voice confirm/edit flows
+  app.post('/api/reminders/parse', authMiddleware, async (req, res) => {
+    try {
+      const { text } = req.body as { text?: string };
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ message: 'text is required' });
+      }
+      const parsed = await parseReminderWithAI(text);
+      return res.json(parsed);
+    } catch (err) {
+      console.error('Parse reminder error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // Voice reminder: upload audio -> transcribe -> parse (no save)
+  app.post(
+    '/api/reminders/voice/parse',
+    authMiddleware,
+    upload.single('audio'),
+    async (req: any, res: any) => {
+      try {
+        const openAIKey = getOpenAIKey();
+        if (!openAIKey) {
+          return res.status(500).json({ message: 'Voice is not configured. Set OPENAI_API_KEY.' });
+        }
+  
+        const file = (req as any).file;
+        if (!file || !file.buffer) {
+          return res.status(400).json({ message: 'audio file is required' });
+        }
+  
+        // Prefer env-configured transcription model, then safe default.
+        const MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
+  
+        // Create form data
+        const form = new FormData();
+        const blob = new Blob([file.buffer], { type: file.mimetype || 'audio/m4a' });
+  
+        form.append('file', blob, file.originalname || 'voice.m4a');
+        form.append('model', MODEL);
+        form.append('response_format', 'json');
+  
+        // 🔥 Strong language control prompt
+        form.append(
+          'prompt',
+          [
+            'The speaker may use Gujarati, Hindi, or English.',
+            'CRITICAL RULES:',
+            '- Detect the spoken language accurately.',
+            '- If Gujarati is spoken, you MUST output ONLY in Gujarati script (ગુજરાતી લિપિ).',
+            '- NEVER convert Gujarati into Hindi (Devanagari).',
+            '- If Hindi is spoken, use Devanagari.',
+            '- If English is spoken, use Latin script.',
+            '- Do not translate.',
+            '- Preserve original spoken words exactly.'
+          ].join(' ')
+        );
+  
+        const tRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openAIKey}` },
+          body: form as any,
+        });
+  
+        if (!tRes.ok) {
+          const errText = await tRes.text().catch(() => '');
+          console.error('OpenAI transcribe error:', errText);
+          return res.status(500).json({ message: 'Could not transcribe audio. Please try again.' });
+        }
+  
+        const tJson = (await tRes.json()) as { text?: string; language?: string | null };
+        let text = String(tJson.text || '').trim();
+  
+        if (!text) {
+          return res.status(400).json({ message: 'No speech detected. Please try again.' });
+        }
+  
+        // Normalize script so Gujarati speech is stored/displayed in Gujarati script.
+        const normalized = await normalizeTranscriptScript({
+          text,
+          languageHint: tJson.language || null,
+          apiKey: openAIKey,
+        });
+        text = normalized.text;
+  
+        // ============================
+        // 🔥 PARSE REMINDER
+        // ============================
+  
+        const parsed = await parseReminderWithAI(text);
+  
+        return res.json({
+          text,
+          language: normalized.language,
+          parsed,
+        });
+  
+      } catch (err) {
+        console.error('Voice parse error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    }
+  );
+  
+  
+  // ============================
+  // 🔥 CONVERT HINDI → GUJARATI
+  // ============================
+  
+  async function convertToGujarati(text: string, apiKey: string) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Convert the given text into Gujarati script only. Do NOT translate meaning. Keep words same, only change script.'
+            },
+            {
+              role: 'user',
+              content: text
+            }
+          ],
+        }),
+      });
+  
+      const json = await response.json();
+  
+      return json?.choices?.[0]?.message?.content?.trim() || text;
+  
+    } catch (err) {
+      console.error('Gujarati conversion error:', err);
+      return text; // fallback safe
+    }
+  }
+
+  type DetectedLang = 'gu' | 'hi' | 'en' | 'mixed' | 'unknown';
+
+  function hasDevanagari(txt: string) {
+    return /[\u0900-\u097F]/.test(txt);
+  }
+
+  function hasGujaratiScript(txt: string) {
+    return /[\u0A80-\u0AFF]/.test(txt);
+  }
+
+  function hasLatinScript(txt: string) {
+    return /[A-Za-z]/.test(txt);
+  }
+
+  async function detectLanguageWithAI(text: string, apiKey: string): Promise<DetectedLang> {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Classify the dominant language of the user text. Return JSON only with key "language". Allowed values: gu, hi, en, mixed, unknown.',
+            },
+            { role: 'user', content: text },
+          ],
+        }),
+      });
+
+      if (!response.ok) return 'unknown';
+      const json = await response.json();
+      const raw = json?.choices?.[0]?.message?.content;
+      if (!raw) return 'unknown';
+      const parsed = JSON.parse(raw);
+      const val = String(parsed?.language || '').toLowerCase();
+      if (val === 'gu' || val === 'hi' || val === 'en' || val === 'mixed' || val === 'unknown') {
+        return val;
+      }
+      return 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  function normalizeHintLanguage(hint: string | null | undefined): DetectedLang {
+    const h = String(hint || '').toLowerCase();
+    if (h.startsWith('gu')) return 'gu';
+    if (h.startsWith('hi')) return 'hi';
+    if (h.startsWith('en')) return 'en';
+    return 'unknown';
+  }
+
+  async function normalizeTranscriptScript({
+    text,
+    languageHint,
+    apiKey,
+  }: {
+    text: string;
+    languageHint: string | null;
+    apiKey: string;
+  }): Promise<{ text: string; language: string | null }> {
+    let finalText = text.trim();
+    if (!finalText) return { text: '', language: null };
+
+    const hintLang = normalizeHintLanguage(languageHint);
+    const hasHiScript = hasDevanagari(finalText);
+    const hasGuScript = hasGujaratiScript(finalText);
+    const hasEnScript = hasLatinScript(finalText);
+
+    let detected: DetectedLang = hintLang;
+
+    // Fast script-based detection first.
+    if (hasGuScript && !hasHiScript && !hasEnScript) detected = 'gu';
+    else if (hasHiScript && !hasGuScript && !hasEnScript && detected === 'unknown') detected = 'hi';
+    else if (hasEnScript && !hasGuScript && !hasHiScript && detected === 'unknown') detected = 'en';
+
+    // Devanagari can still be Gujarati speech rendered in Hindi script; confirm via AI.
+    if (hasHiScript && !hasGuScript && (detected === 'unknown' || detected === 'hi')) {
+      const aiDetected = await detectLanguageWithAI(finalText, apiKey);
+      if (aiDetected !== 'unknown') detected = aiDetected;
+    }
+
+    if (hasHiScript && !hasGuScript && detected === 'gu') {
+      finalText = await convertToGujarati(finalText, apiKey);
+      if (hasGujaratiScript(finalText)) detected = 'gu';
+    }
+
+    return {
+      text: finalText,
+      language: detected === 'unknown' ? (languageHint || null) : detected,
+    };
+  }
+
   // ----- Leaks (computed from transactions) -----
   const LEAK_SUGGESTIONS: Record<string, string> = {
     Swiggy: 'Cook at home 3x a week to save more',
@@ -954,32 +1646,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
     Amazon: 'Use a wishlist and wait for sales',
   };
 
-  app.get('/api/leaks', authMiddleware, async (req, res) => {
+  app.get('/api/leaks', authMiddleware, async (req: any, res) => {
     try {
-      const list = await transactions.find({ userId: req.userId, isDebit: true }).toArray();
-      const merchantFreq: Record<string, { count: number; total: number; category: CategoryType }> = {};
-      list.forEach((t) => {
-        if (!merchantFreq[t.merchant]) {
-          merchantFreq[t.merchant] = { count: 0, total: 0, category: (t.category as CategoryType) || 'others' };
+      const userId = (req as any).userId;
+      const [txList, billList] = await Promise.all([
+        transactions.find({ userId, isDebit: true }).sort({ date: -1 }).toArray(),
+        bills.find({ userId }).toArray()
+      ]);
+
+      const merchantFreq: Record<string, { count: number; total: number; category: CategoryType; amounts: number[]; lastDate: Date }> = {};
+      txList.forEach((t: any) => {
+        const merchant = String(t.merchant || 'Unknown');
+        if (!merchantFreq[merchant]) {
+          merchantFreq[merchant] = { 
+            count: 0, 
+            total: 0, 
+            category: (t.category as CategoryType) || 'others',
+            amounts: [],
+            lastDate: new Date(t.date)
+          };
         }
-        merchantFreq[t.merchant].count++;
-        merchantFreq[t.merchant].total += t.amount;
+        merchantFreq[merchant].count++;
+        merchantFreq[merchant].total += t.amount;
+        merchantFreq[merchant].amounts.push(t.amount);
       });
+
       const leaks: any[] = [];
+      const now = new Date();
+
+      // 1. Transaction Frequency & Price Hikes
       Object.entries(merchantFreq).forEach(([merchant, data]) => {
+        // Frequency Leak
         if (data.count >= 3) {
           const freq = data.count >= 15 ? 'Daily' : data.count >= 8 ? 'Frequently' : 'Weekly';
+          const monthlyEstimate = Math.round(data.total / (data.count > 30 ? 1 : 1)); // Simplified for now
+          
+          let suggestion = LEAK_SUGGESTIONS[merchant] || 'Review if this expense is necessary';
+          
+          // Price Hike Detection (compare last 2 tx if they exist)
+          if (data.amounts.length >= 2) {
+            const latest = data.amounts[0];
+            const previous = data.amounts[1];
+            if (latest > previous * 1.15) { // 15% increase
+              suggestion = `⚠️ Price hike detected! ${merchant} increased by ${Math.round((latest/previous - 1) * 100)}%. ${suggestion}`;
+            }
+          }
+
           leaks.push({
             id: new ObjectId().toString(),
             merchant,
             category: data.category,
             frequency: freq,
-            monthlyEstimate: Math.round(data.total),
+            monthlyEstimate,
+            yearlyPrediction: monthlyEstimate * 12,
             transactionCount: data.count,
-            suggestion: LEAK_SUGGESTIONS[merchant] || 'Review if this expense is necessary',
+            suggestion,
           });
         }
       });
+
+      // 2. "Ghost" or "Inactive" Subscriptions
+      // If we have a bill reminder but no transaction in 45 days
+      billList.forEach((bill: any) => {
+        if (bill.reminderType === 'subscription' && bill.status !== 'cancelled') {
+          const merchantLower = bill.name.toLowerCase();
+          const txMatch = txList.find((t: any) => 
+            t.merchant.toLowerCase().includes(merchantLower) ||
+            merchantLower.includes(t.merchant.toLowerCase())
+          );
+          
+          if (txMatch) {
+            const lastTxDate = new Date(txMatch.date);
+            const daysSinceLastPay = (now.getTime() - lastTxDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceLastPay > 45) {
+              leaks.push({
+                id: new ObjectId().toString(),
+                merchant: bill.name,
+                category: bill.category,
+                frequency: 'Inactive',
+                monthlyEstimate: bill.amount,
+                yearlyPrediction: bill.amount * 12,
+                transactionCount: 0,
+                suggestion: `You're paying for ${bill.name} but haven't used it for 45+ days. Consider cancelling.`,
+              });
+            }
+          }
+        }
+      });
+
+      // 3. Duplicate / Double Charge Detection
+      Object.entries(merchantFreq).forEach(([merchant, data]) => {
+        if (data.amounts.length >= 2) {
+          // Check for identical amounts on the same day or within 24 hours
+          for (let i = 0; i < txList.length - 1; i++) {
+            const t1 = txList[i];
+            const t2 = txList[i+1];
+            if (t1.merchant === merchant && t2.merchant === merchant && t1.amount === t2.amount) {
+              const d1 = new Date(t1.date);
+              const d2 = new Date(t2.date);
+              const diffHr = Math.abs(d1.getTime() - d2.getTime()) / (1000 * 60 * 60);
+              if (diffHr < 24) {
+                leaks.push({
+                  id: new ObjectId().toString(),
+                  merchant: `${merchant} (Double Charge?)`,
+                  category: t1.category,
+                  frequency: 'Critical',
+                  monthlyEstimate: t1.amount,
+                  yearlyPrediction: t1.amount,
+                  transactionCount: 2,
+                  suggestion: `⚠️ Potential double charge detected on ${new Date(t1.date).toLocaleDateString()}. Two identical payments made within 24 hours.`,
+                });
+                break; // Only report once per merchant
+              }
+            }
+          }
+        }
+      });
+
       leaks.sort((a, b) => b.monthlyEstimate - a.monthlyEstimate);
       return res.json(leaks);
     } catch (err) {
@@ -991,7 +1774,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User settings (budget, reminder settings) - optional storage in users or separate collection
   app.get('/api/settings', authMiddleware, async (req, res) => {
     try {
-      const user = await users.findOne({ _id: toId(req.userId) });
+      const user = await users.findOne({ _id: toId((req as any).userId) });
       const settings =
         (user as { settings?: unknown })?.settings || {
           monthlyBudget: 100000,
@@ -1007,14 +1790,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-
   app.put('/api/settings', authMiddleware, async (req, res) => {
     try {
       const { monthlyBudget, reminderSettings } = req.body;
       const update: any = {};
       if (monthlyBudget != null) update['settings.monthlyBudget'] = Number(monthlyBudget);
       if (reminderSettings) update['settings.reminderSettings'] = reminderSettings;
-      await users.updateOne({ _id: toId(req.userId) }, { $set: update });
+      await users.updateOne({ _id: toId((req as any).userId) }, { $set: update });
       return res.json({ ok: true });
     } catch (err) {
       console.error('Put settings error:', err);
@@ -1036,27 +1818,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userMessages = Array.isArray(body.messages) ? body.messages : [];
 
       const [userDoc, recentTx, recentBills, familyMembers] = await Promise.all([
-        users.findOne({ _id: toId(req.userId) }),
-        transactions.find({ userId: req.userId }).sort({ date: -1 }).limit(50).toArray(),
-        bills.find({ userId: req.userId }).limit(20).toArray(),
-        family.find({ userId: req.userId }).limit(10).toArray(),
+        users.findOne({ _id: toId((req as any).userId) }),
+        transactions.find({ userId: (req as any).userId }).sort({ date: -1 }).limit(50).toArray(),
+        bills.find({ userId: (req as any).userId }).limit(20).toArray(),
+        family.find({ userId: (req as any).userId }).limit(10).toArray(),
       ]);
 
       const leakList = await transactions
-        .find({ userId: req.userId, isDebit: true })
+        .find({ userId: (req as any).userId, isDebit: true })
         .toArray();
 
       const merchantFreq: Record<string, { count: number; total: number; category: CategoryType }> = {};
-      leakList.forEach((t) => {
-        if (!merchantFreq[t.merchant]) {
-          merchantFreq[t.merchant] = {
+      leakList.forEach((t: any) => {
+        const merchant = String(t.merchant || 'Unknown');
+        if (!merchantFreq[merchant]) {
+          merchantFreq[merchant] = {
             count: 0,
             total: 0,
             category: (t.category as CategoryType) || 'others',
           };
         }
-        merchantFreq[t.merchant].count++;
-        merchantFreq[t.merchant].total += t.amount;
+        merchantFreq[merchant].count++;
+        merchantFreq[merchant].total += t.amount;
       });
       const leaksSnapshot = Object.entries(merchantFreq)
         .filter(([, data]) => data.count >= 3)
@@ -1069,7 +1852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const snapshot = {
         user: {
-          id: req.userId,
+          id: (req as any).userId,
           name: (userDoc as any)?.name || undefined,
           email: (userDoc as any)?.email || undefined,
         },
@@ -1231,8 +2014,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ----- Family Hub (members + medicines) -----
   app.get('/api/family', authMiddleware, async (req, res) => {
     try {
-      const list = await family.find({ userId: req.userId }).toArray();
-      const out = list.map((m) => ({
+      const list = await family.find({ userId: (req as any).userId }).toArray();
+      const out = list.map((m: any) => ({
         id: m._id.toString(),
         name: m.name,
         relationship: m.relationship || 'self',
@@ -1252,7 +2035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Name is required' });
       }
       const doc = {
-        userId: req.userId,
+        userId: (req as any).userId,
         name: String(name).trim(),
         relationship: String(relationship || 'self'),
         medicines: [] as unknown[],
@@ -1273,7 +2056,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/family/:id', authMiddleware, async (req, res) => {
     try {
-      const result = await family.deleteOne({ _id: toId(req.params.id), userId: req.userId });
+      const result = await family.deleteOne({ _id: toId(req.params.id), userId: (req as any).userId });
       if (result.deletedCount === 0) {
         return res.status(404).json({ message: 'Family member not found' });
       }
@@ -1350,13 +2133,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const result = await family.updateOne(
-        { _id: toId(memberId), userId: req.userId },
-        { $push: { medicines: med } },
+        { _id: toId(memberId), userId: (req as any).userId },
+        { $push: { medicines: med } } as any,
       );
       if (result.matchedCount === 0) {
         return res.status(404).json({ message: 'Family member not found' });
       }
-      const updated = await family.findOne({ _id: toId(memberId), userId: req.userId });
+      const updated = (await family.findOne({ _id: toId(memberId), userId: (req as any).userId })) as any;
       if (!updated) {
         return res.status(500).json({ message: 'Failed to load updated member' });
       }
@@ -1376,7 +2159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { memberId, medId } = req.params;
       const { action } = req.body as { action: 'taken' | 'snooze' | 'skip' };
-      const member = await family.findOne({ _id: toId(memberId), userId: req.userId });
+      const member = await family.findOne({ _id: toId(memberId), userId: (req as any).userId });
       if (!member) {
         return res.status(404).json({ message: 'Family member not found' });
       }
@@ -1441,10 +2224,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       await family.updateOne(
-        { _id: toId(memberId), userId: req.userId },
+        { _id: toId(memberId), userId: (req as any).userId },
         { $set: { medicines: updatedMeds } },
       );
-      const updated = await family.findOne({ _id: toId(memberId), userId: req.userId });
+
+      // Log the event
+      await medicineLogs.insertOne({
+        userId: (req as any).userId,
+        memberId,
+        medId,
+        action, // 'taken' | 'snooze' | 'skip'
+        timestamp: now,
+      } as any);
+
+      const updated = (await family.findOne({ _id: toId(memberId), userId: (req as any).userId })) as any;
       if (!updated) {
         return res.status(500).json({ message: 'Failed to load updated member' });
       }
@@ -1510,8 +2303,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             for (const channel of channels) {
               const already = await reminderLogs.findOne({
-                userId: user._id?.toString?.() ?? user._id,
-                billId: bill._id.toString(),
+                userId: (user as any)._id?.toString?.() ?? (user as any)._id,
+                billId: (bill as any)._id?.toString?.() ?? (bill as any)._id,
                 channel,
                 dayOffset: daysLeft,
               });
@@ -1536,7 +2329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     .sort((a, b) => a - b)
                     .map((d) => (d === 0 ? 'on due day' : `${d}d before`))
                     .join(', '),
-                  appUrl: APP_BASE_URL,
+                  appUrl: APP_OPEN_URL,
                 });
 
                 await sendReminderEmail({
@@ -1551,11 +2344,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     ? `Your ${bill.name || 'payment'} is due today.`
                     : `Your ${bill.name || 'payment'} is due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`;
 
+                const imageUrl = bill.imageUrl || `https://api.dicebear.com/7.x/shapes/png?seed=${bill.category || 'bill'}&backgroundColor=4f46e5`;
+
                 const meta = {
-                  billId: bill._id.toString(),
+                  billId: (bill as any)._id.toString(),
                   amount: bill.amount || 0,
                   dueDate: baseDate.toISOString(),
                   reminderType: bill.reminderType || 'bill',
+                  imageUrl,
                 };
 
                 await notifications.insertOne({
@@ -1576,20 +2372,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       .project<{ token: string }>({ token: 1, _id: 0 })
                       .toArray();
 
-                    const tokens = tokenDocs.map((t) => t.token).filter(Boolean);
+                    const tokens = tokenDocs.map((t: any) => t.token).filter(Boolean);
 
                     if (tokens.length) {
-                      await messaging.sendEachForMulticast({
-                        tokens,
-                        notification: {
-                          title,
-                          body,
-                        },
-                        data: {
-                          type: 'reminder',
-                          billId: meta.billId,
-                        },
-                      });
+                        await messaging.sendEachForMulticast({
+                          tokens,
+                          notification: {
+                            title,
+                            body,
+                            imageUrl,
+                          },
+                          android: {
+                            notification: {
+                              imageUrl,
+                              priority: 'high',
+                            },
+                          },
+                          data: {
+                            type: 'reminder',
+                            billId: meta.billId,
+                          },
+                        });
+                        console.log(`[Push] Multi-device send to ${tokens.length} tokens for user ${user.email}`);
                     }
                   } catch (err) {
                     console.error('FCM send error:', err);
@@ -1599,7 +2403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
               await reminderLogs.insertOne({
                 userId: user._id?.toString?.() ?? user._id,
-                billId: bill._id.toString(),
+                billId: (bill as any)._id.toString(),
                 channel,
                 dayOffset: daysLeft,
                 sentAt: new Date(),
@@ -1618,6 +2422,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   startReminderScheduler();
+
+  // ----- Reports -----
+  app.get('/api/reports', authMiddleware, (req: any, res) => {
+    (async () => {
+      try {
+        const { start, end } = req.query as { start?: string; end?: string };
+        const userId = (req as any).userId;
+
+        if (!start || !end) {
+          return res.status(400).json({ message: 'Start and end dates are required' });
+        }
+
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const periodMs = endDate.getTime() - startDate.getTime();
+        const prevStartDate = new Date(startDate.getTime() - (periodMs || 1));
+        const prevEndDate = new Date(startDate);
+
+        const [currentTxs, prevTxs, allBills] = await Promise.all([
+          transactions.find({ userId, date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } }).toArray(),
+          transactions.find({ userId, date: { $gte: prevStartDate.toISOString(), $lte: prevEndDate.toISOString() } }).toArray(),
+          bills.find({ userId }).toArray(),
+        ]);
+
+        const calculateStats = (txs: any[]) => {
+          const stats: Record<string, { total: number; count: number }> = {};
+          let totalIncome = 0;
+          let totalExpense = 0;
+
+          txs.forEach((tx) => {
+            const amount = Number(tx.amount) || 0;
+            if (tx.isDebit) {
+              totalExpense += amount;
+              const cat = tx.category || 'others';
+              if (!stats[cat]) stats[cat] = { total: 0, count: 0 };
+              stats[cat].total += amount;
+              stats[cat].count += 1;
+            } else {
+              totalIncome += amount;
+            }
+          });
+
+          return { stats, totalIncome, totalExpense };
+        };
+
+        const current = calculateStats(currentTxs);
+        const previous = calculateStats(prevTxs);
+
+        // Bills stats
+        const totalBillsCount = allBills.length;
+        const paidBillsCount = allBills.filter(b => b.isPaid || b.status === 'paid').length;
+
+        return res.json({
+          period: { start, end },
+          income: current.totalIncome,
+          expense: current.totalExpense,
+          previousIncome: previous.totalIncome,
+          previousExpense: previous.totalExpense,
+          categories: current.stats,
+          previousCategories: previous.stats,
+          bills: {
+            total: totalBillsCount,
+            paid: paidBillsCount,
+            ratio: totalBillsCount > 0 ? paidBillsCount / totalBillsCount : 0,
+          }
+        });
+      } catch (err) {
+        console.error('Reports API error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    })();
+  });
+
+  // ----- Life Score -----
+  app.get('/api/life-score', authMiddleware, (req: any, res) => {
+    (async () => {
+      try {
+        const userId = (req as any).userId;
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const [userTxs, userBills, medLogs] = await Promise.all([
+          transactions.find({ userId, date: { $gte: thirtyDaysAgo.toISOString() } }).toArray(),
+          bills.find({ userId }).toArray(),
+          medicineLogs.find({ userId, timestamp: { $gte: thirtyDaysAgo } }).toArray(),
+        ]);
+
+        // 1. Spending Score (Budget compliance)
+        const userData = await users.findOne({ _id: toId(userId) });
+        const monthlyBudget = userData?.monthlyBudget ?? 50000;
+        const monthlySpend = userTxs.filter(tx => tx.isDebit).reduce((s, tx) => s + (tx.amount || 0), 0);
+        const budgetUsedRatio = Math.min(1.5, (monthlySpend / Math.max(1, monthlyBudget)));
+        const spendingScore = Math.max(0, 100 - (budgetUsedRatio * 100));
+
+        // 2. Bills Score
+        const billRatio = userBills.length > 0
+          ? userBills.filter(b => b.isPaid || b.status === 'paid').length / userBills.length
+          : 1;
+        const billsScore = billRatio * 100;
+
+        // 3. Health Score (Medicine adherence)
+        // Check logs vs expected (we'll simplify for now: percentage of 'taken' vs 'taken'+'skip')
+        const taken = medLogs.filter(l => l.action === 'taken').length;
+        const totalLogs = medLogs.filter(l => l.action === 'taken' || l.action === 'skip').length;
+        const healthScore = totalLogs > 0 ? (taken / totalLogs) * 100 : 100;
+
+        // Weighted final score
+        // Budget: 50%, Bills: 30%, Health: 20%
+        const finalScore = Math.round(
+          spendingScore * 0.5 +
+          billsScore * 0.3 +
+          healthScore * 0.2
+        );
+
+        return res.json({
+          score: finalScore,
+          breakdown: {
+            spending: Math.round(spendingScore),
+            bills: Math.round(billsScore),
+            health: Math.round(healthScore),
+          },
+          updatedAt: now.toISOString(),
+        });
+      } catch (err) {
+        console.error('Life score API error:', err);
+        return res.status(500).json({ message: 'Server error.' });
+      }
+    })();
+  });
 
   const httpServer = createServer(app);
   return httpServer;

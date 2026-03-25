@@ -1,10 +1,10 @@
 import Colors from '@/constants/colors';
 
-export type CategoryType = 'food' | 'shopping' | 'transport' | 'entertainment' | 'bills' | 'healthcare' | 'education' | 'investment' | 'others';
+export type CategoryType = 'health' | 'bills' | 'family' | 'work' | 'tasks' | 'subscriptions' | 'finance' | 'habits' | 'travel' | 'events' | 'food' | 'shopping' | 'transport' | 'entertainment' | 'education' | 'investment' | 'others';
 
 export type ReminderType = 'bill' | 'subscription' | 'custom';
 export type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
-export type ReminderStatus = 'active' | 'paid' | 'snoozed';
+export type ReminderStatus = 'active' | 'paid' | 'snoozed' | 'cancelled';
 
 export interface Transaction {
   id: string;
@@ -30,6 +30,18 @@ export interface Bill {
   status: ReminderStatus;
   snoozedUntil?: string;
   reminderDaysBefore: number[];
+  // For scan-bill reminders.
+  imageUrl?: string;
+  imageKey?: string;
+  source?: string;
+  // New details
+  vendorName?: string;
+  billDate?: string;
+  billNumber?: string;
+  accountNumber?: string;
+  lateFee?: number;
+  taxAmount?: number;
+  phoneNumber?: string;
 }
 
 export interface MoneyLeak {
@@ -38,6 +50,7 @@ export interface MoneyLeak {
   category: CategoryType;
   frequency: string;
   monthlyEstimate: number;
+  yearlyPrediction: number;
   transactionCount: number;
   suggestion: string;
 }
@@ -55,20 +68,53 @@ export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
 };
 
 export const CATEGORIES: Record<CategoryType, { label: string; color: string; icon: string }> = {
-  food: { label: 'Food & Dining', color: Colors.categories.food, icon: 'fast-food' },
-  shopping: { label: 'Shopping', color: Colors.categories.shopping, icon: 'cart' },
-  transport: { label: 'Transport', color: Colors.categories.transport, icon: 'car' },
-  entertainment: { label: 'Entertainment', color: Colors.categories.entertainment, icon: 'film' },
-  bills: { label: 'Bills & Utilities', color: Colors.categories.bills, icon: 'flash' },
-  healthcare: { label: 'Healthcare', color: Colors.categories.healthcare, icon: 'medkit' },
-  education: { label: 'Education', color: Colors.categories.education, icon: 'book' },
-  investment: { label: 'Investment', color: Colors.categories.investment, icon: 'trending-up' },
-  others: { label: 'Others', color: Colors.categories.others, icon: 'ellipsis-horizontal' },
+  health: { label: 'Health', color: Colors.categories.health, icon: 'medkit' },
+  bills: { label: 'Bills', color: Colors.categories.bills, icon: 'flash' },
+  family: { label: 'Family', color: Colors.categories.family, icon: 'people' },
+  work: { label: 'Work', color: Colors.categories.work, icon: 'briefcase' },
+  tasks: { label: 'Tasks', color: Colors.categories.tasks, icon: 'list' },
+  subscriptions: { label: 'Subscriptions', color: Colors.categories.subscriptions, icon: 'refresh' },
+  finance: { label: 'Finance', color: Colors.categories.finance, icon: 'wallet' },
+  habits: { label: 'Habits', color: Colors.categories.habits, icon: 'calendar' },
+  travel: { label: 'Travel', color: Colors.categories.travel, icon: 'airplane' },
+  events: { label: 'Events', color: Colors.categories.events, icon: 'calendar-clear' },
+  food: { label: 'Food', color: '#F97316', icon: 'fast-food' },
+  shopping: { label: 'Shopping', color: '#EC4899', icon: 'cart' },
+  transport: { label: 'Transport', color: '#3B82F6', icon: 'car' },
+  entertainment: { label: 'Fun', color: '#8B5CF6', icon: 'film' },
+  education: { label: 'Education', color: '#6366F1', icon: 'book' },
+  investment: { label: 'Investment', color: '#10B981', icon: 'trending-up' },
+  others: { label: 'Others', color: '#6B7280', icon: 'apps' },
 };
+
+export interface ReportsData {
+  period: { start: string; end: string };
+  income: number;
+  expense: number;
+  previousIncome: number;
+  previousExpense: number;
+  categories: Record<string, { total: number; count: number }>;
+  previousCategories: Record<string, { total: number; count: number }>;
+  bills: {
+    total: number;
+    paid: number;
+    ratio: number;
+  };
+}
+
+export interface LifeScoreData {
+  score: number;
+  breakdown: {
+    spending: number;
+    bills: number;
+    health: number;
+  };
+  updatedAt: string;
+}
 
 export const REMINDER_TYPE_CONFIG: Record<ReminderType, { label: string; icon: string; color: string }> = {
   bill: { label: 'Bill', icon: 'receipt', color: Colors.categories.bills },
-  subscription: { label: 'Subscription', icon: 'refresh', color: Colors.categories.entertainment },
+  subscription: { label: 'Subscription', icon: 'refresh', color: Colors.categories.subscriptions },
   custom: { label: 'Custom', icon: 'create', color: Colors.dark.accentBlue },
 };
 
@@ -136,7 +182,8 @@ export function getCategoryBreakdown(transactions: Transaction[]): { category: C
 
   transactions.forEach(tx => {
     if (tx.isDebit) {
-      totals[tx.category] = (totals[tx.category] || 0) + tx.amount;
+      const cat = (CATEGORIES[tx.category] ? tx.category : 'others') as CategoryType;
+      totals[cat] = (totals[cat] || 0) + tx.amount;
       grandTotal += tx.amount;
     }
   });

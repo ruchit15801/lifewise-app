@@ -15,6 +15,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import {
   CATEGORIES,
   formatTime,
@@ -23,6 +24,7 @@ import {
   Transaction,
 } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
+import CategoryIcon from '@/components/CategoryIcon';
 
 const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'all', label: 'All' },
@@ -31,14 +33,15 @@ const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'transport', label: 'Transport', icon: 'car' },
   { key: 'entertainment', label: 'Fun', icon: 'film' },
   { key: 'bills', label: 'Bills', icon: 'flash' },
-  { key: 'healthcare', label: 'Health', icon: 'medkit' },
+  { key: 'health', label: 'Health', icon: 'medkit' },
   { key: 'education', label: 'Edu', icon: 'book' },
   { key: 'investment', label: 'Invest', icon: 'trending-up' },
   { key: 'others', label: 'Others', icon: 'ellipsis-horizontal' },
 ];
 
 function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[item.category];
+  const safeCat = (item.category || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <View
       style={[
@@ -51,7 +54,7 @@ function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transac
       ]}
     >
       <View style={[styles.txIconWrap, { backgroundColor: cat.color + '18' }]}>
-        <Ionicons name={cat.icon as any} size={20} color={cat.color} />
+        <CategoryIcon category={item.category} size={20} />
       </View>
       <View style={styles.txInfo}>
         <Text style={[styles.txMerchant, { color: colors.text }]} numberOfLines={1}>
@@ -75,6 +78,7 @@ function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transac
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, isLoading } = useExpenses();
@@ -84,7 +88,7 @@ export default function TransactionsScreen() {
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') return transactions;
-    return transactions.filter(tx => tx.category === activeFilter);
+    return transactions.filter(tx => (tx.category || 'others').toLowerCase() === activeFilter.toLowerCase());
   }, [transactions, activeFilter]);
 
   const sections = useMemo(() => {
@@ -204,7 +208,7 @@ export default function TransactionsScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingBottom: Platform.OS === 'web' ? 100 : 100,
+          paddingBottom: tabBarInset.bottom,
         }}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}

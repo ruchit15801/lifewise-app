@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.lifewise",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "READ_SMS",
         "RECEIVE_SMS"
@@ -33,6 +34,13 @@
     },
     "plugins": [
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#4F46E5"
+        }
+      ],
+      [
         "expo-router",
         {
           "origin": "https://replit.com/"
@@ -40,7 +48,8 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "./app.plugin.js"
+      "./app.plugin.js",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

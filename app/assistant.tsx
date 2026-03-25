@@ -35,6 +35,32 @@ interface AnalysisCard {
   color: string;
 }
 
+function buildLocalAssistantReply(
+  query: string,
+  monthlySpend: number,
+  monthlyBudget: number,
+  billsDue: number,
+  topMerchant: string | null,
+): string {
+  const q = query.toLowerCase();
+  const budgetLeft = Math.max(0, monthlyBudget - monthlySpend);
+  const budgetUsedPct = monthlyBudget > 0 ? Math.round((monthlySpend / monthlyBudget) * 100) : 0;
+
+  if (q.includes('budget') || q.includes('afford') || q.includes('buy')) {
+    return `Budget check: You used about ${budgetUsedPct}% of your monthly budget. Remaining is ${budgetLeft.toLocaleString('en-IN')}. Keep bills due (${billsDue}) in mind before big purchases.`;
+  }
+  if (q.includes('merchant') || q.includes('where')) {
+    return topMerchant
+      ? `Your top merchant this period is ${topMerchant}. We can reduce spend there with a weekly cap.`
+      : 'I do not have enough merchant data yet. Add a few more transactions and ask again.';
+  }
+  if (q.includes('saving') || q.includes('savings')) {
+    return `You currently have about ${budgetLeft.toLocaleString('en-IN')} left from budget. Set aside a fixed percentage every week to improve savings consistency.`;
+  }
+
+  return `Quick summary: spent ${monthlySpend.toLocaleString('en-IN')} this month, ${billsDue} bill reminders due, and ${budgetLeft.toLocaleString('en-IN')} budget left.`;
+}
+
 const QUICK_CHIPS = [
   { label: 'Can I buy?', query: 'afford' },
   { label: 'Food spending', query: 'food' },
@@ -58,6 +84,7 @@ export default function AssistantScreen() {
     },
   ]);
   const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -85,7 +112,7 @@ export default function AssistantScreen() {
   const handleSend = useCallback(
     async (text?: string) => {
       const query = text || inputText.trim();
-      if (!query || !token) return;
+      if (!query || !token || isTyping) return;
 
       const userMsg: Message = {
         id: Date.now().toString(),
@@ -93,20 +120,27 @@ export default function AssistantScreen() {
         isUser: true,
       };
 
+      // Optimistically add user message
       setMessages(prev => [...prev, userMsg]);
       setInputText('');
+      setIsTyping(true);
+
+      // Build conversation history including latest user message
+      const history = [...messages, userMsg];
 
       try {
         const payload = {
-          messages: messages
-            .map(m => ({
-              role: m.isUser ? 'user' as const : 'assistant' as const,
-              content: m.text,
-            }))
-            .concat([{ role: 'user' as const, content: query }]),
+          messages: history.map(m => ({
+            role: m.isUser ? ('user' as const) : ('assistant' as const),
+            content: m.text,
+          })),
         };
 
         const res = await apiRequest('POST', '/api/assistant/chat', payload, token);
+        if (!res.ok) {
+          throw new Error(`Assistant API failed (${res.status})`);
+        }
+
         const data = await res.json();
         const replyText: string =
           typeof data.reply === 'string'
@@ -122,19 +156,24 @@ export default function AssistantScreen() {
         setMessages(prev => [...prev, botMsg]);
       } catch (e) {
         console.error('Assistant error', e);
+        const billsDue = bills.filter((b) => !b.isPaid && b.status !== 'paid').length;
+        const topMerchant = merchantTotals.length > 0 ? merchantTotals[0][0] : null;
+        const fallback = buildLocalAssistantReply(query, monthlySpend, monthlyBudget, billsDue, topMerchant);
         const errorMsg: Message = {
           id: (Date.now() + 2).toString(),
-          text: 'Network issue or assistant error. Please try again in a moment.',
+          text: fallback,
           isUser: false,
         };
         setMessages(prev => [...prev, errorMsg]);
+      } finally {
+        setIsTyping(false);
       }
 
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      }, 120);
     },
-    [inputText, token, messages],
+    [inputText, token, messages, bills, merchantTotals, monthlySpend, monthlyBudget, isTyping],
   );
 
   const handleBack = () => {
@@ -219,6 +258,17 @@ export default function AssistantScreen() {
         }
       />
 
+      {isTyping && (
+        <View style={[styles.typingRow, { paddingBottom: bottomInset - 6 }]}>
+          <View style={[styles.botAvatar, { backgroundColor: colors.accentDim }]}>
+            <Ionicons name="sparkles" size={16} color={colors.accent} />
+          </View>
+          <View style={[styles.msgBubble, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <Text style={[styles.msgText, { color: colors.textSecondary }]}>Assistant is typing…</Text>
+          </View>
+        </View>
+      )}
+
       <View style={[styles.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: bottomInset }]}>
         <TextInput
           style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
@@ -252,6 +302,7 @@ const styles = StyleSheet.create({
   quickChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
   quickChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   msgRow: { flexDirection: 'row', marginBottom: 16, gap: 10, alignItems: 'flex-start' },
+  typingRow: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, gap: 10, alignItems: 'flex-start' },
   msgRowUser: { justifyContent: 'flex-end' },
   botAvatar: { width: 32, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   msgBubble: { maxWidth: '80%', borderRadius: 18, padding: 14 },

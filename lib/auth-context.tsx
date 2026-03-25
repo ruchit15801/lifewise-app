@@ -11,6 +11,8 @@ interface User {
   name: string;
   phone?: string | null;
   phoneVerified?: boolean;
+  avatarUrl?: string | null;
+  dateOfBirth?: string | null;
 }
 
 interface AuthContextValue {
@@ -24,7 +26,7 @@ interface AuthContextValue {
   hasOnboarded: boolean;
   completeOnboarding: () => void;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
-   updateProfile: (fields: { name?: string; phone?: string | null }) => Promise<{ success: boolean; error?: string }>;
+   updateProfile: (fields: { name?: string; phone?: string | null; avatarUrl?: string | null; email?: string; dateOfBirth?: string | null }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -119,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await Promise.all([
       AsyncStorage.removeItem(STORAGE_KEYS.USER),
       AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
+      AsyncStorage.removeItem('last_sms_sync_timestamp'),
     ]);
   }, []);
 
@@ -162,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [googleRequest, googlePromptAsync]);
 
   const updateProfile = useCallback(
-    async (fields: { name?: string; phone?: string | null }) => {
+    async (fields: { name?: string; phone?: string | null; avatarUrl?: string | null; email?: string; dateOfBirth?: string | null }) => {
       try {
         if (!token) {
           return { success: false, error: 'Not authenticated' };

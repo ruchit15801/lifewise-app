@@ -15,8 +15,8 @@ export interface ParsedSmsTransaction {
 
 // Amount patterns: Rs. 500 / Rs 500 / INR 500 / ₹500 / 500 debited
 const AMOUNT_REGEX = /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{2})?)|([\d,]+(?:\.\d{2})?)\s*(?:Rs\.?|INR|₹)/gi;
-const DEBIT_KEYWORDS = /debited|deducted|withdrawn|spent|paid to|sent to|purchase/i;
-const CREDIT_KEYWORDS = /credited|received|deposited|refund/i;
+const DEBIT_KEYWORDS = /debited|deducted|withdrawn|spent|paid to|sent to|purchase|payment|remitted|auto-pay/i;
+const CREDIT_KEYWORDS = /credited|received|deposited|refund|added to|reversed|cashback|interest/i;
 
 // Extract merchant/sender: "from xxx@okaxis", "towards MERCHANT", "debited from X on", "to UPI- MERCHANT", etc.
 function extractMerchant(body: string, isDebit: boolean): string {
@@ -98,7 +98,7 @@ function extractDate(body: string, smsDate?: number | string): Date {
 }
 
 export function parseSmsToTransactions(
-  smsList: { body: string; date?: string | number; address?: string }[]
+  smsList: { body: string; date?: string | number; address?: string; _id?: string }[]
 ): ParsedSmsTransaction[] {
   const out: ParsedSmsTransaction[] = [];
   const seen = new Set<string>();
@@ -108,15 +108,23 @@ export function parseSmsToTransactions(
     if (body.length < 10) continue;
 
     const isDebit = DEBIT_KEYWORDS.test(body) && !CREDIT_KEYWORDS.test(body);
-    const isCredit = CREDIT_KEYWORDS.test(body);
-    if (!isDebit && !isCredit) continue;
+    const isCredit = CREDIT_KEYWORDS.test(body) && !DEBIT_KEYWORDS.test(body);
+    if (!isDebit && !isCredit) {
+      // Fallback for tricky bank notices like "Your a/c x123 has been charged..."
+      if (/charged|billed/i.test(body)) {
+        // assume debit unless credit keywords found
+      } else {
+        continue;
+      }
+    }
 
     const amount = extractAmount(body);
     if (amount == null || amount <= 0) continue;
 
     const date = extractDate(body, sms.date);
     const merchant = extractMerchant(body, isDebit);
-    const key = `${date.getTime()}-${merchant}-${amount}`;
+    // Use a unique SMS ID if available, otherwise fallback to hash
+    const key = sms._id ? `id-${sms._id}` : `${date.getTime()}-${merchant}-${amount}-${isDebit}`;
     if (seen.has(key)) continue;
     seen.add(key);
 

@@ -14,11 +14,12 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
 import { CATEGORIES, MoneyLeak } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
 
 function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; index: number; colors: ThemeColors; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[leak.category];
+  const cat = CATEGORIES[leak.category] || CATEGORIES.others;
 
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200 + index * 100).duration(500) : undefined}>
@@ -46,7 +47,7 @@ function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; inde
         <View style={[styles.savingsPotentialRow, { backgroundColor: colors.accentMintDim }]}>
           <Ionicons name="leaf-outline" size={14} color={colors.accentMint} />
           <Text style={[styles.savingsPotentialText, { color: colors.accentMint }]}>
-            Save up to {formatAmount(leak.monthlyEstimate * 12)}/year
+            Save up to {formatAmount(leak.yearlyPrediction)}/year
           </Text>
         </View>
 
@@ -63,6 +64,7 @@ function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; inde
 
 export default function LeaksScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const { leaks, isLoading } = useExpenses();
   const { colors } = useTheme();
   const { formatAmount } = useCurrency();
@@ -85,7 +87,7 @@ export default function LeaksScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
+          { paddingTop: topInset + 16, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>

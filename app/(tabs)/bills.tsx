@@ -17,10 +17,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
 import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
+import { getIntentPolicy, getReminderIntentFromBill, type ReminderIntent } from '@/lib/reminder-intent';
 import {
   Bill,
   ReminderType,
@@ -33,12 +36,20 @@ import {
   getDaysUntil,
 } from '@/lib/data';
 
-type FilterType = 'all' | 'bill' | 'subscription' | 'custom';
+type FilterType = ReminderIntent;
 
 const FILTER_TABS: { key: FilterType; label: string; icon: string }[] = [
   { key: 'all', label: 'All', icon: 'apps' },
-  { key: 'bill', label: 'Bills', icon: 'receipt' },
-  { key: 'subscription', label: 'Subs', icon: 'refresh' },
+  { key: 'bills', label: 'Bills', icon: 'receipt' },
+  { key: 'health', label: 'Health', icon: 'medkit' },
+  { key: 'family', label: 'Family', icon: 'people' },
+  { key: 'work', label: 'Work', icon: 'newspaper' },
+  { key: 'tasks', label: 'Tasks', icon: 'shield-checkmark' },
+  { key: 'subscriptions', label: 'Subs', icon: 'refresh' },
+  { key: 'finance', label: 'Finance', icon: 'trending-up' },
+  { key: 'habits', label: 'Habits', icon: 'water' },
+  { key: 'travel', label: 'Travel', icon: 'globe' },
+  { key: 'events', label: 'Events', icon: 'film' },
   { key: 'custom', label: 'Custom', icon: 'create' },
 ];
 
@@ -46,9 +57,11 @@ const CATEGORY_OPTIONS: { key: CategoryType; label: string }[] = [
   { key: 'bills', label: 'Bills & Utilities' },
   { key: 'entertainment', label: 'Entertainment' },
   { key: 'food', label: 'Food & Dining' },
-  { key: 'healthcare', label: 'Healthcare' },
+  { key: 'health', label: 'Healthcare' },
   { key: 'shopping', label: 'Shopping' },
   { key: 'education', label: 'Education' },
+  { key: 'investment', label: 'Investment' },
+  { key: 'transport', label: 'Transport' },
   { key: 'others', label: 'Others' },
 ];
 
@@ -65,6 +78,7 @@ function ReminderCard({
   onEdit,
   onDelete,
   index,
+  onPress,
 }: {
   bill: Bill;
   onMarkPaid: () => void;
@@ -72,6 +86,7 @@ function ReminderCard({
   onEdit: () => void;
   onDelete: () => void;
   index: number;
+  onPress?: () => void;
 }) {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
@@ -80,16 +95,46 @@ function ReminderCard({
   const daysLeft = getDaysUntil(effectiveDate);
   const urgencyColor = bill.status === 'paid' ? colors.accentMint : bill.status === 'snoozed' ? colors.accentBlue : getUrgencyColor(daysLeft, colors);
   const dueDate = new Date(bill.dueDate);
-  const typeConfig = REMINDER_TYPE_CONFIG[bill.reminderType];
   const isPaid = bill.status === 'paid' || bill.isPaid;
   const isSnoozed = bill.status === 'snoozed';
 
   const repeatLabel = REPEAT_OPTIONS.find(r => r.key === bill.repeatType)?.label || '';
+  const intent = getReminderIntentFromBill(bill);
+  const policy = getIntentPolicy(intent);
+  const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+  const intentMeta = (() => {
+    switch (intent) {
+      case 'bills':
+        return { label: 'Bills', color: '#F59E0B' };
+      case 'subscriptions':
+        return { label: 'Subscriptions', color: '#3B82F6' };
+      case 'health':
+        return { label: 'Health', color: '#10B981' };
+      case 'habits':
+        return { label: 'Habits', color: '#22C55E' };
+      case 'family':
+        return { label: 'Family', color: '#EC4899' };
+      case 'work':
+        return { label: 'Work', color: '#3B82F6' };
+      case 'tasks':
+        return { label: 'Tasks', color: '#F59E0B' };
+      case 'finance':
+        return { label: 'Finance', color: '#8B5CF6' };
+      case 'travel':
+        return { label: 'Travel', color: '#60A5FA' };
+      case 'events':
+        return { label: 'Events', color: '#A855F7' };
+      case 'custom':
+      default:
+        return { label: 'Custom', color: '#4F46E5' };
+    }
+  })();
 
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(150 + index * 60).duration(400) : undefined}>
-      <View style={[styles.reminderCard, { backgroundColor: colors.card, borderColor: colors.border }, isPaid && styles.reminderCardPaid]}>
-        <View style={styles.reminderTop}>
+      <Pressable onPress={onPress} disabled={!onPress}>
+        <View style={[styles.reminderCard, { backgroundColor: colors.card, borderColor: colors.border }, isPaid && styles.reminderCardPaid]}>
+          <View style={styles.reminderTop}>
           <View style={[styles.reminderIcon, { backgroundColor: urgencyColor + '15' }]}>
             <Ionicons name={bill.icon as any} size={22} color={urgencyColor} />
           </View>
@@ -98,26 +143,34 @@ function ReminderCard({
               {bill.name}
             </Text>
             <View style={styles.reminderMetaRow}>
-              <View style={[styles.typeBadge, { backgroundColor: typeConfig.color + '15' }]}>
-                <Text style={[styles.typeBadgeText, { color: typeConfig.color }]}>{typeConfig.label}</Text>
+              <View style={[styles.typeBadge, { backgroundColor: intentMeta.color + '15' }]}>
+                <Text style={[styles.typeBadgeText, { color: intentMeta.color }]}>{intentMeta.label}</Text>
               </View>
-              {repeatLabel !== 'One-time' && (
+              {policy.showRepeat && (
                 <View style={styles.repeatBadge}>
                   <Ionicons name="refresh" size={10} color={colors.textTertiary} />
                   <Text style={[styles.repeatText, { color: colors.textTertiary }]}>{repeatLabel}</Text>
                 </View>
               )}
             </View>
-            <Text style={[styles.reminderDue, { color: urgencyColor }]}>
-              {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
-              <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
-                {'  '}
-                {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {policy.showDue ? (
+              <Text style={[styles.reminderDue, { color: urgencyColor }]}>
+                {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
+                <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
+                  {'  '}
+                  {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </Text>
               </Text>
-            </Text>
+            ) : null}
           </View>
           <View style={styles.reminderRight}>
-            <Text style={[styles.reminderAmount, { color: colors.text }, isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const }]}>
+            <Text
+              style={[
+                styles.reminderAmount,
+                { color: colors.text, opacity: showAmount ? 1 : 0 },
+                isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const },
+              ]}
+            >
               {formatAmount(bill.amount)}
             </Text>
           </View>
@@ -126,7 +179,7 @@ function ReminderCard({
         <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
           <Pressable
             onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
               onMarkPaid();
             }}
             style={[styles.cardActionBtn, { backgroundColor: isPaid ? colors.warningDim : colors.accentMintDim }]}
@@ -137,7 +190,7 @@ function ReminderCard({
           {!isPaid && (
             <Pressable
               onPress={() => {
-                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
                 onSnooze();
               }}
               style={[styles.cardActionBtn, { backgroundColor: colors.accentBlueDim }]}
@@ -147,7 +200,7 @@ function ReminderCard({
           )}
           <Pressable
             onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
               onEdit();
             }}
             style={[styles.cardActionBtn, { backgroundColor: colors.accentDim }]}
@@ -156,7 +209,7 @@ function ReminderCard({
           </Pressable>
           <Pressable
             onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
               onDelete();
             }}
             style={[styles.cardActionBtn, { backgroundColor: colors.dangerDim }]}
@@ -174,7 +227,8 @@ function ReminderCard({
             </Text>
           </View>
         )}
-      </View>
+          </View>
+        </Pressable>
     </Animated.View>
   );
 }
@@ -200,41 +254,91 @@ function AddEditModal({
   const [repeatType, setRepeatType] = useState<RepeatType>('monthly');
   const [category, setCategory] = useState<CategoryType>('bills');
   const [selectedIcon, setSelectedIcon] = useState('flash');
-  const [daysOffset, setDaysOffset] = useState('7');
+  const [modalError, setModalError] = useState('');
+  const [dueDate, setDueDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(9, 0, 0, 0);
+    return d;
+  });
   const [showIconPicker, setShowIconPicker] = useState(false);
+
+  const deriveReminderTypeFromCategory = (cat: CategoryType): ReminderType => {
+    if (cat === 'bills') return 'bill';
+    if (cat === 'entertainment') return 'subscription';
+    return 'custom';
+  };
+
+  const defaultIconForCategory = (cat: CategoryType): string | null => {
+    // Map categories to the intent icons used by `getReminderIntentFromBill`.
+    switch (cat) {
+      case 'bills':
+        return REMINDER_TYPE_CONFIG.bill.icon;
+      case 'entertainment':
+        return REMINDER_TYPE_CONFIG.subscription.icon;
+      case 'health':
+        return 'medkit';
+      case 'investment':
+        return 'trending-up';
+      case 'transport':
+        return 'globe';
+      default:
+        return null;
+    }
+  };
 
   React.useEffect(() => {
     if (editBill) {
+      setModalError('');
       setName(editBill.name);
       setAmount(editBill.amount.toString());
       setReminderType(editBill.reminderType);
       setRepeatType(editBill.repeatType);
       setCategory(editBill.category);
       setSelectedIcon(editBill.icon);
-      const days = getDaysUntil(editBill.dueDate);
-      setDaysOffset(Math.max(1, days).toString());
+      const d = new Date(editBill.dueDate);
+      if (!Number.isNaN(d.getTime())) setDueDate(d);
     } else {
+      setModalError('');
       setName('');
       setAmount('');
       setReminderType('custom');
       setRepeatType('monthly');
       setCategory('bills');
       setSelectedIcon('flash');
-      setDaysOffset('7');
+      const d = new Date();
+      d.setHours(9, 0, 0, 0);
+      setDueDate(d);
     }
   }, [editBill, visible, reminderSettings]);
 
+  // Merge "Type" into "Category": category drives reminderType and default icon.
+  React.useEffect(() => {
+    setReminderType(deriveReminderTypeFromCategory(category));
+
+    const nextIcon = defaultIconForCategory(category);
+    if (nextIcon) setSelectedIcon(nextIcon);
+  }, [category]);
+
   const handleSave = () => {
-    if (!name.trim() || !amount.trim()) return;
+    if (!name.trim()) {
+      setModalError('Please enter a name for the reminder');
+      return;
+    }
 
-    const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) return;
+    const parsedAmount = amount.trim() ? parseFloat(amount) : 0;
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      setModalError('Please enter a valid amount');
+      return;
+    }
 
-    const parsedDays = parseInt(daysOffset || '7', 10);
-    const safeDays = isFinite(parsedDays) && parsedDays >= 0 ? parsedDays : 7;
-
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + safeDays);
+    // Some reminder intents don't require an amount (health/habits/travel/tasks/events).
+    const derivedIntent = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
+    const intentPolicy = getIntentPolicy(derivedIntent);
+    if (intentPolicy.shouldHaveAmount && parsedAmount <= 0) {
+      setModalError(`Please enter an amount for this ${derivedIntent}`);
+      return;
+    }
+    setModalError('');
 
     if (editBill) {
       onSave({
@@ -250,7 +354,7 @@ function AddEditModal({
     } else {
       const effectiveReminderDays =
         Array.isArray(reminderSettings.defaultReminderDays) &&
-        reminderSettings.defaultReminderDays.length > 0
+          reminderSettings.defaultReminderDays.length > 0
           ? reminderSettings.defaultReminderDays
           : [3, 1, 0];
 
@@ -271,7 +375,11 @@ function AddEditModal({
     onClose();
   };
 
-  const canSave = name.trim() && amount.trim();
+  const derivedIntentForSave = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
+  const intentPolicyForSave = getIntentPolicy(derivedIntentForSave);
+  const canSave =
+    !!name.trim() &&
+    (!intentPolicyForSave.shouldHaveAmount || (amount.trim() && Number(amount) > 0));
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -287,24 +395,12 @@ function AddEditModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Type</Text>
-            <View style={styles.typeRow}>
-              {(['bill', 'subscription', 'custom'] as ReminderType[]).map(type => {
-                const config = REMINDER_TYPE_CONFIG[type];
-                const isActive = reminderType === type;
-                return (
-                  <Pressable
-                    key={type}
-                    onPress={() => setReminderType(type)}
-                    style={[styles.typeChip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, isActive && { backgroundColor: config.color + '18', borderColor: config.color + '40' }]}
-                  >
-                    <Ionicons name={config.icon as any} size={16} color={isActive ? config.color : colors.textTertiary} />
-                    <Text style={[styles.typeChipText, { color: colors.textTertiary }, isActive && { color: config.color }]}>{config.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
+            {!!modalError && (
+              <View style={[styles.errorBox, { backgroundColor: colors.dangerDim }]}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={[styles.errorText, { color: colors.danger }]}>{modalError}</Text>
+              </View>
+            )}
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
@@ -327,18 +423,23 @@ function AddEditModal({
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due in (days)</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-                  value={daysOffset}
-                  onChangeText={setDaysOffset}
-                  placeholder="7"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="numeric"
-                />
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due Date</Text>
+                <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+                  <Text style={[styles.dateLikeText, { color: colors.text }]}>
+                    {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                  <Ionicons name="calendar" size={18} color={colors.textTertiary} />
+                </View>
               </View>
             </View>
 
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Time</Text>
+            <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+              <Text style={[styles.dateLikeText, { color: colors.text }]}>
+                {dueDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+              <Ionicons name="time" size={18} color={colors.textTertiary} />
+            </View>
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Repeat</Text>
             <View style={styles.chipRow}>
               {REPEAT_OPTIONS.map(opt => (
@@ -562,9 +663,11 @@ export default function BillsScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
+  const router = useRouter();
   const {
     bills, isLoading, toggleBillPaid, addReminder, editReminder, deleteReminder,
-    snoozeReminder, reminderSettings, updateReminderSettings,
+    snoozeReminder, reminderSettings, updateReminderSettings, refreshData,
   } = useExpenses();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
@@ -578,7 +681,7 @@ export default function BillsScreen() {
 
   const filteredBills = useMemo(() => {
     if (activeFilter === 'all') return bills;
-    return bills.filter(b => b.reminderType === activeFilter);
+    return bills.filter(b => getReminderIntentFromBill(b) === activeFilter);
   }, [bills, activeFilter]);
 
   const activeBills = filteredBills
@@ -594,6 +697,14 @@ export default function BillsScreen() {
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
+  const todayKey = new Date().toDateString();
+  const todayBills = bills.filter(
+    (b) =>
+      b.status !== 'paid' &&
+      !b.isPaid &&
+      new Date(b.dueDate).toDateString() === todayKey,
+  );
+
   const handleDelete = (billId: string) => {
     if (Platform.OS === 'web') {
       setDeleteConfirmId(billId);
@@ -605,11 +716,13 @@ export default function BillsScreen() {
     }
   };
 
-  const handleSave = (billData: Omit<Bill, 'id'> | Bill) => {
+  const handleSave = async (billData: Omit<Bill, 'id'> | Bill) => {
     if ('id' in billData) {
-      editReminder(billData as Bill);
+      await editReminder(billData as Bill);
     } else {
-      addReminder(billData);
+      await addReminder(billData);
+      setActiveFilter('all');
+      await refreshData();
     }
   };
 
@@ -627,7 +740,7 @@ export default function BillsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 16, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
+          { paddingTop: topInset + 16, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
@@ -698,25 +811,68 @@ export default function BillsScreen() {
         </Animated.View>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
-          <View style={styles.filterRow}>
-            {FILTER_TABS.map(tab => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {FILTER_TABS.map((tab) => (
               <Pressable
                 key={tab.key}
                 onPress={() => setActiveFilter(tab.key)}
-                style={[styles.filterTab, { backgroundColor: colors.card, borderColor: colors.border }, activeFilter === tab.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
+                style={[
+                  styles.filterTab,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  activeFilter === tab.key && {
+                    backgroundColor: colors.accentDim,
+                    borderColor: colors.accent + '40',
+                  },
+                ]}
               >
                 <Ionicons
                   name={tab.icon as any}
                   size={15}
                   color={activeFilter === tab.key ? colors.accent : colors.textTertiary}
                 />
-                <Text style={[styles.filterTabText, { color: colors.textTertiary }, activeFilter === tab.key && { color: colors.accent }]}>
+                <Text
+                  style={[
+                    styles.filterTabText,
+                    { color: colors.textTertiary },
+                    activeFilter === tab.key && { color: colors.accent },
+                  ]}
+                >
                   {tab.label}
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         </Animated.View>
+
+        {todayBills.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Today ({todayBills.length})</Text>
+            {todayBills
+              .sort((a, b) => getDaysUntil(a.dueDate) - getDaysUntil(b.dueDate))
+              .map((bill, idx) => (
+                <ReminderCard
+                  key={bill.id}
+                  bill={bill}
+                  onPress={() => router.push(`/bill-details/${bill.id}`)}
+                  onMarkPaid={() => toggleBillPaid(bill.id)}
+                  onSnooze={() => {
+                    setSnoozeBillId(bill.id);
+                    setShowSnoozeModal(true);
+                  }}
+                  onEdit={() => {
+                    setEditBill(bill);
+                    setShowAddModal(true);
+                  }}
+                  onDelete={() => handleDelete(bill.id)}
+                  index={idx}
+                />
+              ))}
+          </>
+        )}
 
         {activeBills.length > 0 && (
           <>
@@ -727,6 +883,7 @@ export default function BillsScreen() {
               <ReminderCard
                 key={bill.id}
                 bill={bill}
+                onPress={() => router.push(`/bill-details/${bill.id}`)}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
                 onSnooze={() => { setSnoozeBillId(bill.id); setShowSnoozeModal(true); }}
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
@@ -746,8 +903,9 @@ export default function BillsScreen() {
               <ReminderCard
                 key={bill.id}
                 bill={bill}
+                onPress={() => router.push(`/bill-details/${bill.id}`)}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
-                onSnooze={() => {}}
+                onSnooze={() => { }}
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
                 onDelete={() => handleDelete(bill.id)}
                 index={idx}
@@ -885,6 +1043,7 @@ const styles = StyleSheet.create({
   overviewStat: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   overviewDivider: {
     width: 1,
@@ -895,7 +1054,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.8,
-    marginBottom: 8,
   },
   overviewAmount: {
     fontFamily: 'Inter_700Bold',
@@ -908,7 +1066,8 @@ const styles = StyleSheet.create({
   urgentWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
+    marginTop: 2,
   },
   urgentDot: {
     width: 8,
@@ -918,15 +1077,18 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 24,
+    paddingHorizontal: 2,
+    paddingBottom: 12,
+    marginBottom: 10,
   },
   filterTab: {
-    flex: 1,
+    flex: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
     paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 14,
     borderWidth: 1,
   },
@@ -1102,6 +1264,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    flex: 1,
+  },
   fieldLabel: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
@@ -1211,6 +1387,18 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 20,
+    includeFontPadding: false,
+  },
+  dateLikeInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateLikeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
   snoozeOverlay: {
     flex: 1,

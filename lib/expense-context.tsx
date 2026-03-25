@@ -7,11 +7,14 @@ import {
   MoneyLeak,
   ReminderSettings,
   DEFAULT_REMINDER_SETTINGS,
+  ReportsData,
+  LifeScoreData,
 } from './data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
 import { readSmsFromDeviceWithMeta, requestSmsPermissionDetails } from './sms-reader';
 import { parseSmsToTransactions } from './parse-sms';
+import { performSmsSync } from './sms-sync-task';
 
 const STORAGE_KEYS = {
   BUDGET: '@lifewise_budget',
@@ -36,12 +39,16 @@ interface ExpenseContextValue {
   monthlyBudget: number;
   setMonthlyBudget: (budget: number) => void;
   quickAddReminder: (text: string) => Promise<void>;
-  addReminder: (bill: Omit<Bill, 'id'>) => void;
+  addReminder: (bill: Omit<Bill, 'id'>) => Promise<Bill | null>;
   editReminder: (bill: Bill) => void;
   deleteReminder: (billId: string) => void;
-  snoozeReminder: (billId: string, days: number) => void;
+  snoozeReminder: (billId: string, days: number, minutes?: number) => void;
+  cancelReminder: (billId: string) => void;
+  uncancelReminder: (billId: string) => void;
   reminderSettings: ReminderSettings;
   updateReminderSettings: (settings: ReminderSettings) => void;
+  lifeScore: LifeScoreData | null;
+  getReports: (start: string, end: string) => Promise<ReportsData | null>;
 }
 
 const ExpenseContext = createContext<ExpenseContextValue | null>(null);
@@ -70,6 +77,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
   const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
+  const [lifeScore, setLifeScore] = useState<LifeScoreData | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -81,6 +89,14 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
     try {
       setIsLoading(true);
+      // Load from AsyncStorage as a fast fallback/cached state
+      const [budgetStored, settingsStored] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.BUDGET),
+        AsyncStorage.getItem(STORAGE_KEYS.REMINDER_SETTINGS),
+      ]);
+      if (budgetStored != null) setMonthlyBudgetState(JSON.parse(budgetStored));
+      if (settingsStored) setReminderSettings(JSON.parse(settingsStored));
+
       const [txRes, billsRes, leaksRes, settingsRes] = await Promise.all([
         fetchWithAuth(token, '/api/transactions'),
         fetchWithAuth(token, '/api/bills'),
@@ -94,17 +110,18 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       else setBills([]);
       if (leaksRes.ok) setLeaks(await leaksRes.json());
       else setLeaks([]);
+      
       if (settingsRes.ok) {
         const settings = await settingsRes.json();
-        if (settings.monthlyBudget != null) setMonthlyBudgetState(settings.monthlyBudget);
-        if (settings.reminderSettings) setReminderSettings(settings.reminderSettings);
+        if (settings.monthlyBudget != null) {
+          setMonthlyBudgetState(settings.monthlyBudget);
+          AsyncStorage.setItem(STORAGE_KEYS.BUDGET, JSON.stringify(settings.monthlyBudget));
+        }
+        if (settings.reminderSettings) {
+          setReminderSettings(settings.reminderSettings);
+          AsyncStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(settings.reminderSettings));
+        }
       }
-      const [budgetStored, settingsStored] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.BUDGET),
-        AsyncStorage.getItem(STORAGE_KEYS.REMINDER_SETTINGS),
-      ]);
-      if (budgetStored != null) setMonthlyBudgetState(JSON.parse(budgetStored));
-      if (settingsStored) setReminderSettings(JSON.parse(settingsStored));
     } catch (e) {
       setTransactions([]);
       setBills([]);
@@ -165,83 +182,32 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       }
 
       setSmsSyncStatus('Reading SMS inbox...');
-      const smsResult = await readSmsFromDeviceWithMeta(150);
-      const rawSms = smsResult.messages;
-      const readCount = rawSms.length;
-      setLastSmsReadCount(readCount);
-      const senderPreview = Array.from(
-        new Set(
-          rawSms
-            .map((s) => String(s.address || '').trim())
-            .filter(Boolean)
-            .map((v) => v.slice(0, 18))
-        )
-      ).slice(0, 4);
-      setSmsSampleSenders(senderPreview);
+      console.log('[SMS-Debug] Reading SMS from device...');
+      const readResult = await readSmsFromDeviceWithMeta(200);
+      console.log('[SMS-Debug] Read result:', { 
+        moduleAvailable: readResult.moduleAvailable, 
+        error: readResult.error, 
+        messagesCount: readResult.messages.length 
+      });
 
-      if (smsResult.error && readCount === 0) {
-        setSmsSyncStatus(smsResult.error);
-      } else {
-        setSmsSyncStatus(`Read ${readCount} SMS. Parsing transactions...`);
+      if (!readResult.moduleAvailable) {
+        setSmsSyncStatus('SMS Sync Not Available: Requires a Development Build (APK). Expo Go is not supported.');
+        setIsSyncingSms(false);
+        return;
       }
-
-      const parsed = parseSmsToTransactions(rawSms);
-      if (parsed.length > 0) {
-        const chunkSize = 40;
-        let totalSynced = 0;
-        setSmsSyncProgressTotal(parsed.length);
-
-        for (let i = 0; i < parsed.length; i += chunkSize) {
-          const chunk = parsed.slice(i, i + chunkSize);
-          const upto = Math.min(i + chunk.length, parsed.length);
-          setSmsSyncProgressCurrent(upto);
-          setSmsSyncStatus(`Syncing ${upto}/${parsed.length} transactions...`);
-
-          const res = await fetchWithAuth(token, '/api/transactions/sync-from-sms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              transactions: chunk.map((p) => ({
-                merchant: p.merchant,
-                amount: p.amount,
-                date: p.date,
-                isDebit: p.isDebit,
-                description: p.description,
-                upiId: p.upiId,
-                category: p.category,
-              })),
-            }),
-          });
-
-          if (!res.ok) continue;
-
-          try {
-            const json = await res.json();
-            const syncedChunk = typeof json.synced === 'number' ? json.synced : chunk.length;
-            totalSynced += syncedChunk;
-          } catch {
-            totalSynced += chunk.length;
-          }
-
-          setLastSmsSyncCount(totalSynced);
-          await loadData();
-        }
-
+      
+      const syncResult = await performSmsSync(token);
+      console.log('[SMS-Debug] Sync result:', syncResult);
+      
+      if (syncResult.success) {
+        setLastSmsSyncCount(syncResult.synced);
+        setSmsSyncStatus(`Sync complete. ${syncResult.synced} transactions synced, ${syncResult.skipped ?? 0} duplicates skipped.`);
         await loadData();
-        setLastSmsSyncCount(totalSynced);
-        setSmsSyncStatus(`Read ${readCount} SMS, synced ${totalSynced} transactions.`);
       } else {
-        setLastSmsSyncCount(0);
-        setSmsSyncProgressCurrent(null);
-        setSmsSyncProgressTotal(null);
-        if (!smsResult.moduleAvailable && smsResult.error) {
-          setSmsSyncStatus(smsResult.error);
-        } else {
-          setSmsSyncStatus(`Read ${readCount} SMS, synced 0 transactions.`);
-        }
-        await loadData();
+        setSmsSyncStatus('SMS sync failed. Please check permissions.');
       }
-    } catch {
+    } catch (err) {
+      console.error('SMS sync error:', err);
       setSmsSyncStatus('SMS sync failed unexpectedly.');
       setSmsSyncProgressCurrent(null);
       setSmsSyncProgressTotal(null);
@@ -261,7 +227,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
-    const updated = { ...bill, isPaid: !bill.isPaid, status: (bill.isPaid ? 'active' : 'paid') as const };
+    const status: 'active' | 'paid' = bill.isPaid ? 'active' : 'paid';
+    const updated = { ...bill, isPaid: !bill.isPaid, status };
     try {
       const res = await fetchWithAuth(token, `/api/bills/${billId}`, {
         method: 'PUT',
@@ -275,8 +242,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token, bills]);
 
-  const addReminder = useCallback(async (billData: Omit<Bill, 'id'>) => {
-    if (!token) return;
+  const addReminder = useCallback(async (billData: Omit<Bill, 'id'>): Promise<Bill | null> => {
+    if (!token) return null;
     try {
       const res = await fetchWithAuth(token, '/api/bills', {
         method: 'POST',
@@ -286,10 +253,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const created = await res.json();
         setBills((prev) => [...prev, created]);
+        return created as Bill;
       }
     } catch {
       // optional: add locally with generateId for optimistic UI
     }
+    return null;
   }, [token]);
 
   const editReminder = useCallback(async (updatedBill: Bill) => {
@@ -316,23 +285,72 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
-  const snoozeReminder = useCallback(async (billId: string, days: number) => {
-    const snoozedUntil = new Date();
-    snoozedUntil.setDate(snoozedUntil.getDate() + days);
-    const updated = bills.find((b) => b.id === billId);
-    if (!updated || !token) return;
-    const next = { ...updated, status: 'snoozed' as const, snoozedUntil: snoozedUntil.toISOString() };
+  const snoozeReminder = useCallback(async (billId: string, days: number, minutes?: number) => {
+    if (!token) return;
+    const oldBills = [...bills];
+    
+    // Optimistic Update: Remove from dashboard immediately
+    setBills((prev) => prev.map((b) => {
+      if (b.id === billId) {
+        const snoozeMs = (minutes || days * 24 * 60) * 60 * 1000;
+        const snoozedUntil = new Date(Date.now() + snoozeMs).toISOString();
+        return { ...b, status: 'snoozed', snoozedUntil, isPaid: false };
+      }
+      return b;
+    }));
+
     try {
-      const res = await fetchWithAuth(token, `/api/bills/${billId}`, {
-        method: 'PUT',
+      const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
+        body: JSON.stringify({ action: 'snooze', days, minutes }),
       });
-      if (res.ok) setBills((prev) => prev.map((b) => (b.id === billId ? next : b)));
-    } catch {
-      setBills((prev) => prev.map((b) => (b.id === billId ? next : b)));
+      if (!res.ok) {
+        setBills(oldBills);
+      }
+    } catch (err) {
+      console.error('Snooze error:', err);
+      setBills(oldBills);
     }
   }, [token, bills]);
+
+  const cancelReminder = useCallback(async (billId: string) => {
+    if (!token) return;
+    const oldBills = [...bills];
+
+    // Optimistic Update
+    setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, status: 'cancelled', isPaid: false } : b)));
+
+    try {
+      const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      if (!res.ok) {
+        setBills(oldBills);
+      }
+    } catch (err) {
+      console.error('Cancel error:', err);
+      setBills(oldBills);
+    }
+  }, [token, bills]);
+
+  const uncancelReminder = useCallback(async (billId: string) => {
+    if (!token) return;
+    try {
+      const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'uncancel' }),
+      });
+      if (res.ok) {
+        setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, status: 'active', isPaid: false } : b)));
+      }
+    } catch (err) {
+      console.error('Uncancel error:', err);
+    }
+  }, [token]);
 
   const quickAddReminder = useCallback(
     async (text: string) => {
@@ -390,6 +408,17 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
+  const getReports = useCallback(async (start: string, end: string): Promise<ReportsData | null> => {
+    if (!token) return null;
+    try {
+      const res = await fetchWithAuth(token, `/api/reports?start=${start}&end=${end}`);
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [token]);
+
   const value = useMemo(
     () => ({
       transactions,
@@ -413,8 +442,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       editReminder,
       deleteReminder,
       snoozeReminder,
+      cancelReminder,
+      uncancelReminder,
       reminderSettings,
       updateReminderSettings,
+      lifeScore,
+      getReports,
     }),
     [
       transactions,
@@ -439,7 +472,11 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       editReminder,
       deleteReminder,
       snoozeReminder,
+      cancelReminder,
+      uncancelReminder,
       updateReminderSettings,
+      lifeScore,
+      getReports,
     ]
   );
 

@@ -9,6 +9,7 @@ import {
   Switch,
   Alert,
   Modal,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -267,22 +268,20 @@ export default function SettingsScreen() {
                 {currentCurrency.code}
               </Text>
             </View>
-            <View
-              style={[
-                styles.budgetInputBox,
-                { borderColor: colors.inputBorder, backgroundColor: colors.inputBg },
-              ]}
-            >
-              <Text
-                style={{
-                  fontFamily: 'Inter_600SemiBold',
-                  fontSize: 24,
-                  color: colors.text,
-                }}
-              >
-                {budgetInput || '0'}
-              </Text>
-            </View>
+            <TextInput
+              style={{
+                fontFamily: 'Inter_600SemiBold',
+                fontSize: 24,
+                color: colors.text,
+                textAlign: 'center',
+                width: '100%',
+              }}
+              value={budgetInput}
+              onChangeText={(t: string) => setBudgetInput(t.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textTertiary}
+            />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
               {[10000, 25000, 50000].map((preset) => (
                 <Pressable

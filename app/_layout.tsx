@@ -1,10 +1,9 @@
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_700Bold,
   useFonts,
-} from "@expo-google-fonts/inter";
+} from "@expo-google-fonts/dm-sans";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useSegments, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -22,8 +21,12 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeProvider, useTheme } from "@/lib/theme-context";
 import { CurrencyProvider } from "@/lib/currency-context";
 import { StatusBar } from "expo-status-bar";
-import * as Notifications from "expo-notifications";
-import { registerForPushNotifications } from "@/lib/notifications";
+import {
+  addNotificationResponseReceivedListener,
+  registerForPushNotifications,
+  addPushTokenListener,
+} from "@/lib/notifications";
+import { registerSmsSyncTask } from "@/lib/sms-sync-task";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -147,21 +150,49 @@ function AuthGate() {
     registerForPushNotifications(token).catch((e) => {
       console.log("[Push] Registration error", e);
     });
+
+    registerSmsSyncTask().catch((e) => {
+      console.log("[BackgroundSync] Registration error", e);
+    });
+
+    let sub: { remove: () => void } | null = null;
+    (async () => {
+      const nextSub = await addPushTokenListener((newToken) => {
+        console.log("[Push] Token refreshed:", newToken);
+        registerForPushNotifications(token);
+      });
+      sub = nextSub;
+    })();
+
+    return () => sub?.remove();
   }, [isAuthenticated, token]);
 
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as any;
-      if (data?.type === "reminder" && data?.billId) {
-        router.push({
-          pathname: "/(tabs)",
-          params: { billId: data.billId },
-        } as any);
+    let cancelled = false;
+    let sub: { remove: () => void } | null = null;
+
+    (async () => {
+      const nextSub = await addNotificationResponseReceivedListener((response) => {
+        const data = response.notification.request.content.data as any;
+        if (data?.type === "reminder" && data?.billId) {
+          router.push({
+            pathname: "/bill-details/[billId]",
+            params: { billId: String(data.billId) },
+          } as any);
+        }
+      });
+
+      // If the component unmounted before the async attach completed, remove immediately.
+      if (cancelled) {
+        nextSub.remove();
+        return;
       }
-    });
+      sub = nextSub;
+    })();
 
     return () => {
-      sub.remove();
+      cancelled = true;
+      sub?.remove();
     };
   }, [router]);
 
@@ -174,6 +205,7 @@ function AuthGate() {
       <StatusBar style={colors.statusBarStyle} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="bill-details/[billId]" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="settings" />
@@ -188,10 +220,14 @@ function AuthGate() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    // Keep Inter_* aliases so existing styles across the app
+    // automatically render with DM Sans without editing every file.
+    Inter_400Regular: DMSans_400Regular,
+    Inter_500Medium: DMSans_500Medium,
+    Inter_600SemiBold: DMSans_500Medium,
+    Inter_700Bold: DMSans_700Bold,
+    Inter_800ExtraBold: DMSans_700Bold,
+    Dmsans_500SemiBold: DMSans_500Medium,
   });
 
   useEffect(() => {

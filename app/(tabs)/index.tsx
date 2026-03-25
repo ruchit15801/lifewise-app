@@ -15,11 +15,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import { getApiUrl, apiRequest } from '@/lib/query-client';
 import Animated, {
   FadeInDown,
   FadeInRight,
+  FadeOutUp,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -28,18 +28,24 @@ import Animated, {
   withSequence,
   withDelay,
 } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { TouchableOpacity } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useExpenses } from '@/lib/expense-context';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
+import { useTabBarContentInset } from '@/lib/tab-bar';
+import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
+import CategoryIcon from '@/components/CategoryIcon';
 import {
   CATEGORIES,
   getTodaySpending,
   getMonthlySpending,
   getGreetingPeriod,
   formatTime,
+  REPEAT_OPTIONS,
   CategoryType,
   type GreetingPeriod,
 } from '@/lib/data';
@@ -63,18 +69,18 @@ function SpendingScoreRing({ score, colors, isDark, onPress }: { score: number; 
 const ringStyles = StyleSheet.create({
   container: { alignItems: 'center', justifyContent: 'center' },
   outerRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   innerRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -98,12 +104,13 @@ function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors 
 }
 
 function CategoryPill({ category, total, index, colors, formatAmount }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[category];
+  const safeCat = (category || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInRight.delay(index * 80).springify() : undefined}>
       <View style={[styles.categoryPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={[styles.catIconWrap, { backgroundColor: cat.color + '15' }]}>
-          <Ionicons name={cat.icon as any} size={16} color={cat.color} />
+          <CategoryIcon category={category} size={16} />
         </View>
         <View style={styles.catTextWrap}>
           <Text style={[styles.categoryPillLabel, { color: colors.textSecondary }]}>{cat.label}</Text>
@@ -115,11 +122,12 @@ function CategoryPill({ category, total, index, colors, formatAmount }: { catego
 }
 
 function TransactionRow({ merchant, amount, category, date, colors, formatAmount }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[category];
+  const safeCat = (category || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <View style={styles.txRow}>
       <View style={[styles.txIcon, { backgroundColor: cat.color + '12' }]}>
-        <Ionicons name={cat.icon as any} size={18} color={cat.color} />
+        <CategoryIcon category={category} size={18} />
       </View>
       <View style={styles.txInfo}>
         <Text style={[styles.txMerchant, { color: colors.text }]}>{merchant}</Text>
@@ -189,12 +197,17 @@ function MustSmsSyncBanner({
   );
 }
 
+
 function TopReminderAlert({
   colors,
   upcomingBills,
+  onSnooze,
+  onCancel,
 }: {
   colors: any;
-  upcomingBills: { name: string; amount: number; dueDate: string }[];
+  upcomingBills: any[];
+  onSnooze: (id: string) => void;
+  onCancel: (id: string) => void;
 }) {
   if (!upcomingBills.length) return null;
 
@@ -202,6 +215,8 @@ function TopReminderAlert({
   const sorted = [...upcomingBills].sort(
     (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
   );
+
+  // Only show the single most urgent one
   const next = sorted[0];
   const due = new Date(next.dueDate);
   const msDiff = due.setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0);
@@ -209,11 +224,11 @@ function TopReminderAlert({
 
   let label: string;
   if (daysDiff === 0) {
-    label = `Today • ${next.name}`;
+    label = `Due Today • ${next.name}`;
   } else if (daysDiff === 1) {
-    label = `Tomorrow • ${next.name}`;
+    label = `Due Tomorrow • ${next.name}`;
   } else if (daysDiff > 1 && daysDiff <= 7) {
-    label = `This week • ${next.name}`;
+    label = `Due this week • ${next.name}`;
   } else if (daysDiff < 0) {
     label = `Overdue • ${next.name}`;
   } else {
@@ -226,7 +241,8 @@ function TopReminderAlert({
   });
 
   return (
-    <View
+    <Animated.View
+      entering={Platform.OS !== 'web' ? FadeInDown.duration(400) : undefined}
       style={[
         styles.reminderAlert,
         {
@@ -235,37 +251,51 @@ function TopReminderAlert({
         },
       ]}
     >
-      <View style={styles.reminderAlertLeft}>
-        <Ionicons
-          name="alert-circle"
-          size={18}
-          color={colors.warning}
-          style={{ marginRight: 8 }}
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.reminderAlertTitle, { color: colors.text }]} numberOfLines={1}>
-            {label}
-          </Text>
-          <Text
-            style={[styles.reminderAlertSubtitle, { color: colors.textSecondary }]}
-            numberOfLines={1}
+      <View style={styles.reminderAlertRow}>
+        <View style={styles.reminderAlertLeft}>
+          <View style={[styles.reminderAlertIconWrap, { backgroundColor: colors.warning + '20' }]}>
+            <Ionicons
+              name="alert-circle"
+              size={20}
+              color={colors.warning}
+            />
+          </View>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={[styles.reminderAlertTitle, { color: colors.text }]} numberOfLines={1}>
+              {label}
+            </Text>
+            <Text
+              style={[styles.reminderAlertSubtitle, { color: colors.textSecondary }]}
+              numberOfLines={1}
+            >
+              {`Due ${dateLabel}`}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.reminderAlertActions}>
+          <TouchableOpacity
+            onPress={() => onSnooze(next.id)}
+            style={[
+              styles.alertActionBtn,
+              { backgroundColor: colors.warning, borderColor: colors.warning }
+            ]}
           >
-            {`Due ${dateLabel} • ${formatAmount(next.amount)}`}
-          </Text>
+            <Ionicons name="notifications-off-outline" size={14} color="#FFFFFF" />
+            <Text style={[styles.alertActionText, { color: '#FFFFFF' }]}>Snooze</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onCancel(next.id)}
+            style={[
+              styles.alertActionBtn,
+              { backgroundColor: colors.card, borderColor: colors.border }
+            ]}
+          >
+            <Ionicons name="close-circle-outline" size={14} color={colors.textTertiary} />
+            <Text style={[styles.alertActionText, { color: colors.textTertiary }]}>Cancel</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </View>
-  );
-}
-
-function ActionButton({ icon, label, color, onPress, colors }: { icon: string; label: string; color: string; onPress: () => void; colors: any }) {
-  return (
-    <Pressable onPress={onPress} style={styles.actionBtnWrap}>
-      <View style={[styles.actionBtnCircle, { backgroundColor: color + '15', borderColor: color + '25' }]}>
-        <Ionicons name={icon as any} size={24} color={color} />
-      </View>
-      <Text style={[styles.actionBtnLabel, { color: colors.textSecondary }]}>{label}</Text>
-    </Pressable>
+    </Animated.View>
   );
 }
 
@@ -278,6 +308,101 @@ function QuickAccessCard({ icon, label, subtitle, color, onPress, colors }: { ic
       <Text style={[styles.quickCardLabel, { color: colors.text }]}>{label}</Text>
       <Text style={[styles.quickCardSubtitle, { color: colors.textTertiary }]}>{subtitle}</Text>
     </Pressable>
+  );
+}
+
+function PrimaryCircleActions({ colors, onScanBill, onQuickAdd, onAutoTrack }: {
+  colors: any;
+  onScanBill: () => void;
+  onQuickAdd: () => void;
+  onAutoTrack: () => void;
+}) {
+  const baseScale = useSharedValue(0.9);
+  useEffect(() => {
+    baseScale.value = withSpring(1, { damping: 14, stiffness: 140 });
+  }, [baseScale]);
+
+  const pulse1 = useSharedValue(1);
+  const pulse2 = useSharedValue(1);
+  const pulse3 = useSharedValue(1);
+
+  useEffect(() => {
+    pulse1.value = withRepeat(withSequence(withTiming(1.05, { duration: 900 }), withTiming(1, { duration: 900 })), -1, true);
+    pulse2.value = withRepeat(withSequence(withDelay(150, withTiming(1.05, { duration: 900 })), withTiming(1, { duration: 900 })), -1, true);
+    pulse3.value = withRepeat(withSequence(withDelay(300, withTiming(1.05, { duration: 900 })), withTiming(1, { duration: 900 })), -1, true);
+  }, [pulse1, pulse2, pulse3]);
+
+  const circleStyle1 = useAnimatedStyle(() => ({
+    transform: [{ scale: baseScale.value * pulse1.value }],
+  }));
+  const circleStyle2 = useAnimatedStyle(() => ({
+    transform: [{ scale: baseScale.value * pulse2.value }],
+  }));
+  const circleStyle3 = useAnimatedStyle(() => ({
+    transform: [{ scale: baseScale.value * pulse3.value }],
+  }));
+
+  const purple = colors.accentPurple || colors.accent || '#A855F7';
+  const purpleDim = colors.accentPurpleDim || (purple + '1F');
+  const blue = colors.accentBlue || '#3B82F6';
+  const blueDim = colors.accentBlueDim || (blue + '1F');
+  const amber = colors.warning || '#F59E0B';
+  const amberDim = colors.warningDim || (amber + '1F');
+
+  return (
+    <View style={styles.primaryCircleRow}>
+      <Pressable onPress={onQuickAdd} style={styles.primaryCircleItem}>
+        <Animated.View
+          style={[
+            styles.primaryCircleFill,
+            {
+              backgroundColor: purpleDim,
+              borderColor: purple + '33',
+              shadowColor: purple,
+            },
+            circleStyle1,
+          ]}
+        >
+          <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
+          <Ionicons name="mic" size={24} color={purple} />
+        </Animated.View>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Voice Reminder</Text>
+      </Pressable>
+      <Pressable onPress={onScanBill} style={styles.primaryCircleItem}>
+        <Animated.View
+          style={[
+            styles.primaryCircleFill,
+            {
+              backgroundColor: blueDim,
+              borderColor: blue + '33',
+              shadowColor: blue,
+            },
+            circleStyle2,
+          ]}
+        >
+          <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
+          <Ionicons name="camera" size={24} color={blue} />
+        </Animated.View>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Scan Bills</Text>
+      </Pressable>
+      <Pressable onPress={onAutoTrack} style={styles.primaryCircleItem}>
+        <Animated.View
+          style={[
+            styles.primaryCircleFill,
+            {
+              backgroundColor: amberDim,
+              borderColor: amber + '33',
+              shadowColor: amber,
+            },
+            circleStyle3,
+          ]}
+        >
+          <View pointerEvents="none" style={styles.primaryCircleInnerWhiteBorder} />
+          <Ionicons name="chatbubble-ellipses" size={24} color={amber} />
+        </Animated.View>
+        <Text style={[styles.primaryCircleLabel, { color: colors.textSecondary }]}>Wise AI</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -373,6 +498,7 @@ function AnimatedGreeting({ userName, colors }: { userName: string; colors: any 
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarInset = useTabBarContentInset();
   const {
     transactions,
     bills,
@@ -385,9 +511,12 @@ export default function HomeScreen() {
     lastSmsReadCount,
     lastSmsSyncCount,
     monthlyBudget,
+    lifeScore,
     refreshData,
     syncSmsFromDevice,
     quickAddReminder,
+    snoozeReminder,
+    cancelReminder,
   } = useExpenses();
   const { user, token } = useAuth();
   const { colors, isDark } = useTheme();
@@ -399,6 +528,9 @@ export default function HomeScreen() {
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isSnoozeModalVisible, setIsSnoozeModalVisible] = useState(false);
+  const [isCancelModalVisible, setIsCancelModalVisible] = useState(false);
+  const [activeReminderId, setActiveReminderId] = useState<string | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
@@ -433,46 +565,13 @@ export default function HomeScreen() {
     useCallback(() => {
       AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
         setSeniorMode(v === 'true');
-      }).catch(() => {});
+      }).catch(() => { });
     }, [])
   );
 
-  const handleScanBill = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets || !result.assets[0]) return;
-    const asset = result.assets[0];
-    try {
-      const baseUrl = getApiUrl();
-      const url = new URL('/api/bills/scan', baseUrl).toString();
-      const form = new FormData();
-      form.append('image', {
-        uri: asset.uri,
-        name: asset.fileName || 'bill.jpg',
-        type: asset.mimeType || 'image/jpeg',
-      } as any);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: form,
-      });
-      if (!res.ok) {
-        Alert.alert('Scan failed', 'Could not scan this bill. You can add it manually in Reminders.');
-        return;
-      }
-      await refreshData();
-      Alert.alert('Bill added', 'We scanned your bill and created a reminder.');
-    } catch {
-      Alert.alert('Scan failed', 'Network error while scanning bill.');
-    }
-  }, [token, refreshData]);
+  const handleScanBill = useCallback(() => {
+    router.push('/scan-bill');
+  }, [router]);
 
   // Never show a full-screen sync animation; we use a compact top banner instead.
 
@@ -484,7 +583,9 @@ export default function HomeScreen() {
   const categoryTotals: Partial<Record<CategoryType, number>> = {};
   transactions.forEach(tx => {
     if (tx.isDebit) {
-      categoryTotals[tx.category] = (categoryTotals[tx.category] || 0) + tx.amount;
+      const cat = (tx.category || 'others').toLowerCase() as CategoryType;
+      const safeCat = CATEGORIES[cat] ? cat : 'others';
+      categoryTotals[safeCat] = (categoryTotals[safeCat] || 0) + tx.amount;
     }
   });
   const sortedCategories = Object.entries(categoryTotals)
@@ -503,12 +604,24 @@ export default function HomeScreen() {
     (totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0)
   );
 
+  // Life Score from backend (high precision)
+  const officialLifeScore = lifeScore?.score ?? 85;
+  const displayScore = lifeScore != null ? lifeScore.score : budgetHealthScore;
+
   // If everything is effectively zero, keep score at 0 to avoid confusion.
-  if (monthlySpend === 0 && bills.length === 0 && totalLeakAmount === 0) {
+  if (monthlySpend === 0 && bills.length === 0 && totalLeakAmount === 0 && lifeScore == null) {
     budgetHealthScore = 0;
   }
 
-  const upcomingBills = bills.filter(b => !b.isPaid && b.status !== 'paid').slice(0, 3);
+  const nowTime = new Date().getTime();
+  const sevenDaysFromNow = nowTime + 7 * 24 * 60 * 60 * 1000;
+  const upcomingBills = bills
+    .filter((b) => !b.isPaid && !['paid', 'snoozed', 'cancelled'].includes(b.status))
+    .filter((b) => {
+      const due = new Date(b.dueDate).getTime();
+      return due >= nowTime - 24 * 60 * 60 * 1000 && due <= sevenDaysFromNow;
+    })
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   const showComingSoon = () => {
     if (Platform.OS === 'web') {
@@ -532,47 +645,104 @@ export default function HomeScreen() {
               title="Refreshing…"
             />
           }
-          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom }]}
         >
-            <TopReminderAlert
-              colors={colors}
-              upcomingBills={upcomingBills}
-            />
-            <MustSmsSyncBanner
-              colors={colors}
-              isSyncingSms={isSyncingSms || isLoading}
-              smsSyncStatus={smsSyncStatus}
-              smsSyncProgressCurrent={smsSyncProgressCurrent}
-              smsSyncProgressTotal={smsSyncProgressTotal}
-              lastSmsReadCount={lastSmsReadCount}
-              lastSmsSyncCount={lastSmsSyncCount}
-            />
-            <View style={styles.header}>
-              <AnimatedGreeting userName={userName} colors={colors} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Pressable
-                  onPress={() => router.push('/notifications')}
-                  style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                >
-                  <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
-                  {unreadCount > 0 && (
-                    <View style={styles.unreadDot} />
-                  )}
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push('/settings')}
-                  style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  testID="home-settings-btn"
-                >
-                  <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
-                </Pressable>
-              </View>
+          <TopReminderAlert
+            colors={colors}
+            upcomingBills={upcomingBills}
+            onSnooze={(id) => {
+              setActiveReminderId(id);
+              setIsSnoozeModalVisible(true);
+            }}
+            onCancel={(id) => {
+              setActiveReminderId(id);
+              setIsCancelModalVisible(true);
+            }}
+          />
+          <MustSmsSyncBanner
+            colors={colors}
+            isSyncingSms={isSyncingSms || isLoading}
+            smsSyncStatus={smsSyncStatus}
+            smsSyncProgressCurrent={smsSyncProgressCurrent}
+            smsSyncProgressTotal={smsSyncProgressTotal}
+            lastSmsReadCount={lastSmsReadCount}
+            lastSmsSyncCount={lastSmsSyncCount}
+          />
+          <View style={styles.header}>
+            <AnimatedGreeting userName={userName} colors={colors} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Pressable
+                onPress={() => router.push('/notifications')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+                {unreadCount > 0 && (
+                  <View style={styles.unreadDot} />
+                )}
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/settings')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                testID="home-settings-btn"
+              >
+                <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
             </View>
+          </View>
 
           <View style={[styles.seniorHeroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>Balance Left</Text>
             <Text style={[styles.seniorHeroAmount, { color: colors.text }]}>{formatAmount(Math.max(0, monthlyBudget - monthlySpend))}</Text>
           </View>
+
+          {upcomingBills.length > 0 && (
+            <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(450) : undefined}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Reminders</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
+                {upcomingBills.map((bill) => {
+                  const dueDate = new Date(bill.dueDate);
+                  const intent = getReminderIntentFromBill(bill);
+                  const policy = getIntentPolicy(intent);
+                  const repeatLabel = REPEAT_OPTIONS.find((r) => r.key === bill.repeatType)?.label || '';
+                  const showDue = policy.showDue;
+                  const showRepeat = policy.showRepeat;
+                  const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+                  const dueText = dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                  const dueOrRepeatText =
+                    showDue && showRepeat
+                      ? `${dueText} • ${repeatLabel}`
+                      : showDue
+                        ? dueText
+                        : showRepeat
+                          ? repeatLabel
+                          : '';
+
+                  return (
+                    <Pressable
+                      key={bill.id}
+                      onPress={() => router.push(`/bill-details/${bill.id}`)}
+                      style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
+                      <View style={[styles.reminderPillIcon, { backgroundColor: colors.warningDim }]}>
+                        <Ionicons name={bill.icon as any} size={18} color={colors.warning} />
+                      </View>
+                      <View style={styles.reminderPillInfo}>
+                        <Text style={[styles.reminderPillName, { color: colors.text }]} numberOfLines={1}>
+                          {bill.name}
+                        </Text>
+                        {!!dueOrRepeatText ? (
+                          <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>{dueOrRepeatText}</Text>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.reminderPillAmount, { color: colors.accent, opacity: showAmount ? 1 : 0 }]}>
+                        {formatAmount(bill.amount)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </Animated.View>
+          )}
 
           <View style={styles.seniorGrid}>
             <Pressable onPress={() => router.push('/(tabs)/transactions')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -620,12 +790,20 @@ export default function HomeScreen() {
         }
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topInset + 12, paddingBottom: Platform.OS === 'web' ? 100 : 100 },
+          { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom },
         ]}
       >
         <TopReminderAlert
           colors={colors}
           upcomingBills={upcomingBills}
+          onSnooze={(id) => {
+            setActiveReminderId(id);
+            setIsSnoozeModalVisible(true);
+          }}
+          onCancel={(id) => {
+            setActiveReminderId(id);
+            setIsCancelModalVisible(true);
+          }}
         />
         <MustSmsSyncBanner
           colors={colors}
@@ -658,6 +836,15 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
 
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(40).duration(450) : undefined}>
+          <PrimaryCircleActions
+            colors={colors}
+            onScanBill={handleScanBill}
+            onQuickAdd={() => router.push('/voice-reminder')}
+            onAutoTrack={() => router.push('/assistant')}
+          />
+        </Animated.View>
+
         {/* Old multi-line SMS banners removed in favor of compact MUST banner */}
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(80).duration(500) : undefined}>
@@ -685,7 +872,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
               </View>
-              <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} />
+              <SpendingScoreRing score={displayScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} />
             </View>
             <View style={[styles.heroDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
             <View style={styles.heroStats}>
@@ -713,23 +900,51 @@ export default function HomeScreen() {
 
         {upcomingBills.length > 0 && (
           <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>{`Today\u2019s Reminders`}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Reminders</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
               {upcomingBills.map((bill) => {
                 const dueDate = new Date(bill.dueDate);
+                const intent = getReminderIntentFromBill(bill);
+                const policy = getIntentPolicy(intent);
+                const repeatLabel = REPEAT_OPTIONS.find((r) => r.key === bill.repeatType)?.label || '';
+                const showDue = policy.showDue;
+                const showRepeat = policy.showRepeat;
+                const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+                const dueText = dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                const dueOrRepeatText =
+                  showDue && showRepeat
+                    ? `${dueText} • ${repeatLabel}`
+                    : showDue
+                      ? dueText
+                      : showRepeat
+                        ? repeatLabel
+                        : '';
                 return (
-                  <View key={bill.id} style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Pressable
+                    key={bill.id}
+                    onPress={() => router.push(`/bill-details/${bill.id}`)}
+                    style={[styles.reminderPill, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  >
                     <View style={[styles.reminderPillIcon, { backgroundColor: colors.warningDim }]}>
                       <Ionicons name={bill.icon as any} size={18} color={colors.warning} />
                     </View>
                     <View style={styles.reminderPillInfo}>
                       <Text style={[styles.reminderPillName, { color: colors.text }]} numberOfLines={1}>{bill.name}</Text>
-                      <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>
-                        {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </Text>
+                      {!!dueOrRepeatText ? (
+                        <Text style={[styles.reminderPillDue, { color: colors.textTertiary }]}>
+                          {dueOrRepeatText}
+                        </Text>
+                      ) : null}
                     </View>
-                    <Text style={[styles.reminderPillAmount, { color: colors.accent }]}>{formatAmount(bill.amount)}</Text>
-                  </View>
+                    <Text
+                      style={[
+                        styles.reminderPillAmount,
+                        { color: colors.accent, opacity: showAmount ? 1 : 0 },
+                      ]}
+                    >
+                      {formatAmount(bill.amount)}
+                    </Text>
+                  </Pressable>
                 );
               })}
             </ScrollView>
@@ -738,49 +953,68 @@ export default function HomeScreen() {
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(160).duration(500) : undefined}>
           <View style={styles.insightsRow}>
-            <InsightCard
-              icon="water"
-              iconColor={colors.danger}
-              bgColor={colors.dangerDim}
-              title="Leaks"
-              value={formatAmount(totalLeakAmount)}
-              subtitle="/month"
+            <Pressable onPress={() => router.push('/(tabs)/leaks')} style={{ flex: 1 }}>
+              <InsightCard
+                icon="water"
+                iconColor={colors.danger}
+                bgColor={colors.dangerDim}
+                title="Leaks"
+                value={formatAmount(totalLeakAmount)}
+                subtitle="/month"
+                colors={colors}
+              />
+            </Pressable>
+            <Pressable onPress={() => router.push('/(tabs)/bills')} style={{ flex: 1 }}>
+              <InsightCard
+                icon="notifications"
+                iconColor={colors.warning}
+                bgColor={colors.warningDim}
+                title="Due"
+                value={String(unpaidBills)}
+                subtitle="reminders"
+                colors={colors}
+              />
+            </Pressable>
+            <Pressable onPress={() => router.push('/(tabs)/transactions')} style={{ flex: 1 }}>
+              <InsightCard
+                icon="swap-horizontal"
+                iconColor={colors.accentBlue}
+                bgColor={colors.accentBlueDim}
+                title="Total"
+                value={String(transactions.length)}
+                subtitle="this month"
+                colors={colors}
+              />
+            </Pressable>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Reach</Text>
+          <View style={styles.quickReachRow}>
+            <QuickAccessCard
+              icon="people"
+              label="Family Hub"
+              subtitle="Health & Meds"
+              color="#EC4899"
+              onPress={() => router.push('/family')}
               colors={colors}
             />
-            <InsightCard
-              icon="notifications"
-              iconColor={colors.warning}
-              bgColor={colors.warningDim}
-              title="Due"
-              value={String(unpaidBills)}
-              subtitle="reminders"
-              colors={colors}
-            />
-            <InsightCard
-              icon="swap-horizontal"
-              iconColor={colors.accentBlue}
-              bgColor={colors.accentBlueDim}
-              title="Total"
-              value={String(transactions.length)}
-              subtitle="this month"
+            <QuickAccessCard
+              icon="sparkles"
+              label="Life Memory"
+              subtitle="AI Patterns"
+              color="#8B5CF6"
+              onPress={() => router.push('/life-memory')}
               colors={colors}
             />
           </View>
         </Animated.View>
 
-        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Access</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
-            <QuickAccessCard icon="people" label="Family Hub" subtitle="Health & Meds" color="#EC4899" onPress={() => router.push('/family')} colors={colors} />
-            <QuickAccessCard icon="sparkles" label="Life Memory" subtitle="AI Patterns" color="#8B5CF6" onPress={() => router.push('/life-memory')} colors={colors} />
-            <QuickAccessCard icon="chatbubble-ellipses" label="Assistant" subtitle="Smart Advice" color="#3B82F6" onPress={() => router.push('/assistant')} colors={colors} />
-          </ScrollView>
-        </Animated.View>
-
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(240).duration(500) : undefined}>
           <View style={[styles.lifeInsightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.lifeInsightIconWrap, { backgroundColor: colors.accentDim }]}>
-              <Ionicons name="sparkles" size={18} color={colors.accent} />
+            <View style={[styles.lifeInsightIconWrap, { backgroundColor: colors.accentBlueDim || colors.accentDim }]}>
+              <Ionicons name="wallet" size={18} color={colors.accentBlue || colors.accent} />
             </View>
             <View style={styles.lifeInsightContent}>
               <Text style={[styles.lifeInsightTitle, { color: colors.text }]}>Spending Insight</Text>
@@ -842,13 +1076,6 @@ export default function HomeScreen() {
           )}
         </Animated.View>
 
-        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(480).duration(500) : undefined}>
-          <View style={styles.actionButtonsRow}>
-            <ActionButton icon="add-circle" label="Quick Add" color={colors.accent} onPress={() => setShowQuickAdd(true)} colors={colors} />
-            <ActionButton icon="camera" label="Scan Bill" color="#3B82F6" onPress={handleScanBill} colors={colors} />
-            <ActionButton icon="flash" label="Auto Track" color="#F59E0B" onPress={syncSmsFromDevice} colors={colors} />
-          </View>
-        </Animated.View>
       </ScrollView>
 
       <Modal visible={showScoreDetail} transparent animationType="fade">
@@ -1035,7 +1262,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   heroCard: { borderRadius: 24, padding: 24, marginBottom: 20 },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   heroLeft: { flex: 1, marginRight: 16 },
   heroLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 6 },
   heroAmount: { fontFamily: 'Inter_700Bold', fontSize: 36, marginBottom: 12 },
@@ -1090,7 +1317,8 @@ const styles = StyleSheet.create({
   insightValue: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   insightSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 10 },
   quickAccessScroll: { gap: 10, paddingBottom: 20 },
-  quickCard: { borderRadius: 18, padding: 16, borderWidth: 1, width: 130, gap: 8 },
+  quickReachRow: { flexDirection: 'row', gap: 10, paddingBottom: 20 },
+  quickCard: { flex: 1, minWidth: 0, borderRadius: 18, padding: 16, borderWidth: 1, gap: 8 },
   quickCardIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   quickCardLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   quickCardSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 11 },
@@ -1121,10 +1349,44 @@ const styles = StyleSheet.create({
   txTime: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
   txAmount: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   txDivider: { height: 1, marginHorizontal: 14 },
-  actionButtonsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 20 },
-  actionBtnWrap: { alignItems: 'center', gap: 8 },
-  actionBtnCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
-  actionBtnLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  primaryCircleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    marginTop: 4,
+  },
+  primaryCircleItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  primaryCircleFill: {
+    width: 74,
+    height: 74,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  primaryCircleInnerWhiteBorder: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderRadius: 40,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.90)',
+  },
+  primaryCircleLabel: {
+    fontFamily: 'Dmsans_500SemiBold',
+    fontSize: 11,
+    marginTop: 8,
+    textAlign: 'center',
+    width: 'auto' as const,
+  },
   seniorHeroCard: { borderRadius: 24, padding: 28, borderWidth: 1, alignItems: 'center', marginBottom: 28, gap: 8 },
   seniorHeroLabel: { fontFamily: 'Inter_500Medium', fontSize: 14 },
   seniorHeroAmount: { fontFamily: 'Inter_700Bold', fontSize: 42, letterSpacing: -1 },
@@ -1133,6 +1395,7 @@ const styles = StyleSheet.create({
   seniorBtnIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   seniorBtnLabel: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   scoreOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   scoreDetailCard: { borderRadius: 24, padding: 24, borderWidth: 1, width: '100%', maxWidth: 360 },
   scoreDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16, borderBottomWidth: 1, marginBottom: 4 },
   scoreDetailTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
@@ -1183,6 +1446,7 @@ const styles = StyleSheet.create({
   reminderAlertLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
   },
   reminderAlertTitle: {
     fontFamily: 'Inter_700Bold',
@@ -1192,6 +1456,119 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
+  },
+  reminderAlertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reminderAlertActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  reminderAlertIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  alertActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  alertActionText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+  },
+  modalOverlayCentered: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  snoozeModalCard: {
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    width: '100%',
+    maxWidth: 360,
+  },
+  snoozeModalTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  snoozeModalSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snoozeOptions: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  snoozeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 14,
+  },
+  snoozeIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snoozeOptionLabel: {
+    flex: 1,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+  },
+  snoozeOptionDesc: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  snoozeCancelBtn: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  snoozeCancelText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
   },
   mustBanner: {
     alignSelf: 'stretch',
@@ -1207,5 +1584,51 @@ const styles = StyleSheet.create({
   mustBannerText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
+  },
+  confirmModalCard: {
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  confirmIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  confirmSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
 });

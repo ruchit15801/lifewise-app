@@ -1,268 +1,82 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Payment Reminder - LifeWise</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LifeWise Reminder</title>
     <style>
-      :root {
-        color-scheme: light dark;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          sans-serif;
-        background: radial-gradient(circle at top, #0f172a, #020617 55%);
-        color: #e5e7eb;
-      }
-      .outer {
-        width: 100%;
-        padding: 32px 12px;
-      }
-      .container {
-        margin: 0 auto;
-        max-width: 520px;
-        background: linear-gradient(145deg, #020617 0%, #020617 45%, #0b1120 100%);
-        border-radius: 28px;
-        border: 1px solid rgba(148, 163, 184, 0.36);
-        box-shadow:
-          0 22px 60px rgba(15, 23, 42, 0.9),
-          0 0 0 1px rgba(15, 23, 42, 0.3);
-        overflow: hidden;
-      }
-      .header {
-        position: relative;
-        padding: 24px 24px 10px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.28);
-        background: radial-gradient(circle at top left, #22c55e33, transparent),
-          radial-gradient(circle at top right, #06b6d433, transparent);
-      }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
-        border-radius: 999px;
-        background: rgba(15, 118, 110, 0.2);
-        border: 1px solid rgba(45, 212, 191, 0.45);
-        font-size: 11px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #a5f3fc;
-      }
-      .badge-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: radial-gradient(circle, #5eead4, #22c55e);
-        box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
-      }
-      .title {
-        margin: 18px 0 4px;
-        font-size: 22px;
-        line-height: 1.25;
-        font-weight: 700;
-        letter-spacing: -0.03em;
-        color: #f9fafb;
-      }
-      .subtitle {
-        margin: 0;
-        font-size: 13px;
-        color: #9ca3af;
-      }
-      .pill-row {
-        margin-top: 18px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        font-size: 11px;
-      }
-      .pill {
-        padding: 4px 9px;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, 0.4);
-        color: #e5e7eb;
-        background: rgba(15, 23, 42, 0.7);
-      }
-      .content {
-        padding: 20px 24px 12px;
-      }
-      .card {
-        border-radius: 20px;
-        padding: 16px 16px 14px;
-        background: radial-gradient(circle at top left, #22c55e26, #0b1120);
-        border: 1px solid rgba(34, 197, 94, 0.4);
-      }
-      .card-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 10px;
-      }
-      .bill-name {
-        font-size: 15px;
-        font-weight: 600;
-        color: #e5e5e5;
-        margin: 0 0 2px;
-      }
-      .bill-meta {
-        font-size: 12px;
-        color: #a5b4fc;
-      }
-      .amount-chip {
-        padding: 7px 11px;
-        border-radius: 999px;
-        background: rgba(8, 47, 73, 0.9);
-        border: 1px solid rgba(56, 189, 248, 0.7);
-        font-size: 13px;
-        font-weight: 600;
-        color: #e0f2fe;
-      }
-      .detail-row {
-        margin-top: 8px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        font-size: 12px;
-        color: #9ca3af;
-      }
-      .detail-label {
-        color: #6b7280;
-        margin-right: 4px;
-      }
-      .cta-area {
-        margin-top: 20px;
-        text-align: center;
-      }
-      .primary-btn {
-        display: inline-block;
-        padding: 11px 22px;
-        border-radius: 999px;
-        background: linear-gradient(135deg, #22c55e, #06b6d4);
-        color: #0b1120 !important;
-        font-size: 14px;
-        font-weight: 600;
-        text-decoration: none;
-        box-shadow:
-          0 10px 30px rgba(34, 197, 94, 0.4),
-          0 0 0 1px rgba(15, 23, 42, 0.85);
-      }
-      .primary-btn span {
-        vertical-align: middle;
-      }
-      .primary-btn-chevron {
-        display: inline-block;
-        margin-left: 6px;
-        transform: translateY(1px);
-      }
-      .footer {
-        padding: 0 24px 20px;
-        font-size: 11px;
-        color: #6b7280;
-      }
-      .footer-divider {
-        height: 1px;
-        background: radial-gradient(circle, rgba(148, 163, 184, 0.75), transparent);
-        margin: 6px 0 10px;
-        opacity: 0.6;
-      }
-      .footer-brand {
-        font-weight: 600;
-        color: #9ca3af;
-      }
-      .fade-in {
-        animation: fadeInUp 0.55s ease-out both;
-      }
-      @keyframes fadeInUp {
-        from {
-          opacity: 0;
-          transform: translate3d(0, 10px, 0);
-        }
-        to {
-          opacity: 1;
-          transform: translate3d(0, 0, 0);
-        }
-      }
-      @media (max-width: 520px) {
-        .container {
-          border-radius: 20px;
-        }
-        .header,
-        .content,
-        .footer {
-          padding-left: 18px;
-          padding-right: 18px;
-        }
-      }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #F8FAFC; color: #1E293B; }
+        .wrapper { width: 100%; table-layout: fixed; background-color: #F8FAFC; padding-bottom: 40px; }
+        .main { background-color: #FFFFFF; margin: 0 auto; width: 100%; max-width: 600px; border-spacing: 0; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .header { background: linear-gradient(135deg, #4F46E5 0%, #06B6D4 100%); padding: 40px 30px; text-align: center; color: #FFFFFF; }
+        .content { padding: 40px 30px; }
+        .bill-card { background-color: #F1F5F9; border-radius: 20px; padding: 30px; margin-bottom: 30px; border: 1px solid #E2E8F0; }
+        .bill-name { font-size: 20px; font-weight: 800; color: #0F172A; margin: 0 0 10px 0; }
+        .bill-amount { font-size: 32px; font-weight: 800; color: #4F46E5; margin: 0 0 20px 0; }
+        .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #E2E8F0; }
+        .detail-row:last-child { border-bottom: none; }
+        .label { color: #64748B; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .value { color: #1E293B; font-size: 15px; font-weight: 700; }
+        .btn-container { text-align: center; margin-top: 10px; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); color: #FFFFFF !important; text-decoration: none; padding: 16px 40px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }
+        .footer { padding: 30px; text-align: center; color: #94A3B8; font-size: 12px; line-height: 1.6; }
+        .chip { display: inline-block; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 700; background-color: #EEF2FF; color: #4F46E5; margin-top: 10px; }
     </style>
-  </head>
-  <body>
-    <div class="outer">
-      <div class="container fade-in">
-        <div class="header">
-          <div class="badge">
-            <span class="badge-dot"></span>
-            <span>Smart payment reminder</span>
-          </div>
-          <h1 class="title">Hi {{USER_NAME}}, don't miss this payment</h1>
-          <p class="subtitle">
-            LifeWise is watching your upcoming bills and subscriptions so you never
-            pay late fees again.
-          </p>
-          <div class="pill-row">
-            <div class="pill">Reminder type: {{REMINDER_TYPE}}</div>
-            <div class="pill">Due in {{DAYS_LEFT}} day{{DAYS_LEFT_PLURAL}}</div>
-          </div>
-        </div>
+</head>
+<body>
+    <div class="wrapper">
+        <div style="height: 40px;"></div>
+        <table class="main" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="header">
+                    <img src="https://lifewise.app/assets/logo.png" alt="LifeWise" width="80" style="margin-bottom: 15px; border-radius: 20px;">
+                    <h1 style="margin: 0; font-size: 28px; font-weight: 800;">Hi {{USER_NAME}},</h1>
+                    <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">You have an upcoming <strong>{{REMINDER_TYPE}}</strong> payment.</p>
+                </td>
+            </tr>
+            <tr>
+                <td class="content">
+                    <div style="text-align: center; margin-bottom: 25px;">
+                        <span class="chip">DUE IN {{DAYS_LEFT}} DAY{{DAYS_LEFT_PLURAL}}</span>
+                    </div>
+                    
+                    <div class="bill-card">
+                        <p class="bill-name">{{BILL_NAME}}</p>
+                        <p class="bill-amount">{{CURRENCY}}{{AMOUNT}}</p>
+                        
+                        <div class="detail-row">
+                            <span class="label">Due Date</span>
+                            <span class="value">{{DUE_DATE}}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Category</span>
+                            <span class="value" style="text-transform: capitalize;">{{CATEGORY}}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Status</span>
+                            <span class="value" style="text-transform: capitalize;">{{STATUS}}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Schedule</span>
+                            <span class="value">{{REMINDER_SCHEDULE}}</span>
+                        </div>
+                    </div>
 
-        <div class="content">
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <p class="bill-name">{{BILL_NAME}}</p>
-                <div class="bill-meta">
-                  Due on {{DUE_DATE}} &nbsp;•&nbsp; Category: {{CATEGORY}}
-                </div>
-              </div>
-              <div class="amount-chip">
-                {{CURRENCY}} {{AMOUNT}}
-              </div>
-            </div>
-            <div class="detail-row">
-              <div>
-                <span class="detail-label">Status:</span>
-                <span>{{STATUS}}</span>
-              </div>
-              <div>
-                <span class="detail-label">Reminders:</span>
-                <span>{{REMINDER_SCHEDULE}}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="cta-area">
-            <a href="{{APP_URL}}" class="primary-btn">
-              <span>Open LifeWise</span>
-              <span class="primary-btn-chevron">➜</span>
-            </a>
-          </div>
-        </div>
-
-        <div class="footer">
-          <div class="footer-divider"></div>
-          <div>
-            <span class="footer-brand">LifeWise</span> · Smart UPI expense & bill
-            intelligence<br />
-            You’re receiving this because reminders are enabled in your LifeWise
-            app.
-          </div>
-        </div>
-      </div>
+                    <div class="btn-container">
+                        <a href="{{APP_URL}}" class="btn">Open LifeWise App</a>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td class="footer">
+                    <p style="margin-bottom: 10px;">Safe, secure, and intelligent life management with LifeWise.</p>
+                    <p>If the button doesn't work, copy this link:<br>
+                    <a href="{{APP_URL}}" style="color: #4F46E5; text-decoration: underline;">{{APP_URL}}</a></p>
+                    <div style="height: 20px; border-top: 1px solid #E2E8F0; margin-top: 20px;"></div>
+                    <p>Manage your notifications from the Settings tab in your LifeWise mobile app.</p>
+                </td>
+            </tr>
+        </table>
     </div>
-  </body>
+</body>
 </html>
-
