@@ -1303,9 +1303,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req as any).userId;
 
       if (action === 'snooze') {
-        const snoozeDays = Number(days) || 1;
+        const snoozeMinutes = Number(req.body.minutes);
         const snoozedUntil = new Date();
-        snoozedUntil.setDate(snoozedUntil.getDate() + snoozeDays);
+        
+        if (snoozeMinutes > 0) {
+          snoozedUntil.setMinutes(snoozedUntil.getMinutes() + snoozeMinutes);
+        } else {
+          const snoozeDays = Number(days) || 1;
+          snoozedUntil.setDate(snoozedUntil.getDate() + snoozeDays);
+        }
         
         const result = await bills.updateOne(
           { _id: toId(id), userId },

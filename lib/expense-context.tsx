@@ -42,7 +42,7 @@ interface ExpenseContextValue {
   addReminder: (bill: Omit<Bill, 'id'>) => Promise<Bill | null>;
   editReminder: (bill: Bill) => void;
   deleteReminder: (billId: string) => void;
-  snoozeReminder: (billId: string, days: number) => void;
+  snoozeReminder: (billId: string, days: number, minutes?: number) => void;
   cancelReminder: (billId: string) => void;
   uncancelReminder: (billId: string) => void;
   reminderSettings: ReminderSettings;
@@ -285,20 +285,25 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
-  const snoozeReminder = useCallback(async (billId: string, days: number) => {
+  const snoozeReminder = useCallback(async (billId: string, days: number, minutes?: number) => {
     if (!token) return;
     const oldBills = [...bills];
     
-    // Optimistic Update
-    const snoozeDiff = days * 24 * 60 * 60 * 1000;
-    const snoozedUntil = new Date(Date.now() + snoozeDiff).toISOString();
-    setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, status: 'snoozed', snoozedUntil, isPaid: false } : b)));
+    // Optimistic Update: Remove from dashboard immediately
+    setBills((prev) => prev.map((b) => {
+      if (b.id === billId) {
+        const snoozeMs = (minutes || days * 24 * 60) * 60 * 1000;
+        const snoozedUntil = new Date(Date.now() + snoozeMs).toISOString();
+        return { ...b, status: 'snoozed', snoozedUntil, isPaid: false };
+      }
+      return b;
+    }));
 
     try {
       const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'snooze', days }),
+        body: JSON.stringify({ action: 'snooze', days, minutes }),
       });
       if (!res.ok) {
         setBills(oldBills);

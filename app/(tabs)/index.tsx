@@ -19,6 +19,7 @@ import { getApiUrl, apiRequest } from '@/lib/query-client';
 import Animated, {
   FadeInDown,
   FadeInRight,
+  FadeOutUp,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -27,6 +28,8 @@ import Animated, {
   withSequence,
   withDelay,
 } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { TouchableOpacity } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useExpenses } from '@/lib/expense-context';
@@ -194,120 +197,6 @@ function MustSmsSyncBanner({
   );
 }
 
-function CancelModal({
-  visible,
-  onClose,
-  onConfirm,
-  colors,
-  billName,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  colors: any;
-  billName: string;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlayCentered} onPress={onClose}>
-        <Animated.View 
-          entering={Platform.OS !== 'web' ? FadeInDown.springify().damping(15) : undefined}
-          style={[styles.confirmModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <View style={[styles.confirmIconWrap, { backgroundColor: colors.dangerDim }]}>
-            <Ionicons name="alert-circle" size={32} color={colors.danger} />
-          </View>
-          <Text style={[styles.confirmTitle, { color: colors.text }]}>Cancel Reminder?</Text>
-          <Text style={[styles.confirmSubtitle, { color: colors.textSecondary }]}>
-            Are you sure you want to stop tracking "{billName}"? You can always enable it again later from Reminders.
-          </Text>
-          
-          <View style={styles.confirmActions}>
-            <Pressable onPress={onClose} style={[styles.confirmBtn, { borderColor: colors.border }]}>
-              <Text style={[styles.confirmBtnText, { color: colors.textSecondary }]}>Keep it</Text>
-            </Pressable>
-            <Pressable 
-              onPress={onConfirm} 
-              style={[styles.confirmBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}
-            >
-              <Text style={[styles.confirmBtnText, { color: '#FFFFFF' }]}>Stop Tracking</Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  );
-}
-
-function SnoozeModal({
-  visible,
-  onClose,
-  onSnooze,
-  colors,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSnooze: (days: number) => void;
-  colors: any;
-}) {
-  const options = [
-    { label: '1 Day', days: 1, icon: 'today-outline', desc: 'Remind me tomorrow' },
-    { label: '3 Days', days: 3, icon: 'calendar-outline', desc: 'Remind me later this week' },
-    { label: '1 Week', days: 7, icon: 'time-outline', desc: 'Remind me next week' },
-  ];
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlayCentered} onPress={onClose}>
-        <Animated.View 
-          entering={Platform.OS !== 'web' ? FadeInDown.springify().damping(15) : undefined}
-          style={[styles.snoozeModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <View style={styles.modalHeader}>
-            <Text style={[styles.snoozeModalTitle, { color: colors.text }]}>Snooze Reminder</Text>
-            <Pressable onPress={onClose} style={[styles.modalCloseBtn, { backgroundColor: colors.surfaceGlow }]}>
-              <Ionicons name="close" size={20} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-          
-          <Text style={[styles.snoozeModalSubtitle, { color: colors.textSecondary }]}>
-            When should we remind you again?
-          </Text>
-          
-          <View style={styles.snoozeOptions}>
-            {options.map((opt) => (
-              <Pressable
-                key={opt.days}
-                onPress={() => onSnooze(opt.days)}
-                style={({ pressed }) => [
-                  styles.snoozeOption,
-                  { 
-                    backgroundColor: colors.surfaceGlow,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.7 : 1 
-                  }
-                ]}
-              >
-                <View style={[styles.snoozeIconWrap, { backgroundColor: colors.warningDim }]}>
-                  <Ionicons name={opt.icon as any} size={20} color={colors.warning} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.snoozeOptionLabel, { color: colors.text }]}>{opt.label}</Text>
-                  <Text style={[styles.snoozeOptionDesc, { color: colors.textTertiary }]}>{opt.desc}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
-            ))}
-          </View>
-
-          <Pressable onPress={onClose} style={[styles.snoozeCancelBtn, { borderColor: colors.border }]}>
-            <Text style={[styles.snoozeCancelText, { color: colors.textSecondary }]}>Dismiss</Text>
-          </Pressable>
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  );
-}
 
 function TopReminderAlert({
   colors,
@@ -326,7 +215,7 @@ function TopReminderAlert({
   const sorted = [...upcomingBills].sort(
     (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
   );
-  
+
   // Only show the single most urgent one
   const next = sorted[0];
   const due = new Date(next.dueDate);
@@ -352,7 +241,7 @@ function TopReminderAlert({
   });
 
   return (
-    <Animated.View 
+    <Animated.View
       entering={Platform.OS !== 'web' ? FadeInDown.duration(400) : undefined}
       style={[
         styles.reminderAlert,
@@ -384,26 +273,26 @@ function TopReminderAlert({
           </View>
         </View>
         <View style={styles.reminderAlertActions}>
-          <Pressable 
+          <TouchableOpacity
             onPress={() => onSnooze(next.id)}
-            style={({ pressed }) => [
-              styles.alertActionBtn, 
-              { opacity: pressed ? 0.7 : 1, backgroundColor: colors.warning, borderColor: colors.warning }
+            style={[
+              styles.alertActionBtn,
+              { backgroundColor: colors.warning, borderColor: colors.warning }
             ]}
           >
             <Ionicons name="notifications-off-outline" size={14} color="#FFFFFF" />
             <Text style={[styles.alertActionText, { color: '#FFFFFF' }]}>Snooze</Text>
-          </Pressable>
-          <Pressable 
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={() => onCancel(next.id)}
-            style={({ pressed }) => [
-              styles.alertActionBtn, 
-              { opacity: pressed ? 0.7 : 1, backgroundColor: colors.card, borderColor: colors.border }
+            style={[
+              styles.alertActionBtn,
+              { backgroundColor: colors.card, borderColor: colors.border }
             ]}
           >
             <Ionicons name="close-circle-outline" size={14} color={colors.textTertiary} />
             <Text style={[styles.alertActionText, { color: colors.textTertiary }]}>Cancel</Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       </View>
     </Animated.View>
@@ -639,8 +528,9 @@ export default function HomeScreen() {
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [snoozeBillId, setSnoozeBillId] = useState<string | null>(null);
-  const [cancelBillId, setCancelBillId] = useState<string | null>(null);
+  const [isSnoozeModalVisible, setIsSnoozeModalVisible] = useState(false);
+  const [isCancelModalVisible, setIsCancelModalVisible] = useState(false);
+  const [activeReminderId, setActiveReminderId] = useState<string | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
@@ -715,7 +605,7 @@ export default function HomeScreen() {
   );
 
   // Life Score from backend (high precision)
-  const officialLifeScore = lifeScore?.score ?? 85; 
+  const officialLifeScore = lifeScore?.score ?? 85;
   const displayScore = lifeScore != null ? lifeScore.score : budgetHealthScore;
 
   // If everything is effectively zero, keep score at 0 to avoid confusion.
@@ -760,30 +650,13 @@ export default function HomeScreen() {
           <TopReminderAlert
             colors={colors}
             upcomingBills={upcomingBills}
-            onSnooze={setSnoozeBillId}
-            onCancel={setCancelBillId}
-          />
-          <SnoozeModal
-            visible={!!snoozeBillId}
-            colors={colors}
-            onClose={() => setSnoozeBillId(null)}
-            onSnooze={(days) => {
-              if (snoozeBillId) {
-                snoozeReminder(snoozeBillId, days);
-                setSnoozeBillId(null);
-              }
+            onSnooze={(id) => {
+              setActiveReminderId(id);
+              setIsSnoozeModalVisible(true);
             }}
-          />
-          <CancelModal
-            visible={!!cancelBillId}
-            colors={colors}
-            billName={bills.find(b => b.id === cancelBillId)?.name || 'this reminder'}
-            onClose={() => setCancelBillId(null)}
-            onConfirm={() => {
-              if (cancelBillId) {
-                cancelReminder(cancelBillId);
-                setCancelBillId(null);
-              }
+            onCancel={(id) => {
+              setActiveReminderId(id);
+              setIsCancelModalVisible(true);
             }}
           />
           <MustSmsSyncBanner
@@ -923,30 +796,13 @@ export default function HomeScreen() {
         <TopReminderAlert
           colors={colors}
           upcomingBills={upcomingBills}
-          onSnooze={setSnoozeBillId}
-          onCancel={setCancelBillId}
-        />
-        <SnoozeModal
-          visible={!!snoozeBillId}
-          colors={colors}
-          onClose={() => setSnoozeBillId(null)}
-          onSnooze={(days) => {
-            if (snoozeBillId) {
-              snoozeReminder(snoozeBillId, days);
-              setSnoozeBillId(null);
-            }
+          onSnooze={(id) => {
+            setActiveReminderId(id);
+            setIsSnoozeModalVisible(true);
           }}
-        />
-        <CancelModal
-          visible={!!cancelBillId}
-          colors={colors}
-          billName={bills.find(b => b.id === cancelBillId)?.name || 'this reminder'}
-          onClose={() => setCancelBillId(null)}
-          onConfirm={() => {
-            if (cancelBillId) {
-              cancelReminder(cancelBillId);
-              setCancelBillId(null);
-            }
+          onCancel={(id) => {
+            setActiveReminderId(id);
+            setIsCancelModalVisible(true);
           }}
         />
         <MustSmsSyncBanner
