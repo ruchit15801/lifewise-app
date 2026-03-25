@@ -182,11 +182,26 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       }
 
       setSmsSyncStatus('Reading SMS inbox...');
-      const result = await performSmsSync(token);
+      console.log('[SMS-Debug] Reading SMS from device...');
+      const readResult = await readSmsFromDeviceWithMeta(200);
+      console.log('[SMS-Debug] Read result:', { 
+        moduleAvailable: readResult.moduleAvailable, 
+        error: readResult.error, 
+        messagesCount: readResult.messages.length 
+      });
+
+      if (!readResult.moduleAvailable) {
+        setSmsSyncStatus('SMS Sync Not Available: Requires a Development Build (APK). Expo Go is not supported.');
+        setIsSyncingSms(false);
+        return;
+      }
       
-      if (result.success) {
-        setLastSmsSyncCount(result.synced);
-        setSmsSyncStatus(`Sync complete. ${result.synced} transactions synced, ${result.skipped ?? 0} duplicates skipped.`);
+      const syncResult = await performSmsSync(token);
+      console.log('[SMS-Debug] Sync result:', syncResult);
+      
+      if (syncResult.success) {
+        setLastSmsSyncCount(syncResult.synced);
+        setSmsSyncStatus(`Sync complete. ${syncResult.synced} transactions synced, ${syncResult.skipped ?? 0} duplicates skipped.`);
         await loadData();
       } else {
         setSmsSyncStatus('SMS sync failed. Please check permissions.');
