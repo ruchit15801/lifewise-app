@@ -26,6 +26,7 @@ import {
   registerForPushNotifications,
   addPushTokenListener,
 } from "@/lib/notifications";
+import { registerSmsSyncTask } from "@/lib/sms-sync-task";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -148,6 +149,10 @@ function AuthGate() {
     if (!isAuthenticated || !token) return;
     registerForPushNotifications(token).catch((e) => {
       console.log("[Push] Registration error", e);
+    });
+
+    registerSmsSyncTask().catch((e) => {
+      console.log("[BackgroundSync] Registration error", e);
     });
 
     let sub: { remove: () => void } | null = null;

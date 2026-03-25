@@ -900,21 +900,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ synced: 0, message: 'No transactions to sync' });
       }
       let synced = 0;
+      let skipped = 0;
       for (const t of txs) {
+        const merchant = String(t.merchant || t.sender || 'Unknown');
+        const amount = Number(t.amount) || 0;
+        const date = t.date ? new Date(t.date).toISOString() : new Date().toISOString();
+        const isDebit = t.isDebit !== false;
+
+        // Duplicate Check: Same user, merchant, amount, date, and type
+        const existing = await transactions.findOne({
+          userId: (req as any).userId,
+          merchant,
+          amount,
+          date,
+          isDebit,
+        });
+
+        if (existing) {
+          skipped++;
+          continue;
+        }
+
         const doc = {
           userId: (req as any).userId,
-          merchant: String(t.merchant || t.sender || 'Unknown'),
-          amount: Number(t.amount) || 0,
+          merchant,
+          amount,
+          date,
+          isDebit,
           category: (t.category as CategoryType) || 'others',
-          date: t.date ? new Date(t.date).toISOString() : new Date().toISOString(),
           upiId: t.upiId || '',
-          isDebit: t.isDebit !== false,
           description: t.description || String(t.message || ''),
         };
         await transactions.insertOne(doc);
         synced++;
       }
-      return res.json({ synced, message: `${synced} transaction(s) synced` });
+      return res.json({ synced, skipped, message: `${synced} synced, ${skipped} duplicates skipped` });
     } catch (err) {
       console.error('Sync from SMS error:', err);
       return res.status(500).json({ message: 'Server error.' });
@@ -1683,7 +1703,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If we have a bill reminder but no transaction in 45 days
       billList.forEach((bill: any) => {
         if (bill.reminderType === 'subscription' && bill.status !== 'cancelled') {
-          const txMatch = txList.find((t: any) => t.merchant.toLowerCase().includes(bill.name.toLowerCase()));
+          const merchantLower = bill.name.toLowerCase();
+          const txMatch = txList.find((t: any) => 
+            t.merchant.toLowerCase().includes(merchantLower) ||
+            merchantLower.includes(t.merchant.toLowerCase())
+          );
+          
           if (txMatch) {
             const lastTxDate = new Date(txMatch.date);
             const daysSinceLastPay = (now.getTime() - lastTxDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -1698,6 +1723,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 transactionCount: 0,
                 suggestion: `You're paying for ${bill.name} but haven't used it for 45+ days. Consider cancelling.`,
               });
+            }
+          }
+        }
+      });
+
+      // 3. Duplicate / Double Charge Detection
+      Object.entries(merchantFreq).forEach(([merchant, data]) => {
+        if (data.amounts.length >= 2) {
+          // Check for identical amounts on the same day or within 24 hours
+          for (let i = 0; i < txList.length - 1; i++) {
+            const t1 = txList[i];
+            const t2 = txList[i+1];
+            if (t1.merchant === merchant && t2.merchant === merchant && t1.amount === t2.amount) {
+              const d1 = new Date(t1.date);
+              const d2 = new Date(t2.date);
+              const diffHr = Math.abs(d1.getTime() - d2.getTime()) / (1000 * 60 * 60);
+              if (diffHr < 24) {
+                leaks.push({
+                  id: new ObjectId().toString(),
+                  merchant: `${merchant} (Double Charge?)`,
+                  category: t1.category,
+                  frequency: 'Critical',
+                  monthlyEstimate: t1.amount,
+                  yearlyPrediction: t1.amount,
+                  transactionCount: 2,
+                  suggestion: `⚠️ Potential double charge detected on ${new Date(t1.date).toLocaleDateString()}. Two identical payments made within 24 hours.`,
+                });
+                break; // Only report once per merchant
+              }
             }
           }
         }

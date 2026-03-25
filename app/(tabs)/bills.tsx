@@ -254,6 +254,7 @@ function AddEditModal({
   const [repeatType, setRepeatType] = useState<RepeatType>('monthly');
   const [category, setCategory] = useState<CategoryType>('bills');
   const [selectedIcon, setSelectedIcon] = useState('flash');
+  const [modalError, setModalError] = useState('');
   const [dueDate, setDueDate] = useState<Date>(() => {
     const d = new Date();
     d.setHours(9, 0, 0, 0);
@@ -287,6 +288,7 @@ function AddEditModal({
 
   React.useEffect(() => {
     if (editBill) {
+      setModalError('');
       setName(editBill.name);
       setAmount(editBill.amount.toString());
       setReminderType(editBill.reminderType);
@@ -296,6 +298,7 @@ function AddEditModal({
       const d = new Date(editBill.dueDate);
       if (!Number.isNaN(d.getTime())) setDueDate(d);
     } else {
+      setModalError('');
       setName('');
       setAmount('');
       setReminderType('custom');
@@ -317,15 +320,25 @@ function AddEditModal({
   }, [category]);
 
   const handleSave = () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setModalError('Please enter a name for the reminder');
+      return;
+    }
 
     const parsedAmount = amount.trim() ? parseFloat(amount) : 0;
-    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) return;
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      setModalError('Please enter a valid amount');
+      return;
+    }
 
     // Some reminder intents don't require an amount (health/habits/travel/tasks/events).
     const derivedIntent = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
     const intentPolicy = getIntentPolicy(derivedIntent);
-    if (intentPolicy.shouldHaveAmount && parsedAmount <= 0) return;
+    if (intentPolicy.shouldHaveAmount && parsedAmount <= 0) {
+      setModalError(`Please enter an amount for this ${derivedIntent}`);
+      return;
+    }
+    setModalError('');
 
     if (editBill) {
       onSave({
@@ -382,6 +395,12 @@ function AddEditModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
+            {!!modalError && (
+              <View style={[styles.errorBox, { backgroundColor: colors.dangerDim }]}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={[styles.errorText, { color: colors.danger }]}>{modalError}</Text>
+              </View>
+            )}
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
@@ -1024,6 +1043,7 @@ const styles = StyleSheet.create({
   overviewStat: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   overviewDivider: {
     width: 1,
@@ -1034,7 +1054,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.8,
-    marginBottom: 8,
   },
   overviewAmount: {
     fontFamily: 'Inter_700Bold',
@@ -1244,6 +1263,20 @@ const styles = StyleSheet.create({
   modalScroll: {
     paddingHorizontal: 20,
     paddingBottom: 16,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    flex: 1,
   },
   fieldLabel: {
     fontFamily: 'Inter_600SemiBold',

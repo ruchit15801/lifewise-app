@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import Animated, { FadeInDown, ZoomIn, FadeInLeft } from 'react-native-reanimated';
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
@@ -79,13 +80,13 @@ export default function RegisterScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.headerSection}>
-          <View style={styles.logoCircle}>
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(800).springify() : undefined} style={styles.headerSection}>
+          <Animated.View entering={Platform.OS !== 'web' ? ZoomIn.delay(300).duration(600) : undefined} style={styles.logoCircle}>
             <Image source={require('../../logo.png')} style={styles.logoImage} resizeMode="contain" />
-          </View>
+          </Animated.View>
           <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Start tracking your expenses smarter</Text>
-        </View>
+        </Animated.View>
 
         {!!error && (
           <View style={[styles.errorBox, { backgroundColor: colors.dangerDim }]}>
@@ -94,54 +95,60 @@ export default function RegisterScreen() {
           </View>
         )}
 
-        <View style={styles.formSection}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
-          <View style={[styles.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-            <Ionicons name="person-outline" size={20} color={colors.textTertiary} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={name}
-              onChangeText={setName}
-              placeholder="Your name"
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="words"
-              testID="register-name"
-            />
-          </View>
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(150).duration(600) : undefined} style={styles.formSection}>
+          <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(600) : undefined}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
+            <View style={[styles.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+              <Ionicons name="person-outline" size={20} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={name}
+                onChangeText={setName}
+                placeholder="Your name"
+                placeholderTextColor={colors.textTertiary}
+                autoCapitalize="words"
+                testID="register-name"
+              />
+            </View>
+          </Animated.View>
 
-          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>Email</Text>
-          <View style={[styles.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-            <Ionicons name="mail-outline" size={20} color={colors.textTertiary} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="your@email.com"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-              testID="register-email"
-            />
-          </View>
+          <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(250).duration(600) : undefined}>
+            <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>Email</Text>
+            <View style={[styles.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+              <Ionicons name="mail-outline" size={20} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="your@email.com"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                testID="register-email"
+              />
+            </View>
+          </Animated.View>
 
-          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>Password</Text>
-          <View style={[styles.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-            <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Min 8 characters, strong"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry={!showPassword}
-              testID="register-password"
-              onFocus={() => setShowPasswordHints(true)}
-            />
-            <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
-              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
-            </Pressable>
-          </View>
+          <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(300).duration(600) : undefined}>
+            <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>Password</Text>
+            <View style={[styles.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+              <Ionicons name="lock-closed-outline" size={20} color={colors.textTertiary} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Min 8 characters, strong"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry={!showPassword}
+                testID="register-password"
+                onFocus={() => setShowPasswordHints(true)}
+              />
+              <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textTertiary} />
+              </Pressable>
+            </View>
+          </Animated.View>
 
           {showPasswordHints && (
             <View style={styles.passwordHints}>
@@ -173,42 +180,46 @@ export default function RegisterScreen() {
             </View>
           )}
 
-          <Pressable
-            onPress={handleRegister}
-            disabled={isSubmitting}
-            style={styles.submitBtnWrap}
-            testID="register-submit"
-          >
-            <LinearGradient
-              colors={[...colors.buttonGradient] as [string, string]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.submitBtn}
+          <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(350).duration(600) : undefined}>
+            <Pressable
+              onPress={handleRegister}
+              disabled={isSubmitting}
+              style={styles.submitBtnWrap}
+              testID="register-submit"
             >
-              {isSubmitting ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Create Account</Text>
-              )}
-            </LinearGradient>
-          </Pressable>
-        </View>
+              <LinearGradient
+                colors={[...colors.buttonGradient] as [string, string]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.submitBtn}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.submitBtnText}>Create Account</Text>
+                )}
+              </LinearGradient>
+            </Pressable>
+          </Animated.View>
+        </Animated.View>
 
-        <View style={styles.dividerRow}>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.dividerText, { color: colors.textTertiary }]}>OR</Text>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-        </View>
+        <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(600) : undefined}>
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.textTertiary }]}>OR</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
 
-        <View style={styles.socialRow}>
-          <Pressable
-            onPress={handleGoogleSignup}
-            style={[styles.googleBtn, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}
-          >
-            <Ionicons name="logo-google" size={24} color="#4285F4" />
-            <Text style={[styles.googleBtnText, { color: colors.text }]}>Continue with Google</Text>
-          </Pressable>
-        </View>
+          <View style={styles.socialRow}>
+            <Pressable
+              onPress={handleGoogleSignup}
+              style={[styles.googleBtn, { backgroundColor: '#FFFFFF', borderColor: colors.border }]}
+            >
+              <Ionicons name="logo-google" size={24} color="#4285F4" />
+              <Text style={[styles.googleBtnText, { color: colors.text }]}>Continue with Google</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
 
         <View style={styles.footerRow}>
           <Text style={[styles.footerText, { color: colors.textSecondary }]}>Already have an account?</Text>

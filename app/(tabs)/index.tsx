@@ -194,6 +194,121 @@ function MustSmsSyncBanner({
   );
 }
 
+function CancelModal({
+  visible,
+  onClose,
+  onConfirm,
+  colors,
+  billName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  colors: any;
+  billName: string;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlayCentered} onPress={onClose}>
+        <Animated.View 
+          entering={Platform.OS !== 'web' ? FadeInDown.springify().damping(15) : undefined}
+          style={[styles.confirmModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <View style={[styles.confirmIconWrap, { backgroundColor: colors.dangerDim }]}>
+            <Ionicons name="alert-circle" size={32} color={colors.danger} />
+          </View>
+          <Text style={[styles.confirmTitle, { color: colors.text }]}>Cancel Reminder?</Text>
+          <Text style={[styles.confirmSubtitle, { color: colors.textSecondary }]}>
+            Are you sure you want to stop tracking "{billName}"? You can always enable it again later from Reminders.
+          </Text>
+          
+          <View style={styles.confirmActions}>
+            <Pressable onPress={onClose} style={[styles.confirmBtn, { borderColor: colors.border }]}>
+              <Text style={[styles.confirmBtnText, { color: colors.textSecondary }]}>Keep it</Text>
+            </Pressable>
+            <Pressable 
+              onPress={onConfirm} 
+              style={[styles.confirmBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}
+            >
+              <Text style={[styles.confirmBtnText, { color: '#FFFFFF' }]}>Stop Tracking</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SnoozeModal({
+  visible,
+  onClose,
+  onSnooze,
+  colors,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSnooze: (days: number) => void;
+  colors: any;
+}) {
+  const options = [
+    { label: '1 Day', days: 1, icon: 'today-outline', desc: 'Remind me tomorrow' },
+    { label: '3 Days', days: 3, icon: 'calendar-outline', desc: 'Remind me later this week' },
+    { label: '1 Week', days: 7, icon: 'time-outline', desc: 'Remind me next week' },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlayCentered} onPress={onClose}>
+        <Animated.View 
+          entering={Platform.OS !== 'web' ? FadeInDown.springify().damping(15) : undefined}
+          style={[styles.snoozeModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={[styles.snoozeModalTitle, { color: colors.text }]}>Snooze Reminder</Text>
+            <Pressable onPress={onClose} style={[styles.modalCloseBtn, { backgroundColor: colors.surfaceGlow }]}>
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+          
+          <Text style={[styles.snoozeModalSubtitle, { color: colors.textSecondary }]}>
+            When should we remind you again?
+          </Text>
+          
+          <View style={styles.snoozeOptions}>
+            {options.map((opt) => (
+              <Pressable
+                key={opt.days}
+                onPress={() => onSnooze(opt.days)}
+                style={({ pressed }) => [
+                  styles.snoozeOption,
+                  { 
+                    backgroundColor: colors.surfaceGlow,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.7 : 1 
+                  }
+                ]}
+              >
+                <View style={[styles.snoozeIconWrap, { backgroundColor: colors.warningDim }]}>
+                  <Ionicons name={opt.icon as any} size={20} color={colors.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.snoozeOptionLabel, { color: colors.text }]}>{opt.label}</Text>
+                  <Text style={[styles.snoozeOptionDesc, { color: colors.textTertiary }]}>{opt.desc}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable onPress={onClose} style={[styles.snoozeCancelBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.snoozeCancelText, { color: colors.textSecondary }]}>Dismiss</Text>
+          </Pressable>
+        </Animated.View>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function TopReminderAlert({
   colors,
   upcomingBills,
@@ -211,6 +326,8 @@ function TopReminderAlert({
   const sorted = [...upcomingBills].sort(
     (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
   );
+  
+  // Only show the single most urgent one
   const next = sorted[0];
   const due = new Date(next.dueDate);
   const msDiff = due.setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0);
@@ -235,7 +352,8 @@ function TopReminderAlert({
   });
 
   return (
-    <View
+    <Animated.View 
+      entering={Platform.OS !== 'web' ? FadeInDown.duration(400) : undefined}
       style={[
         styles.reminderAlert,
         {
@@ -246,13 +364,14 @@ function TopReminderAlert({
     >
       <View style={styles.reminderAlertRow}>
         <View style={styles.reminderAlertLeft}>
-          <Ionicons
-            name="alert-circle"
-            size={18}
-            color={colors.warning}
-            style={{ marginRight: 8 }}
-          />
-          <View style={{ flex: 1 }}>
+          <View style={[styles.reminderAlertIconWrap, { backgroundColor: colors.warning + '20' }]}>
+            <Ionicons
+              name="alert-circle"
+              size={20}
+              color={colors.warning}
+            />
+          </View>
+          <View style={{ flex: 1, marginRight: 8 }}>
             <Text style={[styles.reminderAlertTitle, { color: colors.text }]} numberOfLines={1}>
               {label}
             </Text>
@@ -267,21 +386,27 @@ function TopReminderAlert({
         <View style={styles.reminderAlertActions}>
           <Pressable 
             onPress={() => onSnooze(next.id)}
-            style={({ pressed }) => [styles.alertActionBtn, { opacity: pressed ? 0.7 : 1, backgroundColor: colors.surfaceGlow }]}
+            style={({ pressed }) => [
+              styles.alertActionBtn, 
+              { opacity: pressed ? 0.7 : 1, backgroundColor: colors.warning, borderColor: colors.warning }
+            ]}
           >
-            <Ionicons name="notifications-off-outline" size={14} color={colors.warning} />
-            <Text style={[styles.alertActionText, { color: colors.warning }]}>Snooze</Text>
+            <Ionicons name="notifications-off-outline" size={14} color="#FFFFFF" />
+            <Text style={[styles.alertActionText, { color: '#FFFFFF' }]}>Snooze</Text>
           </Pressable>
           <Pressable 
             onPress={() => onCancel(next.id)}
-            style={({ pressed }) => [styles.alertActionBtn, { opacity: pressed ? 0.7 : 1, backgroundColor: colors.dangerDim }]}
+            style={({ pressed }) => [
+              styles.alertActionBtn, 
+              { opacity: pressed ? 0.7 : 1, backgroundColor: colors.card, borderColor: colors.border }
+            ]}
           >
-            <Ionicons name="close" size={14} color={colors.danger} />
-            <Text style={[styles.alertActionText, { color: colors.danger }]}>Cancel</Text>
+            <Ionicons name="close-circle-outline" size={14} color={colors.textTertiary} />
+            <Text style={[styles.alertActionText, { color: colors.textTertiary }]}>Cancel</Text>
           </Pressable>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -514,6 +639,8 @@ export default function HomeScreen() {
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [snoozeBillId, setSnoozeBillId] = useState<string | null>(null);
+  const [cancelBillId, setCancelBillId] = useState<string | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
@@ -599,7 +726,7 @@ export default function HomeScreen() {
   const nowTime = new Date().getTime();
   const sevenDaysFromNow = nowTime + 7 * 24 * 60 * 60 * 1000;
   const upcomingBills = bills
-    .filter((b) => !b.isPaid && b.status !== 'paid')
+    .filter((b) => !b.isPaid && !['paid', 'snoozed', 'cancelled'].includes(b.status))
     .filter((b) => {
       const due = new Date(b.dueDate).getTime();
       return due >= nowTime - 24 * 60 * 60 * 1000 && due <= sevenDaysFromNow;
@@ -630,6 +757,35 @@ export default function HomeScreen() {
           }
           contentContainerStyle={[styles.scrollContent, { paddingTop: topInset + 12, paddingBottom: tabBarInset.bottom }]}
         >
+          <TopReminderAlert
+            colors={colors}
+            upcomingBills={upcomingBills}
+            onSnooze={setSnoozeBillId}
+            onCancel={setCancelBillId}
+          />
+          <SnoozeModal
+            visible={!!snoozeBillId}
+            colors={colors}
+            onClose={() => setSnoozeBillId(null)}
+            onSnooze={(days) => {
+              if (snoozeBillId) {
+                snoozeReminder(snoozeBillId, days);
+                setSnoozeBillId(null);
+              }
+            }}
+          />
+          <CancelModal
+            visible={!!cancelBillId}
+            colors={colors}
+            billName={bills.find(b => b.id === cancelBillId)?.name || 'this reminder'}
+            onClose={() => setCancelBillId(null)}
+            onConfirm={() => {
+              if (cancelBillId) {
+                cancelReminder(cancelBillId);
+                setCancelBillId(null);
+              }
+            }}
+          />
           <MustSmsSyncBanner
             colors={colors}
             isSyncingSms={isSyncingSms || isLoading}
@@ -767,18 +923,30 @@ export default function HomeScreen() {
         <TopReminderAlert
           colors={colors}
           upcomingBills={upcomingBills}
-          onSnooze={(id) => {
-            Alert.alert('Snooze Reminder', 'Snooze for how long?', [
-              { text: '1 Day', onPress: () => snoozeReminder(id, 1) },
-              { text: '3 Days', onPress: () => snoozeReminder(id, 3) },
-              { text: 'Cancel', style: 'cancel' },
-            ]);
+          onSnooze={setSnoozeBillId}
+          onCancel={setCancelBillId}
+        />
+        <SnoozeModal
+          visible={!!snoozeBillId}
+          colors={colors}
+          onClose={() => setSnoozeBillId(null)}
+          onSnooze={(days) => {
+            if (snoozeBillId) {
+              snoozeReminder(snoozeBillId, days);
+              setSnoozeBillId(null);
+            }
           }}
-          onCancel={(id) => {
-            Alert.alert('Cancel Reminder', 'Are you sure you want to cancel this reminder?', [
-              { text: 'No', style: 'cancel' },
-              { text: 'Yes, Cancel', style: 'destructive', onPress: () => cancelReminder(id) },
-            ]);
+        />
+        <CancelModal
+          visible={!!cancelBillId}
+          colors={colors}
+          billName={bills.find(b => b.id === cancelBillId)?.name || 'this reminder'}
+          onClose={() => setCancelBillId(null)}
+          onConfirm={() => {
+            if (cancelBillId) {
+              cancelReminder(cancelBillId);
+              setCancelBillId(null);
+            }
           }}
         />
         <MustSmsSyncBanner
@@ -1371,6 +1539,7 @@ const styles = StyleSheet.create({
   seniorBtnIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   seniorBtnLabel: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   scoreOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   scoreDetailCard: { borderRadius: 24, padding: 24, borderWidth: 1, width: '100%', maxWidth: 360 },
   scoreDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16, borderBottomWidth: 1, marginBottom: 4 },
   scoreDetailTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
@@ -1421,6 +1590,7 @@ const styles = StyleSheet.create({
   reminderAlertLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
   },
   reminderAlertTitle: {
     fontFamily: 'Inter_700Bold',
@@ -1438,19 +1608,111 @@ const styles = StyleSheet.create({
   },
   reminderAlertActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
+  },
+  reminderAlertIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
   alertActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 10,
+    borderWidth: 1,
   },
   alertActionText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
+  },
+  modalOverlayCentered: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  snoozeModalCard: {
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    width: '100%',
+    maxWidth: 360,
+  },
+  snoozeModalTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  snoozeModalSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snoozeOptions: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  snoozeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 14,
+  },
+  snoozeIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snoozeOptionLabel: {
+    flex: 1,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+  },
+  snoozeOptionDesc: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  snoozeCancelBtn: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  snoozeCancelText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
   },
   mustBanner: {
     alignSelf: 'stretch',
@@ -1466,5 +1728,51 @@ const styles = StyleSheet.create({
   mustBannerText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
+  },
+  confirmModalCard: {
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  confirmIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  confirmSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
 });

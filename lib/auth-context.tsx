@@ -121,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await Promise.all([
       AsyncStorage.removeItem(STORAGE_KEYS.USER),
       AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
+      AsyncStorage.removeItem('last_sms_sync_timestamp'),
     ]);
   }, []);
 
