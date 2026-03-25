@@ -243,10 +243,14 @@ function setupErrorHandler(app: express.Application) {
   const port = parseInt(process.env.SERVER_PORT || process.env.PORT || "5001", 10);
   const tryHost = process.env.HOST || "0.0.0.0";
   function onListen() {
-    log(`LifeWise backend: http://127.0.0.1:${port}`);
-    if (tryHost === "0.0.0.0") log("  (Phone/emulator: set EXPO_PUBLIC_DOMAIN to your PC IP, e.g. 192.168.1.5:5001)");
+    log(`LifeWise backend: http://${tryHost === "0.0.0.0" ? "127.0.0.1" : tryHost}:${port}`);
+    if (tryHost === "0.0.0.0") log("  (Ready for connections on all interfaces, including your phone)");
   }
   server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      log(`Error: Port ${port} is already in use.`);
+      process.exit(1);
+    }
     if ((err.code === "ENOTSUP" || err.code === "EAFNOSUPPORT") && tryHost === "0.0.0.0") {
       log("Binding to 0.0.0.0 not supported, using 127.0.0.1");
       server.listen(port, "127.0.0.1", onListen);

@@ -35,6 +35,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
 import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
+import CategoryIcon from '@/components/CategoryIcon';
 import {
   CATEGORIES,
   getTodaySpending,
@@ -100,12 +101,13 @@ function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors 
 }
 
 function CategoryPill({ category, total, index, colors, formatAmount }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[category];
+  const safeCat = (category || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInRight.delay(index * 80).springify() : undefined}>
       <View style={[styles.categoryPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={[styles.catIconWrap, { backgroundColor: cat.color + '15' }]}>
-          <Ionicons name={cat.icon as any} size={16} color={cat.color} />
+          <CategoryIcon category={category} size={16} />
         </View>
         <View style={styles.catTextWrap}>
           <Text style={[styles.categoryPillLabel, { color: colors.textSecondary }]}>{cat.label}</Text>
@@ -117,11 +119,12 @@ function CategoryPill({ category, total, index, colors, formatAmount }: { catego
 }
 
 function TransactionRow({ merchant, amount, category, date, colors, formatAmount }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[category];
+  const safeCat = (category || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <View style={styles.txRow}>
       <View style={[styles.txIcon, { backgroundColor: cat.color + '12' }]}>
-        <Ionicons name={cat.icon as any} size={18} color={cat.color} />
+        <CategoryIcon category={category} size={18} />
       </View>
       <View style={styles.txInfo}>
         <Text style={[styles.txMerchant, { color: colors.text }]}>{merchant}</Text>
@@ -472,6 +475,7 @@ export default function HomeScreen() {
     lastSmsReadCount,
     lastSmsSyncCount,
     monthlyBudget,
+    lifeScore,
     refreshData,
     syncSmsFromDevice,
     quickAddReminder,
@@ -538,7 +542,8 @@ export default function HomeScreen() {
   const categoryTotals: Partial<Record<CategoryType, number>> = {};
   transactions.forEach(tx => {
     if (tx.isDebit) {
-      categoryTotals[tx.category] = (categoryTotals[tx.category] || 0) + tx.amount;
+      const cat = (CATEGORIES[tx.category] ? tx.category : 'others') as CategoryType;
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + tx.amount;
     }
   });
   const sortedCategories = Object.entries(categoryTotals)
@@ -557,15 +562,24 @@ export default function HomeScreen() {
     (totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0)
   );
 
+  // Life Score from backend (high precision)
+  const officialLifeScore = lifeScore?.score ?? 85; 
+  const displayScore = lifeScore != null ? lifeScore.score : budgetHealthScore;
+
   // If everything is effectively zero, keep score at 0 to avoid confusion.
-  if (monthlySpend === 0 && bills.length === 0 && totalLeakAmount === 0) {
+  if (monthlySpend === 0 && bills.length === 0 && totalLeakAmount === 0 && lifeScore == null) {
     budgetHealthScore = 0;
   }
 
-  const todayKey = new Date().toDateString();
+  const nowTime = new Date().getTime();
+  const sevenDaysFromNow = nowTime + 7 * 24 * 60 * 60 * 1000;
   const upcomingBills = bills
     .filter((b) => !b.isPaid && b.status !== 'paid')
-    .filter((b) => new Date(b.dueDate).toDateString() === todayKey);
+    .filter((b) => {
+      const due = new Date(b.dueDate).getTime();
+      return due >= nowTime - 24 * 60 * 60 * 1000 && due <= sevenDaysFromNow;
+    })
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   const showComingSoon = () => {
     if (Platform.OS === 'web') {
@@ -629,7 +643,7 @@ export default function HomeScreen() {
 
           {upcomingBills.length > 0 && (
             <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(450) : undefined}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Today’s Reminders</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Reminders</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
                 {upcomingBills.map((bill) => {
                   const dueDate = new Date(bill.dueDate);
@@ -792,7 +806,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
               </View>
-              <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} />
+              <SpendingScoreRing score={displayScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} />
             </View>
             <View style={[styles.heroDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
             <View style={styles.heroStats}>
@@ -820,7 +834,7 @@ export default function HomeScreen() {
 
         {upcomingBills.length > 0 && (
           <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(120).duration(500) : undefined}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>{`Today\u2019s Reminders`}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Reminders</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
               {upcomingBills.map((bill) => {
                 const dueDate = new Date(bill.dueDate);

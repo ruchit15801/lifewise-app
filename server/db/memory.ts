@@ -27,11 +27,19 @@ function match(doc: Record<string, unknown>, query: Record<string, unknown>): bo
 
 function createCollection<T extends Record<string, unknown>>(): {
   findOne: (query: Record<string, unknown>) => Promise<T | null>;
-  find: (query: Record<string, unknown>) => { sort: (s: Record<string, number>) => { limit: (n: number) => { toArray: () => Promise<T[]> } } };
+  find: (query: Record<string, unknown>) => { 
+    sort: (s: Record<string, number>) => any;
+    limit: (n: number) => any;
+    project: (p: Record<string, number>) => any;
+    toArray: () => Promise<T[]>;
+  };
   insertOne: (doc: Omit<T, '_id'> & { _id?: unknown }) => Promise<{ insertedId: { toString: () => string } }>;
   updateOne: (query: Record<string, unknown>, update: { $set?: Record<string, unknown> }) => Promise<{ matchedCount: number }>;
   deleteOne: (query: Record<string, unknown>) => Promise<{ deletedCount: number }>;
   deleteMany: (query: Record<string, unknown>) => Promise<{ deletedCount: number }>;
+  insertMany: (docs: (Omit<T, '_id'> & { _id?: unknown })[]) => Promise<{ insertedIds: Record<number, { toString: () => string }> }>;
+  updateMany: (query: Record<string, unknown>, update: { $set?: Record<string, unknown> }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+  countDocuments: (query: Record<string, unknown>) => Promise<number>;
 } {
   const store: (T & { _id: string })[] = [];
 
@@ -46,7 +54,8 @@ function createCollection<T extends Record<string, unknown>>(): {
       const list = store.filter((d) => match(d as Record<string, unknown>, query)) as (T & { _id: string })[];
       let sorted = list;
       let limited = list;
-      return {
+
+      const cursor = {
         sort(s: Record<string, number>) {
           const key = Object.keys(s)[0];
           const dir = (s as Record<string, number>)[key];
@@ -58,16 +67,22 @@ function createCollection<T extends Record<string, unknown>>(): {
             return 0;
           });
           limited = sorted;
-          return this;
+          return cursor;
         },
         limit(n: number) {
           limited = sorted.slice(0, n);
-          return this;
+          return cursor;
+        },
+        project(p: Record<string, number>) {
+          // No-op mock for project
+          return cursor;
         },
         async toArray() {
           return limited as T[];
         },
       };
+
+      return cursor;
     },
     async insertOne(doc: Omit<T, '_id'> & { _id?: unknown }) {
       const id = doc._id != null ? toIdString(doc._id) : genId();
@@ -100,6 +115,33 @@ function createCollection<T extends Record<string, unknown>>(): {
         }
       }
       return { deletedCount: count };
+    },
+    async insertMany(docs: (Omit<T, '_id'> & { _id?: unknown })[]) {
+      const insertedIds: Record<number, { toString: () => string }> = {};
+      docs.forEach((doc, i) => {
+        const id = doc._id != null ? toIdString(doc._id) : genId();
+        const entry = { ...doc, _id: id } as T & { _id: string };
+        store.push(entry);
+        insertedIds[i] = { toString: () => id };
+      });
+      return { insertedIds };
+    },
+    async updateMany(query: Record<string, unknown>, update: { $set?: Record<string, unknown> }) {
+      let count = 0;
+      for (let i = 0; i < store.length; i++) {
+        if (match(store[i] as Record<string, unknown>, query)) {
+          if (update.$set) {
+            for (const [k, v] of Object.entries(update.$set)) {
+              (store[i] as Record<string, unknown>)[k] = v;
+            }
+          }
+          count++;
+        }
+      }
+      return { matchedCount: count, modifiedCount: count };
+    },
+    async countDocuments(query: Record<string, unknown>) {
+      return store.filter((d) => match(d as Record<string, unknown>, query)).length;
     },
   };
 }

@@ -19,7 +19,7 @@ import { CATEGORIES, MoneyLeak } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
 
 function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; index: number; colors: ThemeColors; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[leak.category];
+  const cat = CATEGORIES[leak.category] || CATEGORIES.others;
 
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200 + index * 100).duration(500) : undefined}>
@@ -47,7 +47,7 @@ function LeakCard({ leak, index, colors, formatAmount }: { leak: MoneyLeak; inde
         <View style={[styles.savingsPotentialRow, { backgroundColor: colors.accentMintDim }]}>
           <Ionicons name="leaf-outline" size={14} color={colors.accentMint} />
           <Text style={[styles.savingsPotentialText, { color: colors.accentMint }]}>
-            Save up to {formatAmount(leak.monthlyEstimate * 12)}/year
+            Save up to {formatAmount(leak.yearlyPrediction)}/year
           </Text>
         </View>
 

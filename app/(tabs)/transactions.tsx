@@ -24,6 +24,7 @@ import {
   Transaction,
 } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
+import CategoryIcon from '@/components/CategoryIcon';
 
 const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'all', label: 'All' },
@@ -32,14 +33,15 @@ const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'transport', label: 'Transport', icon: 'car' },
   { key: 'entertainment', label: 'Fun', icon: 'film' },
   { key: 'bills', label: 'Bills', icon: 'flash' },
-  { key: 'healthcare', label: 'Health', icon: 'medkit' },
+  { key: 'health', label: 'Health', icon: 'medkit' },
   { key: 'education', label: 'Edu', icon: 'book' },
   { key: 'investment', label: 'Invest', icon: 'trending-up' },
   { key: 'others', label: 'Others', icon: 'ellipsis-horizontal' },
 ];
 
 function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[item.category];
+  const safeCat = (item.category || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <View
       style={[
@@ -52,7 +54,7 @@ function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transac
       ]}
     >
       <View style={[styles.txIconWrap, { backgroundColor: cat.color + '18' }]}>
-        <Ionicons name={cat.icon as any} size={20} color={cat.color} />
+        <CategoryIcon category={item.category} size={20} />
       </View>
       <View style={styles.txInfo}>
         <Text style={[styles.txMerchant, { color: colors.text }]} numberOfLines={1}>

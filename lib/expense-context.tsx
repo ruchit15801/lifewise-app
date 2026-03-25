@@ -7,6 +7,8 @@ import {
   MoneyLeak,
   ReminderSettings,
   DEFAULT_REMINDER_SETTINGS,
+  ReportsData,
+  LifeScoreData,
 } from './data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
@@ -40,8 +42,12 @@ interface ExpenseContextValue {
   editReminder: (bill: Bill) => void;
   deleteReminder: (billId: string) => void;
   snoozeReminder: (billId: string, days: number) => void;
+  cancelReminder: (billId: string) => void;
+  uncancelReminder: (billId: string) => void;
   reminderSettings: ReminderSettings;
   updateReminderSettings: (settings: ReminderSettings) => void;
+  lifeScore: LifeScoreData | null;
+  getReports: (start: string, end: string) => Promise<ReportsData | null>;
 }
 
 const ExpenseContext = createContext<ExpenseContextValue | null>(null);
@@ -70,6 +76,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
   const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
+  const [lifeScore, setLifeScore] = useState<LifeScoreData | null>(null);
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -99,6 +106,10 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         if (settings.monthlyBudget != null) setMonthlyBudgetState(settings.monthlyBudget);
         if (settings.reminderSettings) setReminderSettings(settings.reminderSettings);
       }
+      
+      const scoreRes = await fetchWithAuth(token, '/api/life-score');
+      if (scoreRes.ok) setLifeScore(await scoreRes.json());
+      
       const [budgetStored, settingsStored] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.BUDGET),
         AsyncStorage.getItem(STORAGE_KEYS.REMINDER_SETTINGS),
@@ -261,7 +272,8 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
-    const updated = { ...bill, isPaid: !bill.isPaid, status: (bill.isPaid ? 'active' : 'paid') as const };
+    const status: 'active' | 'paid' = bill.isPaid ? 'active' : 'paid';
+    const updated = { ...bill, isPaid: !bill.isPaid, status };
     try {
       const res = await fetchWithAuth(token, `/api/bills/${billId}`, {
         method: 'PUT',
@@ -276,7 +288,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   }, [token, bills]);
 
   const addReminder = useCallback(async (billData: Omit<Bill, 'id'>): Promise<Bill | null> => {
-    if (!token) return;
+    if (!token) return null;
     try {
       const res = await fetchWithAuth(token, '/api/bills', {
         method: 'POST',
@@ -319,22 +331,53 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const snoozeReminder = useCallback(async (billId: string, days: number) => {
-    const snoozedUntil = new Date();
-    snoozedUntil.setDate(snoozedUntil.getDate() + days);
-    const updated = bills.find((b) => b.id === billId);
-    if (!updated || !token) return;
-    const next = { ...updated, status: 'snoozed' as const, snoozedUntil: snoozedUntil.toISOString() };
+    if (!token) return;
     try {
-      const res = await fetchWithAuth(token, `/api/bills/${billId}`, {
-        method: 'PUT',
+      const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
+        body: JSON.stringify({ action: 'snooze', days }),
       });
-      if (res.ok) setBills((prev) => prev.map((b) => (b.id === billId ? next : b)));
-    } catch {
-      setBills((prev) => prev.map((b) => (b.id === billId ? next : b)));
+      if (res.ok) {
+        const { snoozedUntil } = await res.json();
+        setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, status: 'snoozed', snoozedUntil, isPaid: false } : b)));
+      }
+    } catch (err) {
+      console.error('Snooze error:', err);
     }
-  }, [token, bills]);
+  }, [token]);
+
+  const cancelReminder = useCallback(async (billId: string) => {
+    if (!token) return;
+    try {
+      const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      if (res.ok) {
+        setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, status: 'cancelled', isPaid: false } : b)));
+      }
+    } catch (err) {
+      console.error('Cancel error:', err);
+    }
+  }, [token]);
+
+  const uncancelReminder = useCallback(async (billId: string) => {
+    if (!token) return;
+    try {
+      const res = await fetchWithAuth(token, `/api/bills/${billId}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'uncancel' }),
+      });
+      if (res.ok) {
+        setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, status: 'active', isPaid: false } : b)));
+      }
+    } catch (err) {
+      console.error('Uncancel error:', err);
+    }
+  }, [token]);
 
   const quickAddReminder = useCallback(
     async (text: string) => {
@@ -392,6 +435,17 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
+  const getReports = useCallback(async (start: string, end: string): Promise<ReportsData | null> => {
+    if (!token) return null;
+    try {
+      const res = await fetchWithAuth(token, `/api/reports?start=${start}&end=${end}`);
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [token]);
+
   const value = useMemo(
     () => ({
       transactions,
@@ -415,8 +469,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       editReminder,
       deleteReminder,
       snoozeReminder,
+      cancelReminder,
+      uncancelReminder,
       reminderSettings,
       updateReminderSettings,
+      lifeScore,
+      getReports,
     }),
     [
       transactions,
@@ -441,7 +499,11 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       editReminder,
       deleteReminder,
       snoozeReminder,
+      cancelReminder,
+      uncancelReminder,
       updateReminderSettings,
+      lifeScore,
+      getReports,
     ]
   );
 

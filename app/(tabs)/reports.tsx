@@ -27,18 +27,20 @@ import {
   getCategoryBreakdown,
   CategoryType,
 } from '@/lib/data';
+import CategoryIcon from '@/components/CategoryIcon';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark, formatAmount }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
-  const cat = CATEGORIES[category];
+  const safeCat = (category as string || 'others').toLowerCase() as CategoryType;
+  const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   const barWidth = maxPercentage > 0 ? (percentage / maxPercentage) * 100 : 0;
 
   return (
     <View style={styles.catBarRow}>
       <View style={styles.catBarLeft}>
         <View style={[styles.catBarIcon, { backgroundColor: cat.color + '18' }]}>
-          <Ionicons name={cat.icon as any} size={18} color={cat.color} />
+          <CategoryIcon category={category} size={18} />
         </View>
         <View style={styles.catBarInfo}>
           <Text style={[styles.catBarName, { color: colors.text }]}>{cat.label}</Text>
@@ -65,7 +67,9 @@ export default function ReportsScreen() {
   const tabBarInset = useTabBarContentInset();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
-  const { transactions, bills, isLoading, monthlyBudget } = useExpenses();
+  const { transactions, bills, isLoading, monthlyBudget, lifeScore, getReports } = useExpenses();
+  const [backendReport, setBackendReport] = useState<any>(null);
+  const [isReportsLoading, setIsReportsLoading] = useState(false);
   const { token } = useAuth();
   const now = new Date();
   type FilterKey = 'today' | 'week' | 'month' | 'threeMonths' | 'sixMonths' | 'multiMonth' | 'year' | 'custom';
@@ -294,6 +298,16 @@ export default function ReportsScreen() {
     };
   }, [filterKey, customStart, customEnd, selectedYear, selectedMonth, sortedSelectedMonths]);
 
+  useEffect(() => {
+    (async () => {
+      if (!rangeInfo.currStart || !rangeInfo.currEnd) return;
+      setIsReportsLoading(true);
+      const data = await getReports(rangeInfo.currStart.toISOString(), rangeInfo.currEnd.toISOString());
+      setBackendReport(data);
+      setIsReportsLoading(false);
+    })();
+  }, [rangeInfo, getReports]);
+
   const currPredicate = useMemo(() => {
     return (d: Date) => {
       if (
@@ -350,10 +364,23 @@ export default function ReportsScreen() {
     });
   }, [bills, prevPredicate]);
 
-  const totalSpent = useMemo(() => reportTxs.reduce((s, tx) => s + (tx.isDebit ? tx.amount : 0), 0), [reportTxs]);
-  const prevTotalSpent = useMemo(() => prevTxs.reduce((s, tx) => s + (tx.isDebit ? tx.amount : 0), 0), [prevTxs]);
+  const totalSpent = backendReport ? backendReport.expense : reportTxs.reduce((s, tx) => s + (tx.isDebit ? tx.amount : 0), 0);
+  const prevTotalSpent = backendReport ? backendReport.previousExpense : prevTxs.reduce((s, tx) => s + (tx.isDebit ? tx.amount : 0), 0);
+  const totalIncome = backendReport ? backendReport.income : reportTxs.reduce((s, tx) => s + (!tx.isDebit ? tx.amount : 0), 0);
 
-  const breakdown = useMemo(() => getCategoryBreakdown(reportTxs), [reportTxs]);
+  const breakdown = useMemo(() => {
+    if (backendReport && backendReport.categories) {
+      const cats = Object.entries(backendReport.categories as Record<string, { total: number; count: number }>)
+        .map(([cat, data]) => ({
+          category: cat as CategoryType,
+          total: data.total,
+          percentage: (data.total / (totalSpent || 1)) * 100
+        }))
+        .sort((a, b) => b.total - a.total);
+      return cats;
+    }
+    return getCategoryBreakdown(reportTxs);
+  }, [reportTxs, backendReport, totalSpent]);
   const maxPercentage = breakdown.length > 0 ? breakdown[0].percentage : 0;
 
   const merchantTotals = useMemo(() => {
@@ -461,7 +488,9 @@ export default function ReportsScreen() {
   const habitsPoints = Math.round(habitsConsistency * 20);
   const medsPoints = Math.round(medicinesPointsTotal * 10);
 
-  const lifeScoreEstimate = clamp(Math.round(spendingPoints * 0.7 + billsPoints * 0.2 + habitsPoints * 0.08 + medsPoints * 0.02), 0, 100);
+  const lifeScoreDisplay = lifeScore?.score ?? 85; // Fallback to 85 as per existing UI logic if not loaded
+  const lifeScoreLabel = lifeScore?.score != null ? 'Official Score' : 'Estimated Score';
+  const lifeScoreEstimate = lifeScoreDisplay; // for internal use below
 
   const lifeScorePrev = useMemo(() => {
     const prevPaidBillsForScore = prevPaidBills;
@@ -889,8 +918,8 @@ export default function ReportsScreen() {
                 </Text>
               </View>
               <View style={[styles.scoreCircle, { borderColor: colors.accentDim, backgroundColor: colors.accentDim }]}>
-                <Text style={[styles.scoreValue, { color: colors.accent }]}>{lifeScoreEstimate}</Text>
-                <Text style={[styles.scoreLabel, { color: colors.accent + 'AA' }]}>Life Score</Text>
+                <Text style={[styles.scoreValue, { color: colors.accent }]}>{lifeScoreDisplay}</Text>
+                <Text style={[styles.scoreLabel, { color: colors.accent + 'AA' }]}>{lifeScoreLabel}</Text>
               </View>
             </View>
 
@@ -1086,7 +1115,7 @@ export default function ReportsScreen() {
               </View>
             )}
             {merchantTotals.map(([merchant, data], idx) => {
-              const cat = CATEGORIES[data.category];
+              const cat = CATEGORIES[data.category as CategoryType] || CATEGORIES.others;
               return (
                 <React.Fragment key={merchant}>
                   <View style={styles.merchantRow}>

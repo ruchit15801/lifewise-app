@@ -10,8 +10,11 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -48,6 +51,13 @@ export default function ScanBillScreen() {
     dueDate: string;
     imageKey: string;
     imageUrl: string;
+    vendorName?: string;
+    billDate?: string;
+    billNumber?: string;
+    accountNumber?: string;
+    lateFee?: number;
+    taxAmount?: number;
+    phoneNumber?: string;
   };
 
   const [previewData, setPreviewData] = useState<BillPreview | null>(null);
@@ -55,6 +65,10 @@ export default function ScanBillScreen() {
   const [showFailModal, setShowFailModal] = useState(false);
   const [failMessage, setFailMessage] = useState('Not a bill photo.');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [editingData, setEditingData] = useState<any>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [confidence, setConfidence] = useState<number | null>(null);
 
   const rotationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -90,7 +104,7 @@ export default function ScanBillScreen() {
     }
 
     try {
-      const pic = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
+      const pic = await cameraRef.current?.takePictureAsync({ quality: 1.0 });
       if (!pic?.uri) {
         Alert.alert('Scan failed', 'Could not capture the photo. Please try again.');
         return;
@@ -112,7 +126,7 @@ export default function ScanBillScreen() {
   const openGallery = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
+      quality: 1.0,
     });
 
     if (result.canceled || !result.assets || !result.assets[0]) return;
@@ -149,6 +163,7 @@ export default function ScanBillScreen() {
     }
 
     setStep('processing');
+    setIsEditing(false); // Reset editing state
     setPreviewData(null);
     setShowFailModal(false);
     setShowSuccessModal(false);
@@ -172,9 +187,6 @@ export default function ScanBillScreen() {
         body: form,
       });
 
-      const elapsed = Date.now() - startedAt;
-      await new Promise((r) => setTimeout(r, Math.max(0, 2200 - elapsed)));
-
       if (!res.ok) {
         const json = (await res.json().catch(() => null)) as { message?: string } | null;
         setFailMessage(json?.message ?? 'This does not look like a bill photo.');
@@ -182,10 +194,13 @@ export default function ScanBillScreen() {
         setStep('preview');
         return;
       }
-
-      const data = (await res.json()) as { preview: BillPreview };
-      setPreviewData(data.preview);
-      setShowSuccessModal(true);
+      if (res.ok) {
+        const resJson = await res.json();
+        setPreviewData(resJson.preview);
+        setEditingData(resJson.preview);
+        setConfidence(resJson.metadata?.confidence || null);
+        setShowSuccessModal(true);
+      }
     } catch {
       setFailMessage('Network error while scanning bill. Please try again.');
       setShowFailModal(true);
@@ -209,7 +224,7 @@ export default function ScanBillScreen() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          preview: previewData,
+          preview: editingData,
         }),
       });
 
@@ -373,12 +388,17 @@ export default function ScanBillScreen() {
 
       <Modal visible={showFailModal} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>This does not look like a bill</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textTertiary, marginTop: 8 }]}>
+          <View style={[styles.modalCard, { backgroundColor: '#FFFFFF', padding: 24, borderRadius: 24 }]}>
+            <View style={[styles.iconBox, { backgroundColor: '#FEE2E2', alignSelf: 'center', marginBottom: 16 }]}>
+              <Ionicons name="alert-circle" size={32} color="#EF4444" />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text, textAlign: 'center' }]}>
+              Invalid Scan
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 }]}>
               {failMessage}
             </Text>
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { marginTop: 24, borderTopWidth: 0 }]}>
               <Pressable
                 style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
                 onPress={() => {
@@ -397,59 +417,192 @@ export default function ScanBillScreen() {
                   setPhoto(null);
                 }}
               >
-                <Text style={styles.modalBtnLabelPrimary}>Try Again</Text>
+                <Text style={styles.modalBtnLabel}>Try Again</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      <Modal visible={showSuccessModal} transparent animationType="fade">
+      <Modal visible={showSuccessModal} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Your bill was scanned successfully</Text>
-            {previewData ? (
-              <>
-                <View style={styles.successInfoWrap}>
-                  <Text style={[styles.modalRowLabel, { color: colors.textTertiary }]}>Bill name</Text>
-                  <Text style={[styles.modalRowValue, { color: colors.text }]}>{previewData.name}</Text>
-                  <Text style={[styles.modalRowLabel, { color: colors.textTertiary }]}>Amount</Text>
-                  <Text style={[styles.modalRowValue, { color: colors.text }]}>{formatAmount(previewData.amount)}</Text>
-                  <Text style={[styles.modalRowLabel, { color: colors.textTertiary }]}>Due date</Text>
-                  <Text style={[styles.modalRowValue, { color: colors.text }]}>
-                    {new Date(previewData.dueDate).toLocaleDateString('en-IN')}
-                  </Text>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {isEditing ? 'Editing Details' : 'Bill Summary'}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                {isEditing 
+                  ? "Correct any details we missed." 
+                  : "We've accurately extracted these details."}
+              </Text>
+            </View>
+
+            {!isEditing ? (
+              <View style={styles.summaryContainer}>
+                <View style={[styles.summaryCard, { backgroundColor: colors.inputBg }]}>
+                  <View style={styles.summaryHeader}>
+                    <View style={[styles.iconBox, { backgroundColor: '#4F46E5' }]}>
+                      <Ionicons 
+                        name={(editingData?.icon as any) || 'receipt'} 
+                        size={24} 
+                        color="#ffffff" 
+                      />
+                    </View>
+                    <View style={styles.summaryMeta}>
+                      <Text style={[styles.summaryVendor, { color: colors.text }]}>
+                        {editingData?.name || 'Unknown Vendor'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.summaryCategory, { color: colors.textTertiary }]}>
+                          {(editingData?.category || 'bills').toUpperCase()}
+                        </Text>
+                        {confidence !== null && (
+                          <View style={[styles.confidenceBadge, { backgroundColor: confidence >= 90 ? '#DEF7ED' : '#FEF3C7' }]}>
+                            <Text style={[styles.confidenceText, { color: confidence >= 90 ? '#065F46' : '#92400E' }]}>
+                              {confidence}% Match
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.summaryDivider} />
+
+                  <View style={styles.summaryRow}>
+                    <View>
+                      <Text style={styles.summaryLabel}>Amount Due</Text>
+                      <Text style={[styles.summaryValue, { color: colors.accent }]}>
+                        {formatAmount(editingData?.amount || 0)}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.summaryLabel}>Due Date</Text>
+                      <Text style={[styles.summaryValue, { color: colors.textSecondary }]}>
+                        {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : 'N/A'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              </>
-            ) : null}
+
+                <Pressable 
+                  style={styles.editToggleBtn}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <Ionicons name="create-outline" size={18} color="#4F46E5" />
+                  <Text style={styles.editToggleText}>Edit details</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <ScrollView style={styles.editScroll} showsVerticalScrollIndicator={false}>
+                <View style={styles.editGrid}>
+                {/* General Info */}
+                <View style={styles.editCard}>
+                  <Text style={styles.editCardTitle}>General</Text>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Bill Name</Text>
+                    <TextInput
+                      style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                      value={editingData?.name}
+                      onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, name: t }))}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Amount (₹)</Text>
+                    <TextInput
+                      style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                      value={editingData?.amount?.toString()}
+                      keyboardType="numeric"
+                      onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, amount: parseFloat(t) || 0 }))}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Due Date</Text>
+                    <Pressable
+                      style={[styles.input, { borderColor: colors.border, justifyContent: 'center' }]}
+                      onPress={() => setShowDatePicker(true)}
+                    >
+                      <Text style={{ color: colors.text }}>
+                        {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN') : 'Select Date'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Metadata */}
+                <View style={styles.editCard}>
+                  <Text style={styles.editCardTitle}>Scanned Metadata</Text>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Vendor / Merchant</Text>
+                    <TextInput
+                      style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                      value={editingData?.vendorName}
+                      placeholder="e.g. Jio Fiber"
+                      onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, vendorName: t }))}
+                    />
+                  </View>
+                </View>
+              </View>
+              
+              <Pressable 
+                style={[styles.editToggleBtn, { marginTop: 16 }]}
+                onPress={() => setIsEditing(false)}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
+                <Text style={[styles.editToggleText, { color: '#10B981' }]}>Finish editing</Text>
+              </Pressable>
+            </ScrollView>
+            )}
 
             <View style={styles.modalActions}>
               <Pressable
-                style={[styles.modalBtn, { backgroundColor: '#4F46E5' }]}
-                onPress={commitReminder}
+                style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
+                onPress={() => {
+                  setShowSuccessModal(false);
+                  setStep('guide');
+                  setPhoto(null);
+                  setPreviewData(null);
+                  setEditingData(null);
+                }}
               >
-                <Text style={styles.modalBtnLabelPrimary}>Save Reminder</Text>
+                <Text style={[styles.modalBtnLabel, { color: colors.textSecondary }]}>Discard</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
                 onPress={commitReminder}
+                style={({ pressed }) => [
+                  styles.saveBtnFull,
+                  { opacity: pressed ? 0.8 : 1 }
+                ]}
               >
-                <Text style={[styles.modalBtnLabel, { color: colors.textSecondary }]}>Edit Details</Text>
+                <LinearGradient
+                  colors={['#4F46E5', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.saveGradient}
+                >
+                  <Text style={styles.saveBtnText}>Save Bill</Text>
+                </LinearGradient>
               </Pressable>
             </View>
-            <Pressable
-              style={styles.successCancelBtn}
-              onPress={() => {
-                setShowSuccessModal(false);
-                setStep('guide');
-                setPhoto(null);
-                setPreviewData(null);
-              }}
-            >
-              <Text style={[styles.modalBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
-            </Pressable>
           </View>
         </View>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={editingData?.dueDate ? new Date(editingData.dueDate) : new Date()}
+            mode="date"
+            display="default"
+            onChange={(_, date) => {
+              setShowDatePicker(false);
+              if (date) setEditingData((prev: any) => ({ ...prev, dueDate: date.toISOString() }));
+            }}
+          />
+        )}
       </Modal>
     </View>
   );
@@ -630,81 +783,191 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
   },
-  captureBtn: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captureInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#4F46E5',
-  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.55)',
+    backgroundColor: 'rgba(15,23,42,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 30,
   },
   modalCard: {
     width: '100%',
-    borderRadius: 22,
-    padding: 16,
+    maxHeight: '90%',
+    borderRadius: 28,
+    padding: 20,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    marginBottom: 20,
+    alignItems: 'center',
   },
   modalTitle: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 16,
+    fontSize: 20,
     textAlign: 'center',
   },
   modalSubtitle: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
     textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  summaryContainer: {
+    width: '100%',
+    paddingBottom: 20,
+  },
+  summaryCard: {
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  summaryMeta: {
+    flex: 1,
+  },
+  summaryVendor: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  summaryCategory: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    marginVertical: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  editToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingVertical: 10,
+  },
+  editToggleText: {
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
+  editScroll: {
+    maxHeight: 400,
+    flexGrow: 0,
+    marginBottom: 10,
+  },
+  editGrid: {
+    gap: 20,
+  },
+  editCard: {
+    gap: 12,
+  },
+  editCardTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  inputGroup: {
+    gap: 6,
+  },
+  inputLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: '#94A3B8',
+    marginLeft: 4,
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    backgroundColor: '#F8FAFC',
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
+    gap: 12,
+    marginTop: 20,
   },
   modalBtn: {
     flex: 1,
+    height: 52,
     borderRadius: 16,
-    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 0,
   },
   modalBtnLabel: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    includeFontPadding: false,
-  },
-  modalBtnLabelPrimary: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 13,
-    color: '#FFFFFF',
-    textAlign: 'center',
-    lineHeight: 18,
-    includeFontPadding: false,
-  },
-  modalRowLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  modalRowValue: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 14,
-    marginTop: 0,
-    marginBottom: 4,
+  },
+  saveBtnFull: {
+    flex: 1.5,
+    height: 52,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  saveGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 15,
+  },
+  confidenceBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  confidenceText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
   },
 });
 

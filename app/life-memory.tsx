@@ -15,6 +15,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { CATEGORIES, CategoryType } from '@/lib/data';
+import CategoryIcon from '@/components/CategoryIcon';
 
 interface MemoryCard {
   id: string;
@@ -23,6 +24,7 @@ interface MemoryCard {
   title: string;
   insight: string;
   tag: string;
+  category?: CategoryType;
 }
 
 export default function LifeMemoryScreen() {
@@ -54,6 +56,7 @@ export default function LifeMemoryScreen() {
         title: 'Spending Pattern',
         insight: `You tend to spend the most on ${topDay[0]}s. Average: ${formatAmount(Math.round(topDay[1] / 4))} per ${topDay[0]}.`,
         tag: 'Pattern',
+        category: 'habits',
       });
     }
 
@@ -63,9 +66,11 @@ export default function LifeMemoryScreen() {
         catTotals[tx.category] = (catTotals[tx.category] || 0) + tx.amount;
       }
     });
+
     const topCat = Object.entries(catTotals).sort(([, a], [, b]) => (b as number) - (a as number))[0];
     if (topCat) {
-      const cat = CATEGORIES[topCat[0] as CategoryType];
+      const catKey = topCat[0] as CategoryType;
+      const cat = CATEGORIES[catKey] || CATEGORIES.others;
       cards.push({
         id: 'top_category',
         icon: cat.icon,
@@ -73,6 +78,68 @@ export default function LifeMemoryScreen() {
         title: 'Top Category',
         insight: `${cat.label} is your highest spending category at ${formatAmount(topCat[1] as number)} this month.`,
         tag: 'Spending',
+        category: catKey,
+      });
+    }
+
+    // New AI: Subscription Sentinel
+    if (bills.length > 0) {
+      const yearlySubscriptions = bills.reduce((s, b) => s + b.amount * 12, 0);
+      cards.push({
+        id: 'sub_sentinel',
+        icon: 'refresh-circle',
+        iconColor: '#3B82F6',
+        title: 'Subscription Sentinel',
+        insight: `You have ${bills.length} active subscriptions. Projected yearly cost: ${formatAmount(yearlySubscriptions)}.`,
+        tag: 'Subscriptions',
+        category: 'subscriptions',
+      });
+    }
+
+    // New AI: Wealth Wisdom (Weekly Comparison)
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    
+    const lastWeekSpend = transactions
+      .filter(tx => tx.isDebit && new Date(tx.date) >= oneWeekAgo)
+      .reduce((s, tx) => s + tx.amount, 0);
+      
+    const prevWeekSpend = transactions
+      .filter(tx => tx.isDebit && new Date(tx.date) >= twoWeeksAgo && new Date(tx.date) < oneWeekAgo)
+      .reduce((s, tx) => s + tx.amount, 0);
+
+    if (lastWeekSpend > 0 && prevWeekSpend > 0) {
+      const diff = ((lastWeekSpend - prevWeekSpend) / prevWeekSpend) * 100;
+      cards.push({
+        id: 'wealth_wisdom',
+        icon: 'stats-chart',
+        iconColor: diff > 0 ? '#EF4444' : '#10B981',
+        title: 'Wealth Wisdom',
+        insight: diff > 0 
+          ? `Your spending is up ${Math.round(diff)}% compared to last week. Let's look for leaks!` 
+          : `Great job! You spent ${Math.abs(Math.round(diff))}% less than last week.`,
+        tag: 'Wealth',
+      });
+    }
+
+    // New AI: Nocturnal Nibbles (Late night food)
+    const lateNightFood = transactions.filter(tx => {
+      const date = new Date(tx.date);
+      const hour = date.getHours();
+      // Using 'habits' as the category for food-related habits if 'food' is not available
+      return (tx.category as string === 'food' || tx.category === 'habits') && (hour >= 22 || hour <= 4);
+    });
+
+    if (lateNightFood.length >= 3) {
+      cards.push({
+        id: 'nocturnal_nibbles',
+        icon: 'moon',
+        iconColor: '#1E293B',
+        title: 'Nocturnal Nibbles',
+        insight: `We noticed ${lateNightFood.length} late-night food orders this month. This habit costs you approx. ${formatAmount(lateNightFood.reduce((s, tx) => s + tx.amount, 0))} monthly.`,
+        tag: 'Health',
+        category: 'habits',
       });
     }
 
@@ -89,11 +156,13 @@ export default function LifeMemoryScreen() {
         title: 'Favourite Place',
         insight: `You visit ${favMerchant[0]} the most - ${favMerchant[1]} times this month.`,
         tag: 'Habit',
+        category: 'others',
       });
     }
 
     const foodTxByDay: Record<number, number> = {};
-    transactions.filter(tx => tx.category === 'food' && tx.isDebit).forEach(tx => {
+    // Casting to string to allow comparison with potential legacy data
+    transactions.filter(tx => (tx.category as string === 'food' || tx.category === 'habits') && tx.isDebit).forEach(tx => {
       const day = new Date(tx.date).getDay();
       foodTxByDay[day] = (foodTxByDay[day] || 0) + 1;
     });
@@ -106,31 +175,7 @@ export default function LifeMemoryScreen() {
         title: 'Food Ordering',
         insight: `You order food the most on ${dayNames[Number(topFoodDay[0])]}s. Consider meal prepping!`,
         tag: 'Food',
-      });
-    }
-
-    const firstHalf = transactions.filter(tx => new Date(tx.date).getDate() <= 15 && tx.isDebit).reduce((s, tx) => s + tx.amount, 0);
-    const secondHalf = transactions.filter(tx => new Date(tx.date).getDate() > 15 && tx.isDebit).reduce((s, tx) => s + tx.amount, 0);
-    cards.push({
-      id: 'monthly_pattern',
-      icon: 'analytics',
-      iconColor: '#3B82F6',
-      title: 'Monthly Pattern',
-      insight: firstHalf > secondHalf
-        ? `You spend more in the first half of the month (${formatAmount(Math.round(firstHalf))} vs ${formatAmount(Math.round(secondHalf))}).`
-        : `Your spending is balanced across the month.`,
-      tag: 'Pattern',
-    });
-
-    if (bills.length > 0) {
-      const totalBills = bills.reduce((s, b) => s + b.amount, 0);
-      cards.push({
-        id: 'bill_pattern',
-        icon: 'receipt',
-        iconColor: '#6366F1',
-        title: 'Monthly Bills',
-        insight: `You have ${bills.length} recurring bills totaling ${formatAmount(totalBills)} per month.`,
-        tag: 'Bills',
+        category: 'habits',
       });
     }
 
@@ -143,10 +188,11 @@ export default function LifeMemoryScreen() {
         title: 'Savings Opportunity',
         insight: `We detected ${leaks.length} potential money leaks. You could save up to ${formatAmount(totalLeaks * 12)} yearly.`,
         tag: 'Savings',
+        category: 'finance',
       });
     }
 
-    const healthTxs = transactions.filter(tx => tx.category === 'healthcare' && tx.isDebit);
+    const healthTxs = transactions.filter(tx => (tx.category === 'health' || tx.category as string === 'healthcare' || tx.category as string === 'medicine') && tx.isDebit);
     if (healthTxs.length > 0) {
       const topHealthMerchant = Object.entries(
         healthTxs.reduce((acc, tx) => { acc[tx.merchant] = (acc[tx.merchant] || 0) + 1; return acc; }, {} as Record<string, number>)
@@ -159,6 +205,7 @@ export default function LifeMemoryScreen() {
           title: 'Healthcare Preference',
           insight: `${topHealthMerchant[0]} is your go-to for healthcare needs.`,
           tag: 'Health',
+          category: 'health',
         });
       }
     }
@@ -205,7 +252,11 @@ export default function LifeMemoryScreen() {
             <View style={[styles.memoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.memoryTop}>
                 <View style={[styles.memoryIconWrap, { backgroundColor: memory.iconColor + '15' }]}>
-                  <Ionicons name={memory.icon as any} size={20} color={memory.iconColor} />
+                  {memory.category ? (
+                    <CategoryIcon category={memory.category} size={20} />
+                  ) : (
+                    <Ionicons name={memory.icon as any} size={20} color={memory.iconColor} />
+                  )}
                 </View>
                 <View style={[styles.tagBadge, { backgroundColor: memory.iconColor + '12' }]}>
                   <Text style={[styles.tagText, { color: memory.iconColor }]}>{memory.tag}</Text>
