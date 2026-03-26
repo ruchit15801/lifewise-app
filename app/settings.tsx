@@ -7,8 +7,6 @@ import {
   Pressable,
   Platform,
   Switch,
-  Alert,
-  Modal,
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +18,8 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency, CURRENCIES, CurrencyOption } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useSeniorMode } from '@/lib/senior-context';
+import { useAlert } from '@/lib/alert-context';
+import CustomModal from '@/components/CustomModal';
 
 function SettingRow({
   icon,
@@ -62,6 +62,7 @@ export default function SettingsScreen() {
   const { currentCurrency, setCurrency, formatAmount } = useCurrency();
   const { monthlyBudget, setMonthlyBudget } = useExpenses();
   const { isSeniorMode, setSeniorMode } = useSeniorMode();
+  const { showAlert } = useAlert();
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [budgetInput, setBudgetInput] = useState(String(monthlyBudget || ''));
@@ -82,14 +83,19 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    if (Platform.OS === 'web') {
-      logout().then(() => router.replace('/(auth)/login'));
-    } else {
-      Alert.alert('Logout', 'Are you sure you want to logout?', [
+    showAlert({
+      title: 'Logout',
+      message: 'Are you sure you want to logout?',
+      type: 'confirm',
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: () => logout().then(() => router.replace('/(auth)/login')) },
-      ]);
-    }
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => logout().then(() => router.replace('/(auth)/login')),
+        },
+      ],
+    });
   };
 
   return (
@@ -148,6 +154,11 @@ export default function SettingsScreen() {
               />
             }
           />
+          <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>
+              Senior Mode makes the app easier to use with larger text, simple layout, and better visibility.
+            </Text>
+          </View>
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Preferences</Text>
@@ -206,113 +217,103 @@ export default function SettingsScreen() {
         <Text style={[styles.versionText, { color: colors.textTertiary }]}>LifeWise v1.0.0</Text>
       </ScrollView>
 
-      <Modal visible={showCurrencyPicker} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.grabber, { backgroundColor: colors.textTertiary }]} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Select Currency</Text>
-            {CURRENCIES.map(curr => (
-              <Pressable
-                key={curr.code}
-                onPress={() => { setCurrency(curr.code); setShowCurrencyPicker(false); }}
-                style={[
-                  styles.currencyRow,
-                  { borderBottomColor: colors.border },
-                  curr.code === currentCurrency.code && { backgroundColor: colors.accentDim },
-                ]}
-              >
-                <Text style={[styles.currencySymbol, { color: colors.accent }]}>{curr.symbol}</Text>
-                <View style={styles.currencyInfo}>
-                  <Text style={[styles.currencyCode, { color: colors.text }]}>{curr.code}</Text>
-                  <Text style={[styles.currencyName, { color: colors.textSecondary }]}>{curr.name}</Text>
-                </View>
-                {curr.code === currentCurrency.code && (
-                  <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
-                )}
-              </Pressable>
-            ))}
-            <Pressable onPress={() => setShowCurrencyPicker(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-              <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <CustomModal visible={showCurrencyPicker} onClose={() => setShowCurrencyPicker(false)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Select Currency</Text>
+        {CURRENCIES.map(curr => (
+          <Pressable
+            key={curr.code}
+            onPress={() => { setCurrency(curr.code); setShowCurrencyPicker(false); }}
+            style={[
+              styles.currencyRow,
+              { borderBottomColor: colors.border },
+              curr.code === currentCurrency.code && { backgroundColor: colors.accentDim },
+            ]}
+          >
+            <Text style={[styles.currencySymbol, { color: colors.accent }]}>{curr.symbol}</Text>
+            <View style={styles.currencyInfo}>
+              <Text style={[styles.currencyCode, { color: colors.text }]}>{curr.code}</Text>
+              <Text style={[styles.currencyName, { color: colors.textSecondary }]}>{curr.name}</Text>
+            </View>
+            {curr.code === currentCurrency.code && (
+              <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
+            )}
+          </Pressable>
+        ))}
+        <Pressable onPress={() => setShowCurrencyPicker(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+          <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+        </Pressable>
+      </CustomModal>
 
-      <Modal visible={showBudgetModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.grabber, { backgroundColor: colors.textTertiary }]} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Set Monthly Budget</Text>
-            <Text style={[styles.budgetHint, { color: colors.textSecondary }]}>
-              This amount is used for the home screen budget bar and remaining balance.
-            </Text>
-            <View
-              style={[
-                styles.budgetInputRow,
-                { borderColor: colors.inputBorder, backgroundColor: colors.inputBg },
-              ]}
-            >
-              <Text style={[styles.currencySymbol, { color: colors.accent }]}>{currentCurrency.symbol}</Text>
-              <Text
-                style={[
-                  styles.currencyCode,
-                  { color: colors.textSecondary, fontSize: 14, marginRight: 4 },
-                ]}
-              >
-                {currentCurrency.code}
-              </Text>
-            </View>
-            <TextInput
-              style={{
-                fontFamily: 'Inter_600SemiBold',
-                fontSize: 24,
-                color: colors.text,
-                textAlign: 'center',
-                width: '100%',
-              }}
-              value={budgetInput}
-              onChangeText={(t: string) => setBudgetInput(t.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={colors.textTertiary}
-            />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
-              {[10000, 25000, 50000].map((preset) => (
-                <Pressable
-                  key={preset}
-                  onPress={() => setBudgetInput(String(preset))}
-                  style={[styles.budgetPreset, { borderColor: colors.border }]}
-                >
-                  <Text style={[styles.budgetPresetText, { color: colors.textSecondary }]}>
-                    {formatAmount(preset)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <Pressable
-              onPress={async () => {
-                const value = parseInt(budgetInput.replace(/[^0-9]/g, ''), 10);
-                if (Number.isNaN(value) || value <= 0) {
-                  setBudgetInput(String(monthlyBudget || 0));
-                  setShowBudgetModal(false);
-                  return;
-                }
-                await setMonthlyBudget(value);
-                setShowBudgetModal(false);
-              }}
-              style={[styles.cancelBtn, { borderColor: colors.border, marginTop: 20, backgroundColor: colors.accent }]}
-            >
-              <Text style={[styles.cancelBtnText, { color: '#FFFFFF' }]}>Save Budget</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setShowBudgetModal(false)}
-              style={[styles.cancelBtn, { borderColor: colors.border }]}
-            >
-              <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-            </Pressable>
-          </View>
+      <CustomModal visible={showBudgetModal} onClose={() => setShowBudgetModal(false)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Set Monthly Budget</Text>
+        <Text style={[styles.budgetHint, { color: colors.textSecondary }]}>
+          This amount is used for the home screen budget bar and remaining balance.
+        </Text>
+        <View
+          style={[
+            styles.budgetInputRow,
+            { borderColor: colors.inputBorder, backgroundColor: colors.inputBg },
+          ]}
+        >
+          <Text style={[styles.currencySymbol, { color: colors.accent }]}>{currentCurrency.symbol}</Text>
+          <Text
+            style={[
+              styles.currencyCode,
+              { color: colors.textSecondary, fontSize: 14, marginRight: 4 },
+            ]}
+          >
+            {currentCurrency.code}
+          </Text>
         </View>
-      </Modal>
+        <TextInput
+          style={{
+            fontFamily: 'Inter_600SemiBold',
+            fontSize: 24,
+            color: colors.text,
+            textAlign: 'center',
+            width: '100%',
+          }}
+          value={budgetInput}
+          onChangeText={(t: string) => setBudgetInput(t.replace(/[^0-9]/g, ''))}
+          keyboardType="number-pad"
+          placeholder="0"
+          placeholderTextColor={colors.textTertiary}
+        />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
+          {[10000, 25000, 50000].map((preset) => (
+            <Pressable
+              key={preset}
+              onPress={() => setBudgetInput(String(preset))}
+              style={[styles.budgetPreset, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.budgetPresetText, { color: colors.textSecondary }]}>
+                {formatAmount(preset)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable
+          onPress={async () => {
+            const value = parseInt(budgetInput.replace(/[^0-9]/g, ''), 10);
+            if (Number.isNaN(value) || value <= 0) {
+              setBudgetInput(String(monthlyBudget || 0));
+              setShowBudgetModal(false);
+              return;
+            }
+            await setMonthlyBudget(value);
+            setShowBudgetModal(false);
+          }}
+          style={[styles.cancelBtn, { borderColor: colors.border, marginTop: 20, backgroundColor: colors.accent }]}
+        >
+          <Text style={[styles.cancelBtnText, { color: '#FFFFFF' }]}>Save Budget</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setShowBudgetModal(false)}
+          style={[styles.cancelBtn, { borderColor: colors.border }]}
+        >
+          <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+        </Pressable>
+      </CustomModal>
     </View>
   );
 }

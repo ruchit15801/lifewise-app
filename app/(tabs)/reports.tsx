@@ -5,7 +5,6 @@ import {
   View,
   ScrollView,
   Pressable,
-  Modal,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -29,10 +28,12 @@ import {
 } from '@/lib/data';
 import CategoryIcon from '@/components/CategoryIcon';
 import PremiumLoader from '@/components/PremiumLoader';
+import CustomModal from '@/components/CustomModal';
+import { useSeniorMode } from '@/lib/senior-context';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark, formatAmount }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
+function CategoryBar({ category, total, percentage, maxPercentage, colors, isDark, formatAmount, isSeniorMode }: { category: CategoryType; total: number; percentage: number; maxPercentage: number; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
   const safeCat = (category as string || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   const barWidth = maxPercentage > 0 ? (percentage / maxPercentage) * 100 : 0;
@@ -44,8 +45,8 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
           <CategoryIcon category={category} size={18} />
         </View>
         <View style={styles.catBarInfo}>
-          <Text style={[styles.catBarName, { color: colors.text }]}>{cat.label}</Text>
-          <Text style={[styles.catBarPercent, { color: colors.textTertiary }]}>{Math.round(percentage)}%</Text>
+          <Text style={[styles.catBarName, { color: colors.text }, isSeniorMode && { fontSize: 16 }]}>{cat.label}</Text>
+          <Text style={[styles.catBarPercent, { color: colors.textTertiary }, isSeniorMode && { fontSize: 13 }]}>{Math.round(percentage)}%</Text>
         </View>
       </View>
       <View style={styles.catBarRight}>
@@ -57,7 +58,7 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
             style={[styles.catBarFill, { width: `${barWidth}%` as any }]}
           />
         </View>
-        <Text style={[styles.catBarAmount, { color: colors.text }]}>{formatAmount(total)}</Text>
+        <Text style={[styles.catBarAmount, { color: colors.text }, isSeniorMode && { fontSize: 15 }]}>{formatAmount(total)}</Text>
       </View>
     </View>
   );
@@ -69,6 +70,7 @@ export default function ReportsScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, bills, isLoading, monthlyBudget, lifeScore, getReports } = useExpenses();
+  const { isSeniorMode } = useSeniorMode();
   const [backendReport, setBackendReport] = useState<any>(null);
   const [isReportsLoading, setIsReportsLoading] = useState(false);
   const { token } = useAuth();
@@ -697,86 +699,78 @@ export default function ReportsScreen() {
           </View>
 
           {/* Custom Date Start Picker */}
-          <Modal transparent animationType="fade" visible={showCustomStartPicker}>
-            <View style={styles.modalBackdropCentered}>
-              <View style={[styles.modalCardCentered, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Select Start Date</Text>
-                <View style={{ paddingVertical: 8 }}>
-                  <DateTimePicker
-                    value={draftCustomStart}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={(_, d) => {
-                      if (!d) return;
-                      const next = new Date(d);
-                      next.setHours(0, 0, 0, 0);
-                      setDraftCustomStart((prev) => (prev.getTime() === next.getTime() ? prev : next));
-                    }}
-                  />
-                </View>
-                <View style={styles.modalActionsRow}>
-                  <Pressable onPress={() => setShowCustomStartPicker(false)} style={styles.modalTextBtn}>
-                    <Text style={[styles.modalTextBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      const fixedStart = new Date(draftCustomStart);
-                      fixedStart.setHours(0, 0, 0, 0);
-                      setCustomStart(fixedStart);
-                      if (fixedStart.getTime() > customEnd.getTime()) {
-                        setCustomEnd(endOfDay(fixedStart));
-                      }
-                      setShowCustomStartPicker(false);
-                    }}
-                    style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
-                  >
-                    <Text style={[styles.modalPrimaryBtnLabel, { color: colors.accent }]}>Done</Text>
-                  </Pressable>
-                </View>
-              </View>
+          <CustomModal visible={showCustomStartPicker} onClose={() => setShowCustomStartPicker(false)}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Select Start Date</Text>
+            <View style={{ paddingVertical: 16 }}>
+              <DateTimePicker
+                value={draftCustomStart}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, d) => {
+                  if (!d) return;
+                  const next = new Date(d);
+                  next.setHours(0, 0, 0, 0);
+                  setDraftCustomStart((prev) => (prev.getTime() === next.getTime() ? prev : next));
+                }}
+              />
             </View>
-          </Modal>
+            <View style={styles.modalActionsRow}>
+              <Pressable onPress={() => setShowCustomStartPicker(false)} style={styles.modalTextBtn}>
+                <Text style={[styles.modalTextBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const fixedStart = new Date(draftCustomStart);
+                  fixedStart.setHours(0, 0, 0, 0);
+                  setCustomStart(fixedStart);
+                  if (fixedStart.getTime() > customEnd.getTime()) {
+                    setCustomEnd(endOfDay(fixedStart));
+                  }
+                  setShowCustomStartPicker(false);
+                }}
+                style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
+              >
+                <Text style={[styles.modalPrimaryBtnLabel, { color: colors.accent }]}>Done</Text>
+              </Pressable>
+            </View>
+          </CustomModal>
 
           {/* Custom Date End Picker */}
-          <Modal transparent animationType="fade" visible={showCustomEndPicker}>
-            <View style={styles.modalBackdropCentered}>
-              <View style={[styles.modalCardCentered, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Select End Date</Text>
-                <View style={{ paddingVertical: 8 }}>
-                  <DateTimePicker
-                    value={draftCustomEnd}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={(_, d) => {
-                      if (!d) return;
-                      const next = new Date(d);
-                      next.setHours(23, 59, 59, 999);
-                      setDraftCustomEnd((prev) => (prev.getTime() === next.getTime() ? prev : next));
-                    }}
-                  />
-                </View>
-                <View style={styles.modalActionsRow}>
-                  <Pressable onPress={() => setShowCustomEndPicker(false)} style={styles.modalTextBtn}>
-                    <Text style={[styles.modalTextBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      const fixedEnd = new Date(draftCustomEnd);
-                      fixedEnd.setHours(23, 59, 59, 999);
-                      setCustomEnd(fixedEnd);
-                      if (customStart.getTime() > fixedEnd.getTime()) {
-                        setCustomStart(startOfDay(fixedEnd));
-                      }
-                      setShowCustomEndPicker(false);
-                    }}
-                    style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
-                  >
-                    <Text style={[styles.modalPrimaryBtnLabel, { color: colors.accent }]}>Done</Text>
-                  </Pressable>
-                </View>
-              </View>
+          <CustomModal visible={showCustomEndPicker} onClose={() => setShowCustomEndPicker(false)}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Select End Date</Text>
+            <View style={{ paddingVertical: 16 }}>
+              <DateTimePicker
+                value={draftCustomEnd}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, d) => {
+                  if (!d) return;
+                  const next = new Date(d);
+                  next.setHours(23, 59, 59, 999);
+                  setDraftCustomEnd((prev) => (prev.getTime() === next.getTime() ? prev : next));
+                }}
+              />
             </View>
-          </Modal>
+            <View style={styles.modalActionsRow}>
+              <Pressable onPress={() => setShowCustomEndPicker(false)} style={styles.modalTextBtn}>
+                <Text style={[styles.modalTextBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const fixedEnd = new Date(draftCustomEnd);
+                  fixedEnd.setHours(23, 59, 59, 999);
+                  setCustomEnd(fixedEnd);
+                  if (customStart.getTime() > fixedEnd.getTime()) {
+                    setCustomStart(startOfDay(fixedEnd));
+                  }
+                  setShowCustomEndPicker(false);
+                }}
+                style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
+              >
+                <Text style={[styles.modalPrimaryBtnLabel, { color: colors.accent }]}>Done</Text>
+              </Pressable>
+            </View>
+          </CustomModal>
 
           {filterKey === 'custom' && (
             <View style={styles.customChipWrap}>
@@ -871,37 +865,31 @@ export default function ReportsScreen() {
           )}
         </Animated.View>
 
-        {showYearPicker && (
-          <Modal transparent animationType="fade" visible={showYearPicker}>
-            <View style={styles.modalBackdropCentered}>
-              <View style={[styles.modalCardCentered, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Pick year</Text>
-                <View style={{ paddingVertical: 8 }}>
-                  <DateTimePicker
-                    value={new Date(selectedYear, 0, 1)}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={(_, d) => {
-                      if (!d) return;
-                      setSelectedYear(d.getFullYear());
-                    }}
-                  />
-                </View>
-                <View style={styles.modalActionsRow}>
-                  <Pressable onPress={() => setShowYearPicker(false)} style={styles.modalTextBtn}>
-                    <Text style={[styles.modalTextBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setShowYearPicker(false)}
-                    style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
-                  >
-                    <Text style={[styles.modalPrimaryBtnLabel, { color: colors.accent }]}>Done</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          </Modal>
-        )}
+        <CustomModal visible={showYearPicker} onClose={() => setShowYearPicker(false)}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>Pick year</Text>
+          <View style={{ paddingVertical: 16 }}>
+            <DateTimePicker
+              value={new Date(selectedYear, 0, 1)}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_, d) => {
+                if (!d) return;
+                setSelectedYear(d.getFullYear());
+              }}
+            />
+          </View>
+          <View style={styles.modalActionsRow}>
+            <Pressable onPress={() => setShowYearPicker(false)} style={styles.modalTextBtn}>
+              <Text style={[styles.modalTextBtnLabel, { color: colors.textTertiary }]}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowYearPicker(false)}
+              style={[styles.modalPrimaryBtn, { backgroundColor: colors.accentDim }]}
+            >
+              <Text style={[styles.modalPrimaryBtnLabel, { color: colors.accent }]}>Done</Text>
+            </Pressable>
+          </View>
+        </CustomModal>
 
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.delay(200).duration(500) : undefined}>
           <LinearGradient
@@ -1100,12 +1088,13 @@ export default function ReportsScreen() {
                 <CategoryBar
                   category={item.category}
                   total={item.total}
-                  percentage={item.percentage}
-                  maxPercentage={maxPercentage}
-                  colors={colors}
-                  isDark={isDark}
-                  formatAmount={formatAmount}
-                />
+                    percentage={item.percentage}
+                    maxPercentage={maxPercentage}
+                    colors={colors}
+                    isDark={isDark}
+                    formatAmount={formatAmount}
+                    isSeniorMode={isSeniorMode}
+                  />
                 {idx < breakdown.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
               </React.Fragment>
             ))}

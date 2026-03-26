@@ -6,12 +6,12 @@ import {
   Pressable,
   ScrollView,
   Text,
-  Modal,
   useColorScheme,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import CustomModal from "./CustomModal";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -104,76 +104,54 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
       </View>
 
       {__DEV__ ? (
-        <Modal
+        <CustomModal
           visible={isModalVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setIsModalVisible(false)}
+          onClose={() => setIsModalVisible(false)}
         >
-          <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalHeader,
+              {
+                borderBottomColor: isDark
+                  ? "rgba(255, 255, 255, 0.1)"
+                  : "rgba(0, 0, 0, 0.1)",
+              },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              Error Details
+            </Text>
+          </View>
+
+          <ScrollView
+            style={styles.modalScrollView}
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              { paddingBottom: insets.bottom + 16 },
+            ]}
+            showsVerticalScrollIndicator
+          >
             <View
               style={[
-                styles.modalContainer,
-                { backgroundColor: theme.background },
+                styles.errorContainer,
+                { backgroundColor: theme.backgroundSecondary },
               ]}
             >
-              <View
+              <Text
                 style={[
-                  styles.modalHeader,
+                  styles.errorText,
                   {
-                    borderBottomColor: isDark
-                      ? "rgba(255, 255, 255, 0.1)"
-                      : "rgba(0, 0, 0, 0.1)",
+                    color: theme.text,
+                    fontFamily: monoFont,
                   },
                 ]}
+                selectable
               >
-                <Text style={[styles.modalTitle, { color: theme.text }]}>
-                  Error Details
-                </Text>
-                <Pressable
-                  onPress={() => setIsModalVisible(false)}
-                  accessibilityLabel="Close error details"
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                style={styles.modalScrollView}
-                contentContainerStyle={[
-                  styles.modalScrollContent,
-                  { paddingBottom: insets.bottom + 16 },
-                ]}
-                showsVerticalScrollIndicator
-              >
-                <View
-                  style={[
-                    styles.errorContainer,
-                    { backgroundColor: theme.backgroundSecondary },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.errorText,
-                      {
-                        color: theme.text,
-                        fontFamily: monoFont,
-                      },
-                    ]}
-                    selectable
-                  >
-                    {formatErrorDetails()}
-                  </Text>
-                </View>
-              </ScrollView>
+                {formatErrorDetails()}
+              </Text>
             </View>
-          </View>
-        </Modal>
+          </ScrollView>
+        </CustomModal>
       ) : null}
     </View>
   );

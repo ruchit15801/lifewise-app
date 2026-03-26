@@ -12,6 +12,7 @@ import {
 } from './data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
+import { useAlert } from './alert-context';
 import { readSmsFromDeviceWithMeta, requestSmsPermissionDetails } from './sms-reader';
 import { parseSmsToTransactions } from './parse-sms';
 import { performSmsSync } from './sms-sync-task';
@@ -78,6 +79,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [monthlyBudget, setMonthlyBudgetState] = useState(100000);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDER_SETTINGS);
   const [lifeScore, setLifeScore] = useState<LifeScoreData | null>(null);
+  const { showAlert } = useAlert();
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -142,7 +144,11 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     setLastSmsSyncCount(null);
     try {
       if (Platform.OS !== 'android') {
-        Alert.alert('SMS sync not supported', 'Auto Track via SMS only works on Android phones.');
+        showAlert({
+          title: 'SMS sync not supported',
+          message: 'Auto Track via SMS only works on Android phones.',
+          type: 'info',
+        });
         setSmsSyncStatus('SMS sync only works on Android devices.');
         setSmsSyncProgressCurrent(null);
         setSmsSyncProgressTotal(null);
@@ -156,21 +162,26 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       const permission = await requestSmsPermissionDetails();
       if (permission.status !== 'granted') {
         if (permission.status === 'never_ask_again') {
-          Alert.alert(
-            'Permission blocked',
-            'SMS permission is blocked. Please open Settings > Permissions and allow SMS.',
-            [
+          showAlert({
+            title: 'Permission blocked',
+            message: 'SMS permission is blocked. Please open Settings > Permissions and allow SMS.',
+            type: 'warning',
+            buttons: [
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Open Settings',
                 onPress: () => {
-                  Linking.openSettings().catch(() => {});
+                  Linking.openSettings().catch(() => { });
                 },
               },
             ],
-          );
+          });
         } else {
-          Alert.alert('Permission needed', 'Please allow SMS permission to enable Auto Track.');
+          showAlert({
+            title: 'Permission needed',
+            message: 'Please allow SMS permission to enable Auto Track.',
+            type: 'info',
+          });
         }
         setSmsSyncStatus(permission.message);
         setSmsSyncProgressCurrent(null);

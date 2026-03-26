@@ -28,6 +28,8 @@ import {
 } from "@/lib/notifications";
 import { registerSmsSyncTask } from "@/lib/sms-sync-task";
 import { SeniorProvider } from "@/lib/senior-context";
+import { AlertProvider } from "@/lib/alert-context";
+import CustomAlert from "@/components/CustomAlert";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -215,6 +217,7 @@ function AuthGate() {
         <Stack.Screen name="assistant" />
         <Stack.Screen name="+not-found" />
       </Stack>
+      <CustomAlert />
     </>
   );
 }
@@ -247,11 +250,13 @@ export default function RootLayout() {
             <ThemeProvider>
               <CurrencyProvider>
                 <SeniorProvider>
-                  <AuthProvider>
-                    <ExpenseProvider>
-                      <AuthGate />
-                    </ExpenseProvider>
-                  </AuthProvider>
+                  <AlertProvider>
+                    <AuthProvider>
+                      <ExpenseProvider>
+                        <AuthGate />
+                      </ExpenseProvider>
+                    </AuthProvider>
+                  </AlertProvider>
                 </SeniorProvider>
               </CurrencyProvider>
             </ThemeProvider>

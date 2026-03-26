@@ -21,6 +21,7 @@ import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
 import PremiumLoader from '@/components/PremiumLoader';
+import { useSeniorMode } from '@/lib/senior-context';
 import {
   CATEGORIES,
   formatTime,
@@ -44,7 +45,7 @@ const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'others', label: 'Others', icon: 'ellipsis-horizontal' },
 ];
 
-function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string }) {
+function TransactionItem({ item, colors, isDark, formatAmount, isSeniorMode }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
   const safeCat = (item.category || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
@@ -62,18 +63,18 @@ function TransactionItem({ item, colors, isDark, formatAmount }: { item: Transac
         <CategoryIcon category={item.category} size={20} />
       </View>
       <View style={styles.txInfo}>
-        <Text style={[styles.txMerchant, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.txMerchant, { color: colors.text }, isSeniorMode && { fontSize: 18 }]} numberOfLines={1}>
           {item.merchant}
         </Text>
-        <Text style={[styles.txUpi, { color: colors.textTertiary }]} numberOfLines={1}>
+        <Text style={[styles.txUpi, { color: colors.textTertiary }, isSeniorMode && { fontSize: 14 }]} numberOfLines={1}>
           {item.upiId}
         </Text>
       </View>
       <View style={styles.txRight}>
-        <Text style={[styles.txAmount, { color: colors.danger }]}>
+        <Text style={[styles.txAmount, { color: colors.danger }, isSeniorMode && { fontSize: 19 }]}>
           -{formatAmount(item.amount)}
         </Text>
-        <Text style={[styles.txTime, { color: colors.textTertiary }]}>
+        <Text style={[styles.txTime, { color: colors.textTertiary }, isSeniorMode && { fontSize: 13 }]}>
           {formatTime(item.date)}
         </Text>
       </View>
@@ -87,6 +88,7 @@ export default function TransactionsScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
   const { transactions, isLoading } = useExpenses();
+  const { isSeniorMode } = useSeniorMode();
   const [activeFilter, setActiveFilter] = useState('all');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -138,10 +140,10 @@ export default function TransactionsScreen() {
             ]}
           >
             <View style={styles.summaryLeft}>
-              <Text style={[styles.summaryLabel, { color: colors.textTertiary }]}>
+              <Text style={[styles.summaryLabel, { color: colors.textTertiary }, isSeniorMode && { fontSize: 15 }]}>
                 Total Spent
               </Text>
-              <Text style={[styles.summaryAmount, { color: colors.text }]}>
+              <Text style={[styles.summaryAmount, { color: colors.text }, isSeniorMode && { fontSize: 32 }]}>
                 {formatAmount(totalFiltered)}
               </Text>
             </View>
@@ -197,7 +199,7 @@ export default function TransactionsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <TransactionItem item={item} colors={colors} isDark={isDark} formatAmount={formatAmount} />}
+        renderItem={({ item }) => <TransactionItem item={item} colors={colors} isDark={isDark} formatAmount={formatAmount} isSeniorMode={isSeniorMode} />}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>

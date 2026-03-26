@@ -6,6 +6,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/query-client';
+import { useAlert } from '@/lib/alert-context';
 
 type NotificationItem = {
   id: string;
@@ -37,6 +38,7 @@ export default function NotificationDetailsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
+  const { showAlert } = useAlert();
   const params = useLocalSearchParams<{ notificationId: string; title?: string; body?: string }>();
   const notificationId = params.notificationId;
   const passedTitle = params.title;
@@ -134,11 +136,11 @@ export default function NotificationDetailsScreen() {
                      }
                      router.push(route as any);
                    } catch (e) {
-                     if (Platform.OS === 'web') {
-                       alert('This item is no longer available.');
-                     } else {
-                       import('react-native').then(({ Alert }) => Alert.alert('Unavailable', 'This item is no longer available.'));
-                     }
+                     showAlert({
+                       title: 'Unavailable',
+                       message: 'This item is no longer available.',
+                       type: 'error',
+                     });
                    }
                 }}
                 style={({ pressed }) => [

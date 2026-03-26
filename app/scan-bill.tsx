@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   Pressable,
   Platform,
   ScrollView,
@@ -23,9 +22,11 @@ import { useTheme } from '@/lib/theme-context';
 import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useAlert } from '@/lib/alert-context';
 import PremiumLoader from '@/components/PremiumLoader';
 import { scheduleLocalNotification } from '@/lib/notifications';
 import { useCurrency } from '@/lib/currency-context';
+import CustomModal from '@/components/CustomModal';
 
 type ScanStep = 'guide' | 'preview' | 'processing';
 
@@ -35,6 +36,7 @@ export default function ScanBillScreen() {
   const { token } = useAuth();
   const { refreshData } = useExpenses();
   const { formatAmount } = useCurrency();
+  const { showAlert } = useAlert();
 
   const [step, setStep] = useState<ScanStep>('guide');
   const [flashOn, setFlashOn] = useState(false);
@@ -63,7 +65,6 @@ export default function ScanBillScreen() {
 
   const [previewData, setPreviewData] = useState<BillPreview | null>(null);
   const [processingMsgIdx, setProcessingMsgIdx] = useState(0);
-  const [showFailModal, setShowFailModal] = useState(false);
   const [failMessage, setFailMessage] = useState('Not a bill photo.');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [editingData, setEditingData] = useState<any>(null);
@@ -92,14 +93,22 @@ export default function ScanBillScreen() {
 
   const takePictureFromCamera = useCallback(async () => {
     if (Platform.OS === 'web') {
-      Alert.alert('Not supported', 'Camera capture is not supported on web in this flow.');
+      showAlert({
+        title: 'Not supported',
+        message: 'Camera capture is not supported on web in this flow.',
+        type: 'info',
+      });
       return;
     }
 
     if (!cameraPermission?.granted) {
       const res = await requestCameraPermission();
       if (!res.granted) {
-        Alert.alert('Permission needed', 'Camera permission is required to scan bills.');
+        showAlert({
+          title: 'Permission needed',
+          message: 'Camera permission is required to scan bills.',
+          type: 'warning',
+        });
         return;
       }
     }
@@ -107,12 +116,15 @@ export default function ScanBillScreen() {
     try {
       const pic = await cameraRef.current?.takePictureAsync({ quality: 1.0 });
       if (!pic?.uri) {
-        Alert.alert('Scan failed', 'Could not capture the photo. Please try again.');
+        showAlert({
+          title: 'Scan failed',
+          message: 'Could not capture the photo. Please try again.',
+          type: 'error',
+        });
         return;
       }
 
       setPreviewData(null);
-      setShowFailModal(false);
       setStep('preview');
       setPhoto({
         uri: pic.uri,
@@ -120,7 +132,11 @@ export default function ScanBillScreen() {
         mimeType: 'image/jpeg',
       });
     } catch {
-      Alert.alert('Scan failed', 'Unexpected error while taking photo.');
+      showAlert({
+        title: 'Scan failed',
+        message: 'Unexpected error while taking photo.',
+        type: 'error',
+      });
     }
   }, [cameraPermission, requestCameraPermission]);
 
@@ -135,7 +151,6 @@ export default function ScanBillScreen() {
     if (!asset.uri) return;
 
     setPreviewData(null);
-    setShowFailModal(false);
     setStep('preview');
     setPhoto({
       uri: asset.uri,
@@ -159,16 +174,17 @@ export default function ScanBillScreen() {
 
   const scanPreview = useCallback(async () => {
     if (!photo || !token) {
-      Alert.alert('Not ready', 'Please login again and try scanning.');
+      showAlert({
+        title: 'Not ready',
+        message: 'Please login again and try scanning.',
+        type: 'warning',
+      });
       return;
     }
 
     setStep('processing');
     setIsEditing(false); // Reset editing state
     setPreviewData(null);
-    setShowFailModal(false);
-    setShowSuccessModal(false);
-
     const startedAt = Date.now();
     startRotation();
     try {
@@ -190,8 +206,22 @@ export default function ScanBillScreen() {
 
       if (!res.ok) {
         const json = (await res.json().catch(() => null)) as { message?: string } | null;
-        setFailMessage(json?.message ?? 'This does not look like a bill photo.');
-        setShowFailModal(true);
+        const msg = json?.message ?? 'This does not look like a bill photo.';
+        setFailMessage(msg);
+        showAlert({
+          title: 'Invalid Scan',
+          message: msg,
+          type: 'error',
+          buttons: [
+            {
+              text: 'Try Again',
+              onPress: () => {
+                setStep('guide');
+                setPhoto(null);
+              },
+            },
+          ],
+        });
         setStep('preview');
         return;
       }
@@ -203,8 +233,11 @@ export default function ScanBillScreen() {
         setShowSuccessModal(true);
       }
     } catch {
-      setFailMessage('Network error while scanning bill. Please try again.');
-      setShowFailModal(true);
+      showAlert({
+        title: 'Error',
+        message: 'Network error while scanning bill. Please try again.',
+        type: 'error',
+      });
       setStep('preview');
     } finally {
       stopRotation();
@@ -230,7 +263,11 @@ export default function ScanBillScreen() {
       });
 
       if (!res.ok) {
-        Alert.alert('Save failed', 'Could not save reminder. Please try again.');
+        showAlert({
+          title: 'Save failed',
+          message: 'Could not save reminder. Please try again.',
+          type: 'error',
+        });
         return;
       }
 
@@ -388,210 +425,169 @@ export default function ScanBillScreen() {
         )}
       </View>
 
-      <Modal visible={showFailModal} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: '#FFFFFF', padding: 24, borderRadius: 24 }]}>
-            <View style={[styles.iconBox, { backgroundColor: '#FEE2E2', alignSelf: 'center', marginBottom: 16 }]}>
-              <Ionicons name="alert-circle" size={32} color="#EF4444" />
-            </View>
-            <Text style={[styles.modalTitle, { color: colors.text, textAlign: 'center' }]}>
-              Invalid Scan
-            </Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 }]}>
-              {failMessage}
-            </Text>
-            <View style={[styles.modalActions, { marginTop: 24, borderTopWidth: 0 }]}>
-              <Pressable
-                style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
-                onPress={() => {
-                  setShowFailModal(false);
-                  setStep('guide');
-                  setPhoto(null);
-                }}
-              >
-                <Text style={[styles.modalBtnLabel, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalBtn, { backgroundColor: '#4F46E5' }]}
-                onPress={() => {
-                  setShowFailModal(false);
-                  setStep('guide');
-                  setPhoto(null);
-                }}
-              >
-                <Text style={styles.modalBtnLabel}>Try Again</Text>
-              </Pressable>
-            </View>
-          </View>
+
+      <CustomModal visible={showSuccessModal} onClose={() => setShowSuccessModal(false)}>
+        <View style={styles.modalHeader}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            {isEditing ? 'Editing Details' : 'Bill Summary'}
+          </Text>
+          <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+            {isEditing 
+              ? "Correct any details we missed." 
+              : "We've accurately extracted these details."}
+          </Text>
         </View>
-      </Modal>
 
-      <Modal visible={showSuccessModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                {isEditing ? 'Editing Details' : 'Bill Summary'}
-              </Text>
-              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-                {isEditing 
-                  ? "Correct any details we missed." 
-                  : "We've accurately extracted these details."}
-              </Text>
-            </View>
-
-            {!isEditing ? (
-              <View style={styles.summaryContainer}>
-                <View style={[styles.summaryCard, { backgroundColor: colors.inputBg }]}>
-                  <View style={styles.summaryHeader}>
-                    <View style={[styles.iconBox, { backgroundColor: '#4F46E5' }]}>
-                      <Ionicons 
-                        name={(editingData?.icon as any) || 'receipt'} 
-                        size={24} 
-                        color="#ffffff" 
-                      />
-                    </View>
-                    <View style={styles.summaryMeta}>
-                      <Text style={[styles.summaryVendor, { color: colors.text }]}>
-                        {editingData?.name || 'Unknown Vendor'}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.summaryCategory, { color: colors.textTertiary }]}>
-                          {(editingData?.category || 'bills').toUpperCase()}
+        {!isEditing ? (
+          <View style={styles.summaryContainer}>
+            <View style={[styles.summaryCard, { backgroundColor: colors.inputBg }]}>
+              <View style={styles.summaryHeader}>
+                <View style={[styles.iconBox, { backgroundColor: '#4F46E5' }]}>
+                  <Ionicons 
+                    name={(editingData?.icon as any) || 'receipt'} 
+                    size={24} 
+                    color="#ffffff" 
+                  />
+                </View>
+                <View style={styles.summaryMeta}>
+                  <Text style={[styles.summaryVendor, { color: colors.text }]}>
+                    {editingData?.name || 'Unknown Vendor'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.summaryCategory, { color: colors.textTertiary }]}>
+                      {(editingData?.category || 'bills').toUpperCase()}
+                    </Text>
+                    {confidence !== null && (
+                      <View style={[styles.confidenceBadge, { backgroundColor: confidence >= 90 ? '#DEF7ED' : '#FEF3C7' }]}>
+                        <Text style={[styles.confidenceText, { color: confidence >= 90 ? '#065F46' : '#92400E' }]}>
+                          {confidence}% Match
                         </Text>
-                        {confidence !== null && (
-                          <View style={[styles.confidenceBadge, { backgroundColor: confidence >= 90 ? '#DEF7ED' : '#FEF3C7' }]}>
-                            <Text style={[styles.confidenceText, { color: confidence >= 90 ? '#065F46' : '#92400E' }]}>
-                              {confidence}% Match
-                            </Text>
-                          </View>
-                        )}
                       </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.summaryDivider} />
-
-                  <View style={styles.summaryRow}>
-                    <View>
-                      <Text style={styles.summaryLabel}>Amount Due</Text>
-                      <Text style={[styles.summaryValue, { color: colors.accent }]}>
-                        {formatAmount(editingData?.amount || 0)}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.summaryLabel}>Due Date</Text>
-                      <Text style={[styles.summaryValue, { color: colors.textSecondary }]}>
-                        {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric'
-                        }) : 'N/A'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <Pressable 
-                  style={styles.editToggleBtn}
-                  onPress={() => setIsEditing(true)}
-                >
-                  <Ionicons name="create-outline" size={18} color="#4F46E5" />
-                  <Text style={styles.editToggleText}>Edit details</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <ScrollView style={styles.editScroll} showsVerticalScrollIndicator={false}>
-                <View style={styles.editGrid}>
-                {/* General Info */}
-                <View style={styles.editCard}>
-                  <Text style={styles.editCardTitle}>General</Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Bill Name</Text>
-                    <TextInput
-                      style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                      value={editingData?.name}
-                      onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, name: t }))}
-                    />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Amount (₹)</Text>
-                    <TextInput
-                      style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                      value={editingData?.amount?.toString()}
-                      keyboardType="numeric"
-                      onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, amount: parseFloat(t) || 0 }))}
-                    />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Due Date</Text>
-                    <Pressable
-                      style={[styles.input, { borderColor: colors.border, justifyContent: 'center' }]}
-                      onPress={() => setShowDatePicker(true)}
-                    >
-                      <Text style={{ color: colors.text }}>
-                        {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN') : 'Select Date'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Metadata */}
-                <View style={styles.editCard}>
-                  <Text style={styles.editCardTitle}>Scanned Metadata</Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Vendor / Merchant</Text>
-                    <TextInput
-                      style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                      value={editingData?.vendorName}
-                      placeholder="e.g. Jio Fiber"
-                      onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, vendorName: t }))}
-                    />
+                    )}
                   </View>
                 </View>
               </View>
-              
-              <Pressable 
-                style={[styles.editToggleBtn, { marginTop: 16 }]}
-                onPress={() => setIsEditing(false)}
-              >
-                <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
-                <Text style={[styles.editToggleText, { color: '#10B981' }]}>Finish editing</Text>
-              </Pressable>
-            </ScrollView>
-            )}
 
-            <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
-                onPress={() => {
-                  setShowSuccessModal(false);
-                  setStep('guide');
-                  setPhoto(null);
-                  setPreviewData(null);
-                  setEditingData(null);
-                }}
-              >
-                <Text style={[styles.modalBtnLabel, { color: colors.textSecondary }]}>Discard</Text>
-              </Pressable>
-              <Pressable
-                onPress={commitReminder}
-                style={({ pressed }) => [
-                  styles.saveBtnFull,
-                  { opacity: pressed ? 0.8 : 1 }
-                ]}
-              >
-                <LinearGradient
-                  colors={['#4F46E5', '#7C3AED']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.saveGradient}
-                >
-                  <Text style={styles.saveBtnText}>Save Bill</Text>
-                </LinearGradient>
-              </Pressable>
+              <View style={styles.summaryDivider} />
+
+              <View style={styles.summaryRow}>
+                <View>
+                  <Text style={styles.summaryLabel}>Amount Due</Text>
+                  <Text style={[styles.summaryValue, { color: colors.accent }]}>
+                    {formatAmount(editingData?.amount || 0)}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.summaryLabel}>Due Date</Text>
+                  <Text style={[styles.summaryValue, { color: colors.textSecondary }]}>
+                    {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric'
+                    }) : 'N/A'}
+                  </Text>
+                </View>
+              </View>
             </View>
+
+            <Pressable 
+              style={styles.editToggleBtn}
+              onPress={() => setIsEditing(true)}
+            >
+              <Ionicons name="create-outline" size={18} color="#4F46E5" />
+              <Text style={styles.editToggleText}>Edit details</Text>
+            </Pressable>
           </View>
+        ) : (
+          <ScrollView style={styles.editScroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.editGrid}>
+              {/* General Info */}
+              <View style={styles.editCard}>
+                <Text style={styles.editCardTitle}>General</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Bill Name</Text>
+                  <TextInput
+                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                    value={editingData?.name}
+                    onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, name: t }))}
+                  />
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Amount (₹)</Text>
+                  <TextInput
+                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                    value={editingData?.amount?.toString()}
+                    keyboardType="numeric"
+                    onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, amount: parseFloat(t) || 0 }))}
+                  />
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Due Date</Text>
+                  <Pressable
+                    style={[styles.input, { borderColor: colors.border, justifyContent: 'center' }]}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text style={{ color: colors.text }}>
+                      {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN') : 'Select Date'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Metadata */}
+              <View style={styles.editCard}>
+                <Text style={styles.editCardTitle}>Scanned Metadata</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Vendor / Merchant</Text>
+                  <TextInput
+                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                    value={editingData?.vendorName}
+                    placeholder="e.g. Jio Fiber"
+                    onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, vendorName: t }))}
+                  />
+                </View>
+              </View>
+            </View>
+            
+            <Pressable 
+              style={[styles.editToggleBtn, { marginTop: 16 }]}
+              onPress={() => setIsEditing(false)}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
+              <Text style={[styles.editToggleText, { color: '#10B981' }]}>Finish editing</Text>
+            </Pressable>
+          </ScrollView>
+        )}
+
+        <View style={styles.modalActions}>
+          <Pressable
+            style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
+            onPress={() => {
+              setShowSuccessModal(false);
+              setStep('guide');
+              setPhoto(null);
+              setPreviewData(null);
+              setEditingData(null);
+            }}
+          >
+            <Text style={[styles.modalBtnLabel, { color: colors.textSecondary }]}>Discard</Text>
+          </Pressable>
+          <Pressable
+            onPress={commitReminder}
+            style={({ pressed }) => [
+              styles.saveBtnFull,
+              { opacity: pressed ? 0.8 : 1 }
+            ]}
+          >
+            <LinearGradient
+              colors={['#4F46E5', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.saveGradient}
+            >
+              <Text style={styles.saveBtnText}>Save Bill</Text>
+            </LinearGradient>
+          </Pressable>
         </View>
 
         {showDatePicker && (
@@ -605,7 +601,7 @@ export default function ScanBillScreen() {
             }}
           />
         )}
-      </Modal>
+      </CustomModal>
     </View>
   );
 }

@@ -7,9 +7,7 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
-  Modal,
   TextInput,
-  Alert,
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,7 +21,10 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
+import { useSeniorMode } from '@/lib/senior-context';
+import { useAlert } from '@/lib/alert-context';
 import PremiumLoader from '@/components/PremiumLoader';
+import CustomModal from '@/components/CustomModal';
 import { getIntentPolicy, getReminderIntentFromBill, type ReminderIntent } from '@/lib/reminder-intent';
 import {
   Bill,
@@ -80,6 +81,7 @@ function ReminderCard({
   onDelete,
   index,
   onPress,
+  isSeniorMode,
 }: {
   bill: Bill;
   onMarkPaid: () => void;
@@ -88,6 +90,7 @@ function ReminderCard({
   onDelete: () => void;
   index: number;
   onPress?: () => void;
+  isSeniorMode: boolean;
 }) {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
@@ -136,100 +139,101 @@ function ReminderCard({
       <Pressable onPress={onPress} disabled={!onPress}>
         <View style={[styles.reminderCard, { backgroundColor: colors.card, borderColor: colors.border }, isPaid && styles.reminderCardPaid]}>
           <View style={styles.reminderTop}>
-          <View style={[styles.reminderIcon, { backgroundColor: urgencyColor + '15' }]}>
-            <Ionicons name={bill.icon as any} size={22} color={urgencyColor} />
-          </View>
-          <View style={styles.reminderInfo}>
-            <Text style={[styles.reminderName, { color: colors.text }, isPaid && { textDecorationLine: 'line-through' as const, color: colors.textTertiary }]} numberOfLines={1}>
-              {bill.name}
-            </Text>
-            <View style={styles.reminderMetaRow}>
-              <View style={[styles.typeBadge, { backgroundColor: intentMeta.color + '15' }]}>
-                <Text style={[styles.typeBadgeText, { color: intentMeta.color }]}>{intentMeta.label}</Text>
-              </View>
-              {policy.showRepeat && (
-                <View style={styles.repeatBadge}>
-                  <Ionicons name="refresh" size={10} color={colors.textTertiary} />
-                  <Text style={[styles.repeatText, { color: colors.textTertiary }]}>{repeatLabel}</Text>
-                </View>
-              )}
+            <View style={[styles.reminderIcon, { backgroundColor: urgencyColor + '15' }]}>
+              <Ionicons name={bill.icon as any} size={isSeniorMode ? 28 : 22} color={urgencyColor} />
             </View>
-            {policy.showDue ? (
-              <Text style={[styles.reminderDue, { color: urgencyColor }]}>
-                {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
-                <Text style={[styles.reminderDate, { color: colors.textTertiary }]}>
-                  {'  '}
-                  {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </Text>
+            <View style={styles.reminderInfo}>
+              <Text style={[styles.reminderName, { color: colors.text }, isPaid && { textDecorationLine: 'line-through' as const, color: colors.textTertiary }, isSeniorMode && { fontSize: 18 }]} numberOfLines={1}>
+                {bill.name}
               </Text>
-            ) : null}
+              <View style={styles.reminderMetaRow}>
+                <View style={[styles.typeBadge, { backgroundColor: intentMeta.color + '15' }]}>
+                  <Text style={[styles.typeBadgeText, { color: intentMeta.color }, isSeniorMode && { fontSize: 13 }]}>{intentMeta.label}</Text>
+                </View>
+                {policy.showRepeat && (
+                  <View style={styles.repeatBadge}>
+                    <Ionicons name="refresh" size={10} color={colors.textTertiary} />
+                    <Text style={[styles.repeatText, { color: colors.textTertiary }, isSeniorMode && { fontSize: 13 }]}>{repeatLabel}</Text>
+                  </View>
+                )}
+              </View>
+              {policy.showDue ? (
+                <Text style={[styles.reminderDue, { color: urgencyColor }, isSeniorMode && { fontSize: 15 }]}>
+                  {isPaid ? 'Paid' : isSnoozed ? 'Snoozed' : daysLeft <= 0 ? 'Overdue' : daysLeft === 1 ? 'Due tomorrow' : `Due in ${daysLeft} days`}
+                  <Text style={[styles.reminderDate, { color: colors.textTertiary }, isSeniorMode && { fontSize: 14 }]}>
+                    {'  '}
+                    {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </Text>
+              ) : null}
+            </View>
+            <View style={[styles.reminderRight, isSeniorMode && { justifyContent: 'center' }]}>
+              <Text
+                style={[
+                  styles.reminderAmount,
+                  { color: colors.text, opacity: showAmount ? 1 : 0 },
+                  isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const },
+                  isSeniorMode && { fontSize: 22 },
+                ]}
+              >
+                {formatAmount(bill.amount)}
+              </Text>
+            </View>
           </View>
-          <View style={styles.reminderRight}>
-            <Text
-              style={[
-                styles.reminderAmount,
-                { color: colors.text, opacity: showAmount ? 1 : 0 },
-                isPaid && { color: colors.textTertiary, textDecorationLine: 'line-through' as const },
-              ]}
-            >
-              {formatAmount(bill.amount)}
-            </Text>
-          </View>
-        </View>
 
-        <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
-          <Pressable
-            onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
-              onMarkPaid();
-            }}
-            style={[styles.cardActionBtn, { backgroundColor: isPaid ? colors.warningDim : colors.accentMintDim }]}
-            testID={`mark-paid-${bill.id}`}
-          >
-            <Ionicons name={isPaid ? 'close' : 'checkmark'} size={18} color={isPaid ? colors.warning : colors.accentMint} />
-          </Pressable>
-          {!isPaid && (
+          <View style={[styles.cardActions, { borderTopColor: colors.border }, isSeniorMode && { paddingVertical: 12, gap: 12 }]}>
             <Pressable
               onPress={() => {
                 try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
-                onSnooze();
+                onMarkPaid();
               }}
-              style={[styles.cardActionBtn, { backgroundColor: colors.accentBlueDim }]}
+              style={[styles.cardActionBtn, { backgroundColor: isPaid ? colors.warningDim : colors.accentMintDim }, isSeniorMode && { height: 60, borderRadius: 16 }]}
+              testID={`mark-paid-${bill.id}`}
             >
-              <Ionicons name="time" size={18} color={colors.accentBlue} />
+              <Ionicons name={isPaid ? 'close' : 'checkmark'} size={isSeniorMode ? 28 : 18} color={isPaid ? colors.warning : colors.accentMint} />
             </Pressable>
-          )}
-          <Pressable
-            onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
-              onEdit();
-            }}
-            style={[styles.cardActionBtn, { backgroundColor: colors.accentDim }]}
-          >
-            <Ionicons name="pencil" size={16} color={colors.accent} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
-              onDelete();
-            }}
-            style={[styles.cardActionBtn, { backgroundColor: colors.dangerDim }]}
-            testID={`delete-${bill.id}`}
-          >
-            <Ionicons name="trash" size={16} color={colors.danger} />
-          </Pressable>
-        </View>
+            {!isPaid && (
+              <Pressable
+                onPress={() => {
+                  try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
+                  onSnooze();
+                }}
+                style={[styles.cardActionBtn, { backgroundColor: colors.accentBlueDim }, isSeniorMode && { height: 60, borderRadius: 16 }]}
+              >
+                <Ionicons name="time" size={isSeniorMode ? 28 : 18} color={colors.accentBlue} />
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
+                onEdit();
+              }}
+              style={[styles.cardActionBtn, { backgroundColor: colors.accentDim }, isSeniorMode && { height: 60, borderRadius: 16 }]}
+            >
+              <Ionicons name="pencil" size={isSeniorMode ? 24 : 16} color={colors.accent} />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
+                onDelete();
+              }}
+              style={[styles.cardActionBtn, { backgroundColor: colors.dangerDim }, isSeniorMode && { height: 60, borderRadius: 16 }]}
+              testID={`delete-${bill.id}`}
+            >
+              <Ionicons name="trash" size={isSeniorMode ? 24 : 16} color={colors.danger} />
+            </Pressable>
+          </View>
 
-        {isSnoozed && bill.snoozedUntil && (
-          <View style={[styles.snoozeInfo, { backgroundColor: colors.accentBlueDim }]}>
-            <Ionicons name="time" size={12} color={colors.accentBlue} />
-            <Text style={[styles.snoozeInfoText, { color: colors.accentBlue }]}>
-              Snoozed until {new Date(bill.snoozedUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-            </Text>
-          </View>
-        )}
-          </View>
-        </Pressable>
+          {isSnoozed && bill.snoozedUntil && (
+            <View style={[styles.snoozeInfo, { backgroundColor: colors.accentBlueDim }]}>
+              <Ionicons name="time" size={12} color={colors.accentBlue} />
+              <Text style={[styles.snoozeInfoText, { color: colors.accentBlue }, isSeniorMode && { fontSize: 13 }]}>
+                Snoozed until {new Date(bill.snoozedUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              </Text>
+            </View>
+          )}
+        </View>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -383,139 +387,134 @@ function AddEditModal({
     (!intentPolicyForSave.shouldHaveAmount || (amount.trim() && Number(amount) > 0));
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContainer, { backgroundColor: colors.card, paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20) }]}>
-          <View style={[styles.modalGrabber, { backgroundColor: colors.textTertiary }]} />
+    <CustomModal visible={visible} onClose={onClose}>
+      <View style={styles.modalHeader}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>{editBill ? 'Edit Reminder' : 'New Reminder'}</Text>
+        <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
+        </Pressable>
+      </View>
 
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>{editBill ? 'Edit Reminder' : 'New Reminder'}</Text>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
-            </Pressable>
-          </View>
+      {!!modalError && (
+        <View style={[styles.errorBox, { backgroundColor: colors.dangerDim, marginHorizontal: 20 }]}>
+          <Ionicons name="alert-circle" size={16} color={colors.danger} />
+          <Text style={[styles.errorText, { color: colors.danger }]}>{modalError}</Text>
+        </View>
+      )}
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-            {!!modalError && (
-              <View style={[styles.errorBox, { backgroundColor: colors.dangerDim }]}>
-                <Ionicons name="alert-circle" size={16} color={colors.danger} />
-                <Text style={[styles.errorText, { color: colors.danger }]}>{modalError}</Text>
-              </View>
-            )}
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g., Electricity Bill"
+          placeholderTextColor={colors.textTertiary}
+        />
+
+        <View style={styles.rowFields}>
+          <View style={styles.halfField}>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Amount</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-              value={name}
-              onChangeText={setName}
-              placeholder="e.g., Electricity Bill"
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="0"
               placeholderTextColor={colors.textTertiary}
+              keyboardType="numeric"
             />
-
-            <View style={styles.rowFields}>
-              <View style={styles.halfField}>
-                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Amount</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-                  value={amount}
-                  onChangeText={setAmount}
-                  placeholder="0"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={styles.halfField}>
-                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due Date</Text>
-                <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-                  <Text style={[styles.dateLikeText, { color: colors.text }]}>
-                    {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </Text>
-                  <Ionicons name="calendar" size={18} color={colors.textTertiary} />
-                </View>
-              </View>
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Time</Text>
+          </View>
+          <View style={styles.halfField}>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due Date</Text>
             <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
               <Text style={[styles.dateLikeText, { color: colors.text }]}>
-                {dueDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+                {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
               </Text>
-              <Ionicons name="time" size={18} color={colors.textTertiary} />
+              <Ionicons name="calendar" size={18} color={colors.textTertiary} />
             </View>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Repeat</Text>
-            <View style={styles.chipRow}>
-              {REPEAT_OPTIONS.map(opt => (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => setRepeatType(opt.key)}
-                  style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, repeatType === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
-                >
-                  <Text style={[styles.chipText, { color: colors.textTertiary }, repeatType === opt.key && { color: colors.accent }]}>
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Category</Text>
-            <View style={styles.chipRow}>
-              {CATEGORY_OPTIONS.map(opt => (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => setCategory(opt.key)}
-                  style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, category === opt.key && { backgroundColor: CATEGORIES[opt.key].color + '15', borderColor: CATEGORIES[opt.key].color + '40' }]}
-                >
-                  <Text style={[styles.chipText, { color: colors.textTertiary }, category === opt.key && { color: CATEGORIES[opt.key].color }]}>
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Icon</Text>
-            <Pressable onPress={() => setShowIconPicker(!showIconPicker)} style={[styles.iconPickerToggle, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-              <View style={[styles.selectedIconWrap, { backgroundColor: colors.accent + '15' }]}>
-                <Ionicons name={selectedIcon as any} size={20} color={colors.accent} />
-              </View>
-              <Text style={[styles.iconPickerText, { color: colors.textSecondary }]}>Tap to change icon</Text>
-              <Ionicons name={showIconPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
-            </Pressable>
-
-            {showIconPicker && (
-              <View style={styles.iconGrid}>
-                {ICON_OPTIONS.map(icon => (
-                  <Pressable
-                    key={icon}
-                    onPress={() => { setSelectedIcon(icon); setShowIconPicker(false); }}
-                    style={[styles.iconOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, selectedIcon === icon && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
-                  >
-                    <Ionicons name={icon as any} size={22} color={selectedIcon === icon ? colors.accent : colors.textSecondary} />
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </ScrollView>
-
-          <Pressable
-            onPress={handleSave}
-            style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
-            disabled={!canSave}
-            testID="save-reminder-btn"
-          >
-            <LinearGradient
-              colors={canSave ? (colors.buttonGradient as unknown as [string, string]) : [colors.cardElevated, colors.cardElevated]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.saveBtnGradient}
-            >
-              <Ionicons name={editBill ? 'checkmark' : 'add'} size={20} color={canSave ? '#FFFFFF' : colors.textTertiary} />
-              <Text style={[styles.saveBtnText, { color: '#FFFFFF' }, !canSave && { color: colors.textTertiary }]}>
-                {editBill ? 'Save Changes' : 'Add Reminder'}
-              </Text>
-            </LinearGradient>
-          </Pressable>
+          </View>
         </View>
-      </View>
-    </Modal>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Time</Text>
+        <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+          <Text style={[styles.dateLikeText, { color: colors.text }]}>
+            {dueDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+          </Text>
+          <Ionicons name="time" size={18} color={colors.textTertiary} />
+        </View>
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Repeat</Text>
+        <View style={styles.chipRow}>
+          {REPEAT_OPTIONS.map(opt => (
+            <Pressable
+              key={opt.key}
+              onPress={() => setRepeatType(opt.key)}
+              style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, repeatType === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
+            >
+              <Text style={[styles.chipText, { color: colors.textTertiary }, repeatType === opt.key && { color: colors.accent }]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Category</Text>
+        <View style={styles.chipRow}>
+          {CATEGORY_OPTIONS.map(opt => (
+            <Pressable
+              key={opt.key}
+              onPress={() => setCategory(opt.key)}
+              style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, category === opt.key && { backgroundColor: CATEGORIES[opt.key].color + '15', borderColor: CATEGORIES[opt.key].color + '40' }]}
+            >
+              <Text style={[styles.chipText, { color: colors.textTertiary }, category === opt.key && { color: CATEGORIES[opt.key].color }]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Icon</Text>
+        <Pressable onPress={() => setShowIconPicker(!showIconPicker)} style={[styles.iconPickerToggle, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+          <View style={[styles.selectedIconWrap, { backgroundColor: colors.accent + '15' }]}>
+            <Ionicons name={selectedIcon as any} size={20} color={colors.accent} />
+          </View>
+          <Text style={[styles.iconPickerText, { color: colors.textSecondary }]}>Tap to change icon</Text>
+          <Ionicons name={showIconPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
+        </Pressable>
+
+        {showIconPicker && (
+          <View style={styles.iconGrid}>
+            {ICON_OPTIONS.map(icon => (
+              <Pressable
+                key={icon}
+                onPress={() => { setSelectedIcon(icon); setShowIconPicker(false); }}
+                style={[styles.iconOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, selectedIcon === icon && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
+              >
+                <Ionicons name={icon as any} size={22} color={selectedIcon === icon ? colors.accent : colors.textSecondary} />
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+
+      <Pressable
+        onPress={handleSave}
+        style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+        disabled={!canSave}
+        testID="save-reminder-btn"
+      >
+        <LinearGradient
+          colors={canSave ? (colors.buttonGradient as unknown as [string, string]) : [colors.cardElevated, colors.cardElevated]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.saveBtnGradient}
+        >
+          <Ionicons name={editBill ? 'checkmark' : 'add'} size={20} color={canSave ? '#FFFFFF' : colors.textTertiary} />
+          <Text style={[styles.saveBtnText, { color: '#FFFFFF' }, !canSave && { color: colors.textTertiary }]}>
+            {editBill ? 'Save Changes' : 'Add Reminder'}
+          </Text>
+        </LinearGradient>
+      </Pressable>
+    </CustomModal>
   );
 }
 
@@ -529,28 +528,23 @@ function SnoozeModal({ visible, onClose, onSnooze }: { visible: boolean; onClose
   ];
 
   return (
-    <Modal visible={visible} animationType="fade" transparent>
-      <Pressable style={styles.snoozeOverlay} onPress={onClose}>
-        <View style={[styles.snoozeSheet, { backgroundColor: colors.card }]}>
-          <View style={[styles.modalGrabberCentered, { backgroundColor: colors.textTertiary }]} />
-          <Text style={[styles.snoozeTitle, { color: colors.text }]}>Snooze Reminder</Text>
-          <Text style={[styles.snoozeSubtitle, { color: colors.textSecondary }]}>Remind me again in...</Text>
-          {SNOOZE_OPTIONS.map(opt => (
-            <Pressable
-              key={opt.days}
-              onPress={() => { onSnooze(opt.days); onClose(); }}
-              style={[styles.snoozeOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
-            >
-              <View style={[styles.snoozeOptionIcon, { backgroundColor: colors.accentBlueDim }]}>
-                <Ionicons name={opt.icon} size={18} color={colors.accentBlue} />
-              </View>
-              <Text style={[styles.snoozeOptionText, { color: colors.text }]}>{opt.label}</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-            </Pressable>
-          ))}
-        </View>
-      </Pressable>
-    </Modal>
+    <CustomModal visible={visible} onClose={onClose}>
+      <Text style={[styles.snoozeTitle, { color: colors.text }]}>Snooze Reminder</Text>
+      <Text style={[styles.snoozeSubtitle, { color: colors.textSecondary }]}>Remind me again in...</Text>
+      {SNOOZE_OPTIONS.map(opt => (
+        <Pressable
+          key={opt.days}
+          onPress={() => { onSnooze(opt.days); onClose(); }}
+          style={[styles.snoozeOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
+        >
+          <View style={[styles.snoozeOptionIcon, { backgroundColor: colors.accentBlueDim }]}>
+            <Ionicons name={opt.icon} size={18} color={colors.accentBlue} />
+          </View>
+          <Text style={[styles.snoozeOptionText, { color: colors.text }]}>{opt.label}</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </Pressable>
+      ))}
+    </CustomModal>
   );
 }
 
@@ -582,87 +576,84 @@ function SettingsModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.settingsContainer, { backgroundColor: colors.card, paddingBottom: Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20) }]}>
-          <View style={[styles.modalGrabber, { backgroundColor: colors.textTertiary }]} />
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Reminder Settings</Text>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
-            </Pressable>
-          </View>
+    <CustomModal visible={visible} onClose={onClose}>
+      <View style={styles.modalHeader}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Reminder Settings</Text>
+        <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
+        </Pressable>
+      </View>
 
-          <View style={styles.settingsContent}>
-            <Text style={[styles.settingsSectionTitle, { color: colors.textSecondary }]}>Notify me before due date</Text>
-            <View style={styles.dayChipsRow}>
-              {[7, 3, 2, 1, 0].map(d => (
-                <Pressable
-                  key={d}
-                  onPress={() => toggleDay(d)}
-                  style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, days.includes(d) && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
-                >
-                  <Text style={[styles.chipText, { color: colors.textTertiary }, days.includes(d) && { color: colors.accent }]}>
-                    {d === 0 ? 'Due day' : `${d}d before`}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-              <View style={styles.settingInfo}>
-                <View style={[styles.settingIconWrap, { backgroundColor: colors.accentDim }]}>
-                  <Ionicons name="volume-high" size={18} color={colors.accent} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>Sound</Text>
-              </View>
-              <Switch
-                value={sound}
-                onValueChange={setSound}
-                trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
-                thumbColor={sound ? colors.accent : colors.textTertiary}
-              />
-            </View>
-
-            <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-              <View style={styles.settingInfo}>
-                <View style={[styles.settingIconWrap, { backgroundColor: colors.accentBlueDim }]}>
-                  <Ionicons name="phone-portrait" size={18} color={colors.accentBlue} />
-                </View>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>Vibration</Text>
-              </View>
-              <Switch
-                value={vibration}
-                onValueChange={setVibration}
-                trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
-                thumbColor={vibration ? colors.accent : colors.textTertiary}
-              />
-            </View>
-          </View>
-
-          <Pressable
-            onPress={() => { onSave({ soundEnabled: sound, vibrationEnabled: vibration, defaultReminderDays: days }); onClose(); }}
-            style={styles.saveBtn}
-          >
-            <LinearGradient
-              colors={colors.buttonGradient as unknown as [string, string]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.saveBtnGradient}
+      <View style={styles.settingsContent}>
+        <Text style={[styles.settingsSectionTitle, { color: colors.textSecondary }]}>Notify me before due date</Text>
+        <View style={styles.dayChipsRow}>
+          {[7, 3, 2, 1, 0].map(d => (
+            <Pressable
+              key={d}
+              onPress={() => toggleDay(d)}
+              style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, days.includes(d) && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
             >
-              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-              <Text style={[styles.saveBtnText, { color: '#FFFFFF' }]}>Save Settings</Text>
-            </LinearGradient>
-          </Pressable>
+              <Text style={[styles.chipText, { color: colors.textTertiary }, days.includes(d) && { color: colors.accent }]}>
+                {d === 0 ? 'Due day' : `${d}d before`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+          <View style={styles.settingInfo}>
+            <View style={[styles.settingIconWrap, { backgroundColor: colors.accentDim }]}>
+              <Ionicons name="volume-high" size={18} color={colors.accent} />
+            </View>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Sound</Text>
+          </View>
+          <Switch
+            value={sound}
+            onValueChange={setSound}
+            trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
+            thumbColor={sound ? colors.accent : colors.textTertiary}
+          />
+        </View>
+
+        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+          <View style={styles.settingInfo}>
+            <View style={[styles.settingIconWrap, { backgroundColor: colors.accentBlueDim }]}>
+              <Ionicons name="phone-portrait" size={18} color={colors.accentBlue} />
+            </View>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Vibration</Text>
+          </View>
+          <Switch
+            value={vibration}
+            onValueChange={setVibration}
+            trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
+            thumbColor={vibration ? colors.accent : colors.textTertiary}
+          />
         </View>
       </View>
-    </Modal>
+
+      <Pressable
+        onPress={() => { onSave({ soundEnabled: sound, vibrationEnabled: vibration, defaultReminderDays: days }); onClose(); }}
+        style={styles.saveBtn}
+      >
+        <LinearGradient
+          colors={colors.buttonGradient as unknown as [string, string]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.saveBtnGradient}
+        >
+          <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+          <Text style={[styles.saveBtnText, { color: '#FFFFFF' }]}>Save Settings</Text>
+        </LinearGradient>
+      </Pressable>
+    </CustomModal>
   );
 }
 
 export default function BillsScreen() {
   const { colors, isDark } = useTheme();
   const { formatAmount, formatCompactAmount } = useCurrency();
+  const { isSeniorMode } = useSeniorMode();
+  const { showAlert } = useAlert();
 
   const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarContentInset();
@@ -697,8 +688,6 @@ export default function BillsScreen() {
     .filter(b => b.reminderType === 'subscription' && b.status !== 'paid' && !b.isPaid)
     .reduce((s, b) => s + b.amount, 0);
 
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
   const todayKey = new Date().toDateString();
   const todayBills = bills.filter(
     (b) =>
@@ -708,14 +697,19 @@ export default function BillsScreen() {
   );
 
   const handleDelete = (billId: string) => {
-    if (Platform.OS === 'web') {
-      setDeleteConfirmId(billId);
-    } else {
-      Alert.alert('Delete Reminder', 'Are you sure you want to delete this reminder?', [
+    showAlert({
+      title: 'Delete Reminder',
+      message: 'Are you sure you want to delete this reminder? This action cannot be undone.',
+      type: 'confirm',
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteReminder(billId) },
-      ]);
-    }
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteReminder(billId),
+        },
+      ],
+    });
   };
 
   const handleSave = async (billData: Omit<Bill, 'id'> | Bill) => {
@@ -788,9 +782,9 @@ export default function BillsScreen() {
           >
             <View style={styles.overviewRow}>
               <View style={styles.overviewStat}>
-                <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Pending</Text>
+                <Text style={[styles.overviewLabel, { color: colors.textTertiary }, isSeniorMode && { fontSize: 16 }]}>Pending</Text>
                 <Text 
-                  style={[styles.overviewAmount, { color: colors.text }]}
+                  style={[styles.overviewAmount, { color: colors.text }, isSeniorMode && { fontSize: 36 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                 >
@@ -871,7 +865,8 @@ export default function BillsScreen() {
                 <ReminderCard
                   key={bill.id}
                   bill={bill}
-                  onPress={() => router.push(`/bill-details/${bill.id}`)}
+                  index={idx}
+                  isSeniorMode={isSeniorMode}
                   onMarkPaid={() => toggleBillPaid(bill.id)}
                   onSnooze={() => {
                     setSnoozeBillId(bill.id);
@@ -882,7 +877,6 @@ export default function BillsScreen() {
                     setShowAddModal(true);
                   }}
                   onDelete={() => handleDelete(bill.id)}
-                  index={idx}
                 />
               ))}
           </>
@@ -903,6 +897,7 @@ export default function BillsScreen() {
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
                 onDelete={() => handleDelete(bill.id)}
                 index={idx}
+                isSeniorMode={isSeniorMode}
               />
             ))}
           </>
@@ -923,6 +918,7 @@ export default function BillsScreen() {
                 onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
                 onDelete={() => handleDelete(bill.id)}
                 index={idx}
+                isSeniorMode={isSeniorMode}
               />
             ))}
           </>
@@ -963,36 +959,6 @@ export default function BillsScreen() {
         settings={reminderSettings}
         onSave={updateReminderSettings}
       />
-
-      <Modal visible={!!deleteConfirmId} animationType="fade" transparent>
-        <Pressable style={styles.snoozeOverlay} onPress={() => setDeleteConfirmId(null)}>
-          <View style={[styles.snoozeSheet, { backgroundColor: colors.card }]}>
-            <View style={[styles.modalGrabberCentered, { backgroundColor: colors.textTertiary }]} />
-            <View style={[styles.deleteIconWrap, { backgroundColor: colors.dangerDim }]}>
-              <Ionicons name="warning" size={28} color={colors.danger} />
-            </View>
-            <Text style={[styles.snoozeTitle, { color: colors.text }]}>Delete Reminder</Text>
-            <Text style={[styles.snoozeSubtitle, { color: colors.textSecondary }]}>Are you sure you want to delete this reminder? This action cannot be undone.</Text>
-            <View style={styles.deleteActions}>
-              <Pressable
-                onPress={() => setDeleteConfirmId(null)}
-                style={[styles.deleteActionBtn, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
-              >
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-                <Text style={[styles.deleteActionText, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => { if (deleteConfirmId) deleteReminder(deleteConfirmId); setDeleteConfirmId(null); }}
-                style={[styles.deleteActionBtn, { backgroundColor: colors.dangerDim, borderColor: colors.danger + '30' }]}
-                testID="confirm-delete-btn"
-              >
-                <Ionicons name="trash" size={18} color={colors.danger} />
-                <Text style={[styles.deleteActionText, { color: colors.danger }]}>Delete</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
