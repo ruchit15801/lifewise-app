@@ -151,17 +151,17 @@ function AuthGate() {
   useEffect(() => {
     if (!isAuthenticated || !token) return;
     registerForPushNotifications(token).catch((e) => {
-      console.log("[Push] Registration error", e);
+      if (__DEV__) console.log("[Push] Registration error", e);
     });
 
     registerSmsSyncTask().catch((e) => {
-      console.log("[BackgroundSync] Registration error", e);
+      if (__DEV__) console.log("[BackgroundSync] Registration error", e);
     });
 
     let sub: { remove: () => void } | null = null;
     (async () => {
       const nextSub = await addPushTokenListener((newToken) => {
-        console.log("[Push] Token refreshed:", newToken);
+        if (__DEV__) console.log("[Push] Token refreshed:", newToken);
         registerForPushNotifications(token);
       });
       sub = nextSub;
