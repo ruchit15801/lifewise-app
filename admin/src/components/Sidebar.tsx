@@ -11,10 +11,11 @@ import {
   TicketPercent, 
   Settings, 
   LogOut,
-  ShieldCheck
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+
+import Image from "next/image";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -35,11 +36,18 @@ export default function Sidebar() {
   return (
     <div className="w-72 h-screen bg-white border-r border-gray-100 flex flex-col p-6 fixed left-0 top-0 z-50">
       <div className="flex items-center gap-3 mb-10 px-2">
-        <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-600/30">
-          <ShieldCheck className="w-6 h-6" />
+        <div className="w-12 h-12 relative flex items-center justify-center">
+          <div className="absolute inset-0 bg-primary-600/10 blur-xl rounded-full" />
+          <Image 
+            src="/logo.png" 
+            alt="LifeWise Logo" 
+            width={40} 
+            height={40} 
+            className="rounded-lg object-contain relative z-10"
+          />
         </div>
         <div>
-          <h2 className="font-bold text-gray-900 tracking-tight">LifeWise</h2>
+          <h2 className="font-bold text-gray-900 tracking-tight text-lg leading-tight">LifeWise</h2>
           <p className="text-[10px] font-bold text-primary-600 uppercase tracking-widest">Admin Panel</p>
         </div>
       </div>

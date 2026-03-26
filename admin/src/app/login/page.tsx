@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Lock, Mail, ArrowRight, Loader2, ShieldCheck } from "lucide-react";
+import { Lock, Mail, ArrowRight, Loader2 } from "lucide-react";
+import Image from "next/image";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -59,9 +60,16 @@ export default function LoginPage() {
             initial={{ scale: 0.8 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-xl border border-white/50 mb-4"
+            className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-xl border border-white/50 mb-4 relative"
           >
-            <ShieldCheck className="w-8 h-8 text-primary-600" />
+            <div className="absolute inset-0 bg-primary-600/5 blur-2xl rounded-full" />
+            <Image 
+              src="/logo.png" 
+              alt="LifeWise Logo" 
+              width={56} 
+              height={56} 
+              className="object-contain relative z-10"
+            />
           </motion.div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
             LifeWise <span className="text-primary-600">Admin</span>
