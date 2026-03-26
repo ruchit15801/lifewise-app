@@ -10,6 +10,8 @@ import { getFirebaseMessaging } from './firebase-admin';
 import multer from 'multer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
+import { Server as SocketServer } from 'socket.io';
+import { SupportTicketSchema, SupportMessageSchema, type SupportTicket, type SupportMessage } from './db/support-schema';
 
 function toId(id: any): any {
   if (id instanceof ObjectId) return id;
@@ -291,6 +293,32 @@ async function parseReminderWithAI(text: string): Promise<{
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      console.log(`[DEBUG] ${req.method} ${req.path}`);
+    }
+    next();
+  });
+
+  // Simplified and moved to top for absolute priority
+  app.post('/api/tickets-read/:id', authMiddleware, async (req, res) => {
+    try {
+      const ticketId = req.params.id;
+      const userId = (req as any).userId;
+      console.log(`[Support] Marking read for ticket ${ticketId} (via /api/tickets-read)`);
+      
+      const result = await (getDb().collection('support_messages') as any).updateMany(
+        { ticketId, senderId: { $ne: userId }, status: { $ne: 'read' } },
+        { $set: { status: 'read' } }
+      );
+      
+      res.json({ success: true, count: result.modifiedCount });
+    } catch (err) {
+      console.error('Mark read error:', err);
+      res.status(500).json({ message: 'Failed to mark messages as read' });
+    }
+  });
+
   await connectMongo();
   await initIndexes();
   const db = getDb();
@@ -305,6 +333,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const supportTickets = db.collection('support_tickets') as any;
   const medicineLogs = db.collection('medicine_logs') as any;
   const lifeScores = db.collection('life_scores') as any;
+  const supportMessages = db.collection('support_messages') as any;
+
+  // --- Support API Routes (Moved to top for priority) ---
+
+  // Get user's tickets with search, filter, and last message
+  app.get('/api/support/tickets', authMiddleware, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { search, status, sort = 'desc' } = req.query;
+      
+      const query: any = { userId };
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+      
+      const pipeline: any[] = [
+        { $match: query },
+        {
+          $lookup: {
+            from: 'support_messages',
+            let: { ticketId: { $toString: '$_id' } },
+            pipeline: [
+              { $match: { $expr: { $eq: ['$ticketId', '$$ticketId'] } } },
+              { $sort: { createdAt: -1 } },
+              { $limit: 1 }
+            ],
+            as: 'lastMessage'
+          }
+        },
+        { $addFields: { lastMessage: { $arrayElemAt: ['$lastMessage', 0] } } }
+      ];
+
+      if (search) {
+        pipeline.push({
+          $match: {
+            $or: [
+              { subject: { $regex: search, $options: 'i' } },
+              { 'lastMessage.content': { $regex: search, $options: 'i' } },
+              { _id: { $regex: String(search), $options: 'i' } }
+            ]
+          }
+        });
+      }
+
+      pipeline.push({ $sort: { lastMessageAt: sort === 'asc' ? 1 : -1 } });
+
+      const tickets = await (supportTickets as any).aggregate(pipeline).toArray();
+      res.json(tickets);
+    } catch (err) {
+      console.error('Fetch tickets error:', err);
+      res.status(500).json({ message: 'Failed to fetch tickets' });
+    }
+  });
+
+  // Get single ticket details
+  app.get('/api/support/tickets/:id', authMiddleware, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const ticketId = req.params.id;
+      
+      const ticket = await (supportTickets as any).findOne({ _id: toId(ticketId), userId });
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.json(ticket);
+    } catch (err) {
+      console.error('Fetch single ticket error:', err);
+      res.status(500).json({ message: 'Failed to fetch ticket' });
+    }
+  });
+
+  // Update ticket status (e.g., close ticket)
+  app.patch('/api/support/tickets/:id/status', authMiddleware, async (req: any, res) => {
+    try {
+      const ticketId = req.params.id;
+      const { status } = req.body;
+      
+      if (!['active', 'in_progress', 'closed'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid status' });
+      }
+
+      const result = await (supportTickets as any).updateOne(
+        { _id: toId(ticketId) },
+        { $set: { status, updatedAt: new Date() } }
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+
+      res.json({ success: true, status });
+    } catch (err) {
+      console.error('Update status error:', err);
+      res.status(500).json({ message: 'Failed to update status' });
+    }
+  });
+
+  // Create new ticket
+  app.post('/api/support/tickets', authMiddleware, upload.single('media'), async (req: any, res: any) => {
+    try {
+      const userId = (req as any).userId;
+      const { subject, description, category, priority } = req.body;
+      
+      let mediaUrl = '';
+      if (req.file) {
+        if (S3_BUCKET) {
+          const key = `support/${userId}/${Date.now()}-${req.file.originalname}`;
+          await s3.send(new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype,
+          }));
+          mediaUrl = `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+        }
+      }
+
+      const ticketData = SupportTicketSchema.parse({
+        userId,
+        subject,
+        description,
+        category,
+        priority: priority || 'medium',
+        mediaUrl,
+        lastMessageAt: new Date(),
+        status: 'active',
+      });
+
+      const result = await supportTickets.insertOne(ticketData);
+      const ticketId = (result as any).insertedId;
+
+      await supportMessages.insertOne({
+        ticketId: ticketId.toString(),
+        senderId: userId,
+        senderType: 'user',
+        content: description,
+        type: 'text',
+        status: 'sent',
+        createdAt: new Date(),
+      });
+
+      res.status(201).json({ ...ticketData, _id: ticketId });
+    } catch (err) {
+      console.error('Create ticket error:', err);
+      res.status(400).json({ message: 'Failed to create ticket' });
+    }
+  });
+
+  // Get ticket messages
+  app.get('/api/support/tickets/:id/messages', authMiddleware, async (req, res) => {
+    try {
+      const ticketId = req.params.id;
+      const messages = await supportMessages.find({ ticketId }).sort({ createdAt: 1 }).toArray();
+      res.json(messages);
+    } catch (err) {
+      console.error('Fetch messages error:', err);
+      res.status(500).json({ message: 'Failed to fetch messages' });
+    }
+  });
+
+  // Mark all messages as read for a ticket (Moved to /api/tickets-read/:id)
+
+  // --- End Support API Routes ---
 
   // Seed a stable demo login for QA / demos.
   const demoEmail = 'demo@lifewise.test';
@@ -2753,5 +2944,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+
+  // Initialize Socket.IO
+  const io = new SocketServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  // --- Socket.IO Handlers ---
+  io.on('connection', (socket: any) => {
+    console.log('Socket client connected:', socket.id);
+
+    socket.on('join-ticket', (ticketId: string) => {
+      socket.join(`ticket-${ticketId}`);
+      console.log(`Socket ${socket.id} joined ticket room: ticket-${ticketId}`);
+    });
+
+    socket.on('send-message', async (data: { ticketId: string; userId: string; content: string; senderType: 'user' | 'admin' }) => {
+      try {
+        const { ticketId, userId, content, senderType } = data;
+        
+        const message = {
+          ticketId,
+          senderId: userId,
+          senderType,
+          content,
+          type: 'text',
+          status: 'sent',
+          createdAt: new Date(),
+        };
+
+        const result = await (supportMessages as any).insertOne(message);
+        const savedMessage = { ...message, _id: (result as any).insertedId };
+
+        // Update ticket's lastMessageAt and transition status if admin
+        const updateData: any = { lastMessageAt: new Date(), updatedAt: new Date() };
+        if (senderType === 'admin') {
+          updateData.status = 'in_progress';
+        }
+
+        await (supportTickets as any).updateOne(
+          { _id: toId(ticketId) },
+          { $set: updateData }
+        );
+
+        // Broadcast to the room
+        io.to(`ticket-${ticketId}`).emit('new-message', savedMessage);
+        
+        // If status changed, emit status update
+        if (senderType === 'admin') {
+           io.to(`ticket-${ticketId}`).emit('ticket-status-update', { ticketId, status: 'in_progress' });
+        }
+      } catch (err) {
+        console.error('Socket send-message error:', err);
+      }
+    });
+
+    socket.on('message-delivered', async (data: { ticketId: string; messageId: string }) => {
+      try {
+        const { ticketId, messageId } = data;
+        await (supportMessages as any).updateOne(
+          { _id: toId(messageId), status: 'sent' },
+          { $set: { status: 'delivered' } }
+        );
+        io.to(`ticket-${ticketId}`).emit('message-status-update', { messageId, status: 'delivered' });
+      } catch (err) {
+        console.error('Socket message-delivered error:', err);
+      }
+    });
+
+    socket.on('message-read', async (data: { ticketId: string; messageId: string }) => {
+      try {
+        const { ticketId, messageId } = data;
+        await (supportMessages as any).updateOne(
+          { _id: toId(messageId), status: { $in: ['sent', 'delivered'] } },
+          { $set: { status: 'read' } }
+        );
+        io.to(`ticket-${ticketId}`).emit('message-status-update', { messageId, status: 'read' });
+      } catch (err) {
+        console.error('Socket message-read error:', err);
+      }
+    });
+
+    socket.on('typing', (data: { ticketId: string; userId: string; isTyping: boolean; senderType: 'user' | 'admin' }) => {
+      socket.to(`ticket-${data.ticketId}`).emit('typing-status', data);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket client disconnected:', socket.id);
+    });
+  });
+
   return httpServer;
 }

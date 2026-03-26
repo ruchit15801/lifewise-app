@@ -680,6 +680,12 @@ export default function HomeScreen() {
                 )}
               </Pressable>
               <Pressable
+                onPress={() => router.push('/support')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="help-circle-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
+              <Pressable
                 onPress={() => router.push('/settings')}
                 style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
                 testID="home-settings-btn"
@@ -822,6 +828,12 @@ export default function HomeScreen() {
               >
                 <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
                 {unreadCount > 0 && <View style={styles.unreadDot} />}
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/support')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="help-circle-outline" size={20} color={colors.textSecondary} />
               </Pressable>
               <Pressable
                 onPress={() => router.push('/settings')}
