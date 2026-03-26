@@ -7,6 +7,10 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "LifeWise Admin | Premium Governance",
   description: "Advanced administrative dashboard for the LifeWise platform.",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
