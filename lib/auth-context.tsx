@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/query-client';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
+import Constants from 'expo-constants';
 
 interface User {
   id: string;
@@ -47,18 +48,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   WebBrowser.maybeCompleteAuthSession();
 
-  const [googleRequest, googleResponse, googlePromptAsync] = Google.useIdTokenAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    // Use the reliable proxy-first method for development
-    redirectUri: AuthSession.makeRedirectUri(),
-  });
+  const [googleRequest, googleResponse, googlePromptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: '152932967230-k3cofknaqa0iompfilk3q69novnpg169.apps.googleusercontent.com',
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri: 'https://auth.expo.io/@sdfsdf12/lifewise',
+      responseType: AuthSession.ResponseType.IdToken,
+    },
+    {
+      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenEndpoint: 'https://oauth2.googleapis.com/token',
+    }
+  );
 
   useEffect(() => {
     if (googleRequest) {
-      console.log('--- Google Login Diagnostic ---');
-      console.log('Redirect URI:', googleRequest.redirectUri);
-      console.log('Client ID:', googleRequest.clientId);
-      console.log('-------------------------------');
+      console.log('--- [DEBUG 15:58] Google Login Diagnostics ---');
+      console.log('Target Client ID:', googleRequest.clientId);
+      console.log('Target Redirect URI:', googleRequest.redirectUri);
+      console.log('---------------------------------------------');
     }
   }, [googleRequest]);
 
@@ -147,20 +155,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = useCallback(async () => {
     try {
       if (!googleRequest) {
+        console.error('Google config missing or still initializing');
         return { success: false, error: 'Google config missing' };
       }
 
+      console.log('Starting Google Login prompt...');
       const result = await googlePromptAsync();
+      console.log('Google Auth Result Type:', result.type);
+
       if (result.type !== 'success') {
-        return { success: false, error: 'Google login cancelled' };
+        const err = result.type === 'error' ? (result as any).error?.message : 'Login cancelled';
+        return { success: false, error: err };
       }
 
-      const authResult = result as AuthSession.AuthSessionResult & { params?: any };
-      const idToken = authResult.params?.id_token;
+      // Extract token with more robust fallback
+      const idToken = result.params?.id_token || result.authentication?.idToken;
+
       if (!idToken) {
+        console.error('No id_token found in result:', JSON.stringify(result));
         return { success: false, error: 'No id_token from Google' };
       }
 
+      console.log('Sending ID Token to backend for verification...');
       const baseUrl = getApiUrl();
       const url = new URL('/api/auth/oauth/google', baseUrl).toString();
       const res = await fetch(url, {
@@ -168,17 +184,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken }),
       });
+
       const data = await res.json();
       if (!res.ok) {
+        console.error('Backend OAuth Error:', data.message);
         return { success: false, error: data.message || 'Google login failed' };
       }
 
+      console.log('Google login successful! User:', data.user?.email);
       setUser(data.user);
       setToken(data.token);
       await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
       await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
       return { success: true };
-    } catch {
+    } catch (err) {
+      console.error('Google login catch error:', err);
       return { success: false, error: 'Google login error' };
     }
   }, [googleRequest, googlePromptAsync]);
@@ -226,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.message || 'Verification failed' };
-      
+
       setUser(data.user);
       setToken(data.token);
       await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));

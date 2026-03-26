@@ -2,6 +2,7 @@
   "expo": {
     "name": "LifeWise",
     "slug": "lifewise",
+    "owner": "sdfsdf12",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./logo.png",
@@ -62,4 +63,3 @@
     }
   }
 }
-

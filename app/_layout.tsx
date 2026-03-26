@@ -243,11 +243,11 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView>
-          <KeyboardProvider>
-            <ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <KeyboardProvider>
+          <ThemeProvider>
+            <ErrorBoundary>
               <CurrencyProvider>
                 <SeniorProvider>
                   <AlertProvider>
@@ -259,10 +259,10 @@ export default function RootLayout() {
                   </AlertProvider>
                 </SeniorProvider>
               </CurrencyProvider>
-            </ThemeProvider>
-          </KeyboardProvider>
-        </GestureHandlerRootView>
-      </QueryClientProvider>
-    </ErrorBoundary>
+            </ErrorBoundary>
+          </ThemeProvider>
+        </KeyboardProvider>
+      </GestureHandlerRootView>
+    </QueryClientProvider>
   );
 }

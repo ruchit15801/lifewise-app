@@ -63,7 +63,9 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     setError('');
     const res = await loginWithGoogle();
-    if (!res.success) {
+    if (res.success) {
+      router.replace('/(tabs)');
+    } else {
       setError(res.error || 'Google sign-in failed');
     }
   };
