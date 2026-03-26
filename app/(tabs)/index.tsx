@@ -38,6 +38,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
 import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
+import { useSeniorMode } from '@/lib/senior-context';
 import CategoryIcon from '@/components/CategoryIcon';
 import {
   CATEGORIES,
@@ -225,14 +226,8 @@ function TopReminderAlert({
   let label: string;
   if (daysDiff === 0) {
     label = `Due Today • ${next.name}`;
-  } else if (daysDiff === 1) {
-    label = `Due Tomorrow • ${next.name}`;
-  } else if (daysDiff > 1 && daysDiff <= 7) {
-    label = `Due this week • ${next.name}`;
-  } else if (daysDiff < 0) {
-    label = `Overdue • ${next.name}`;
   } else {
-    label = `Upcoming • ${next.name}`;
+    label = `Overdue • ${next.name}`;
   }
 
   const dateLabel = due.toLocaleDateString('en-IN', {
@@ -273,7 +268,7 @@ function TopReminderAlert({
           </View>
         </View>
         <View style={styles.reminderAlertActions}>
-          <TouchableOpacity
+          <Pressable
             onPress={() => onSnooze(next.id)}
             style={[
               styles.alertActionBtn,
@@ -282,8 +277,8 @@ function TopReminderAlert({
           >
             <Ionicons name="notifications-off-outline" size={14} color="#FFFFFF" />
             <Text style={[styles.alertActionText, { color: '#FFFFFF' }]}>Snooze</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             onPress={() => onCancel(next.id)}
             style={[
               styles.alertActionBtn,
@@ -292,7 +287,7 @@ function TopReminderAlert({
           >
             <Ionicons name="close-circle-outline" size={14} color={colors.textTertiary} />
             <Text style={[styles.alertActionText, { color: colors.textTertiary }]}>Cancel</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
     </Animated.View>
@@ -521,7 +516,7 @@ export default function HomeScreen() {
   const { user, token } = useAuth();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
-  const [seniorMode, setSeniorMode] = useState(false);
+  const { isSeniorMode } = useSeniorMode();
   const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddText, setQuickAddText] = useState('');
@@ -561,13 +556,7 @@ export default function HomeScreen() {
     }
   }, [token]);
 
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
-        setSeniorMode(v === 'true');
-      }).catch(() => { });
-    }, [])
-  );
+  // Removed local seniorMode effect (using global context)
 
   const handleScanBill = useCallback(() => {
     router.push('/scan-bill');
@@ -613,13 +602,15 @@ export default function HomeScreen() {
     budgetHealthScore = 0;
   }
 
-  const nowTime = new Date().getTime();
-  const sevenDaysFromNow = nowTime + 7 * 24 * 60 * 60 * 1000;
+  const nowDay = new Date();
+  nowDay.setHours(0, 0, 0, 0);
   const upcomingBills = bills
     .filter((b) => !b.isPaid && !['paid', 'snoozed', 'cancelled'].includes(b.status))
     .filter((b) => {
-      const due = new Date(b.dueDate).getTime();
-      return due >= nowTime - 24 * 60 * 60 * 1000 && due <= sevenDaysFromNow;
+      const due = new Date(b.dueDate);
+      due.setHours(0, 0, 0, 0);
+      // Only show if due date is today or in the past
+      return due.getTime() <= nowDay.getTime();
     })
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
@@ -631,7 +622,7 @@ export default function HomeScreen() {
     }
   };
 
-  if (seniorMode) {
+  if (isSeniorMode) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <ScrollView
@@ -1195,6 +1186,107 @@ export default function HomeScreen() {
             </Pressable>
           </View>
         </Pressable>
+      </Modal>
+      <Modal visible={isSnoozeModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.snoozeModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.snoozeModalTitle, { color: colors.text }]}>Snooze Reminder</Text>
+              <Pressable
+                onPress={() => setIsSnoozeModalVisible(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: colors.cardElevated }]}
+              >
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <Text style={[styles.snoozeModalSubtitle, { color: colors.textSecondary }]}>
+              When should we remind you again?
+            </Text>
+
+            <View style={styles.snoozeOptions}>
+              {[
+                { label: '10 Minutes', desc: 'Quick nudge', icon: 'timer-outline', color: colors.accent, value: { minutes: 10 } },
+                { label: '1 Hour', desc: 'Later today', icon: 'time-outline', color: colors.accentBlue, value: { minutes: 60 } },
+                { label: 'Tomorrow', desc: 'At 9:00 AM', icon: 'sunny-outline', color: colors.warning, value: { days: 1 } },
+                { label: 'Next Week', desc: '7 days later', icon: 'calendar-outline', color: colors.accentMint, value: { days: 7 } },
+              ].map((opt) => (
+                <Pressable
+                  key={opt.label}
+                  onPress={async () => {
+                    if (activeReminderId) {
+                      await snoozeReminder(activeReminderId, opt.value.days || 0, opt.value.minutes || 0);
+                      setIsSnoozeModalVisible(false);
+                      setActiveReminderId(null);
+                    }
+                  }}
+                  style={({ pressed }) => [
+                    styles.snoozeOption,
+                    {
+                      backgroundColor: colors.cardElevated,
+                      borderColor: colors.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <View style={[styles.snoozeIconWrap, { backgroundColor: opt.color + '15' }]}>
+                    <Ionicons name={opt.icon as any} size={20} color={opt.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.snoozeOptionLabel, { color: colors.text, fontSize: isSeniorMode ? 18 : 16 }]}>
+                      {opt.label}
+                    </Text>
+                    <Text style={[styles.snoozeOptionDesc, { color: colors.textTertiary, fontSize: isSeniorMode ? 14 : 12 }]}>
+                      {opt.desc}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable
+              onPress={() => setIsSnoozeModalVisible(false)}
+              style={[styles.snoozeCancelBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.snoozeCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={isCancelModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlayCentered}>
+          <View style={[styles.confirmModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.confirmIconWrap, { backgroundColor: colors.dangerDim }]}>
+              <Ionicons name="trash-outline" size={32} color={colors.danger} />
+            </View>
+            <Text style={[styles.confirmTitle, { color: colors.text }]}>Remove Reminder?</Text>
+            <Text style={[styles.confirmSubtitle, { color: colors.textSecondary }]}>
+              Are you sure you want to stop tracking this reminder? You won't get any more alerts for it.
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <Pressable
+                onPress={() => setIsCancelModalVisible(false)}
+                style={[styles.confirmBtn, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.confirmBtnText, { color: colors.textSecondary }]}>No, Keep It</Text>
+              </Pressable>
+              <Pressable
+                onPress={async () => {
+                  if (activeReminderId) {
+                    await cancelReminder(activeReminderId);
+                    setIsCancelModalVisible(false);
+                    setActiveReminderId(null);
+                  }
+                }}
+                style={[styles.confirmBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}
+              >
+                <Text style={[styles.confirmBtnText, { color: '#FFFFFF' }]}>Yes, Remove</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );

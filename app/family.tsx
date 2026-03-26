@@ -17,6 +17,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/query-client';
+import { useSeniorMode } from '@/lib/senior-context';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
@@ -72,6 +73,7 @@ export default function FamilyScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { token } = useAuth();
+  const { isSeniorMode } = useSeniorMode();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showAddMedicine, setShowAddMedicine] = useState<string | null>(null);
@@ -268,12 +270,12 @@ export default function FamilyScreen() {
             <View style={[styles.memberCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.memberHeader}>
                 <View style={styles.memberInfo}>
-                  <View style={[styles.memberAvatar, { backgroundColor: colors.accent + '15' }]}>
-                    <Ionicons name={getRelIcon(member.relationship) as any} size={22} color={colors.accent} />
+                  <View style={[styles.memberAvatar, { backgroundColor: colors.accent + (isSeniorMode ? '25' : '15'), width: isSeniorMode ? 56 : 48, height: isSeniorMode ? 56 : 48 }]}>
+                    <Ionicons name={getRelIcon(member.relationship) as any} size={isSeniorMode ? 28 : 22} color={colors.accent} />
                   </View>
                   <View>
-                    <Text style={[styles.memberName, { color: colors.text }]}>{member.name}</Text>
-                    <Text style={[styles.memberRel, { color: colors.textTertiary }]}>
+                    <Text style={[styles.memberName, { color: colors.text, fontSize: isSeniorMode ? 20 : 17 }]}>{member.name}</Text>
+                    <Text style={[styles.memberRel, { color: colors.textTertiary, fontSize: isSeniorMode ? 14 : 12 }]}>
                       {RELATIONSHIPS.find(r => r.key === member.relationship)?.label || member.relationship}
                     </Text>
                   </View>
@@ -323,20 +325,20 @@ export default function FamilyScreen() {
                     ]}
                   >
                     <View style={styles.medInfo}>
-                      <View style={[styles.medIconWrap, { backgroundColor: pillColor + '15' }]}>
-                        <Ionicons name="medkit" size={16} color={pillColor} />
+                      <View style={[styles.medIconWrap, { backgroundColor: pillColor + '15', width: isSeniorMode ? 44 : 36, height: isSeniorMode ? 44 : 36 }]}>
+                        <Ionicons name="medkit" size={isSeniorMode ? 20 : 16} color={pillColor} />
                       </View>
                       <View style={styles.medDetails}>
-                        <Text style={[styles.medName, { color: colors.text }]}>
+                        <Text style={[styles.medName, { color: colors.text, fontSize: isSeniorMode ? 18 : 15 }]}>
                           {med.name}
                           {med.dosage ? `  ${med.dosage}` : ''}
                         </Text>
-                        <Text style={[styles.medSchedule, { color: colors.textTertiary }]}>
+                        <Text style={[styles.medSchedule, { color: (isSeniorMode ? colors.textSecondary : colors.textTertiary), fontSize: isSeniorMode ? 14 : 12 }]}>
                           {scheduleText}
                           {med.instruction === 'before_meal' && ' • Before meal'}
                           {med.instruction === 'after_meal' && ' • After meal'}
                         </Text>
-                        {adherence !== null && (
+                        {adherence !== null && !isSeniorMode && (
                           <Text style={[styles.medAdherence, { color: colors.textSecondary }]}>
                             Adherence: {adherence}%
                             {med.streak ? `  •  Streak ${med.streak} days` : ''}
@@ -354,24 +356,27 @@ export default function FamilyScreen() {
                         </View>
                       )}
                     </View>
-                    <View style={styles.medActions}>
+                    <View style={[styles.medActions, isSeniorMode && { justifyContent: 'space-between', marginTop: 12 }]}>
                       <Pressable
                         onPress={() => markMedicine(member.id, med.id, 'taken')}
-                        style={[styles.medBtn, { backgroundColor: '#10B981' + '12' }]}
+                        style={[styles.medBtn, { backgroundColor: '#10B981' + '12', width: isSeniorMode ? '31%' : 40, height: isSeniorMode ? 48 : 36 }]}
                       >
-                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                        <Ionicons name="checkmark" size={isSeniorMode ? 24 : 18} color="#10B981" />
+                        {isSeniorMode && <Text style={{ color: '#10B981', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>Taken</Text>}
                       </Pressable>
                       <Pressable
                         onPress={() => markMedicine(member.id, med.id, 'snooze')}
-                        style={[styles.medBtn, { backgroundColor: colors.warningDim }]}
+                        style={[styles.medBtn, { backgroundColor: colors.warningDim, width: isSeniorMode ? '31%' : 40, height: isSeniorMode ? 48 : 36 }]}
                       >
-                        <Ionicons name="time" size={18} color={colors.warning} />
+                        <Ionicons name="time" size={isSeniorMode ? 24 : 18} color={colors.warning} />
+                        {isSeniorMode && <Text style={{ color: colors.warning, fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>Later</Text>}
                       </Pressable>
                       <Pressable
                         onPress={() => markMedicine(member.id, med.id, 'skip')}
-                        style={[styles.medBtn, { backgroundColor: colors.dangerDim }]}
+                        style={[styles.medBtn, { backgroundColor: colors.dangerDim, width: isSeniorMode ? '31%' : 40, height: isSeniorMode ? 48 : 36 }]}
                       >
-                        <Ionicons name="close" size={18} color={colors.danger} />
+                        <Ionicons name="close" size={isSeniorMode ? 24 : 18} color={colors.danger} />
+                        {isSeniorMode && <Text style={{ color: colors.danger, fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>Skip</Text>}
                       </Pressable>
                     </View>
                   </View>

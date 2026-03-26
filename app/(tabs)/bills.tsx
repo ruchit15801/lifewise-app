@@ -661,7 +661,8 @@ function SettingsModal({
 
 export default function BillsScreen() {
   const { colors, isDark } = useTheme();
-  const { formatAmount } = useCurrency();
+  const { formatAmount, formatCompactAmount } = useCurrency();
+
   const insets = useSafeAreaInsets();
   const tabBarInset = useTabBarContentInset();
   const router = useRouter();
@@ -787,7 +788,13 @@ export default function BillsScreen() {
             <View style={styles.overviewRow}>
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Pending</Text>
-                <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatAmount(totalPending)}</Text>
+                <Text 
+                  style={[styles.overviewAmount, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {formatCompactAmount(totalPending)}
+                </Text>
               </View>
               <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
               <View style={styles.overviewStat}>
@@ -804,7 +811,13 @@ export default function BillsScreen() {
               <View style={[styles.overviewDivider, { backgroundColor: colors.border }]} />
               <View style={styles.overviewStat}>
                 <Text style={[styles.overviewLabel, { color: colors.textTertiary }]}>Subs</Text>
-                <Text style={[styles.overviewAmount, { color: colors.text }]}>{formatAmount(subscriptionTotal)}</Text>
+                <Text 
+                  style={[styles.overviewAmount, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {formatCompactAmount(subscriptionTotal)}
+                </Text>
               </View>
             </View>
           </LinearGradient>

@@ -16,6 +16,26 @@ function toId(id: any): any {
   return /^[a-f0-9]{24}$/i.test(String(id)) ? new ObjectId(id) : id;
 }
 
+async function initIndexes() {
+  const db = getDb();
+  if (!db) return;
+  const transactions = db.collection('transactions');
+  const bills = db.collection('bills');
+  const users = db.collection('users');
+
+  try {
+    // Unique index for SMS deduplication: same user, same SMS unique ID
+    await (transactions as any).createIndex({ userId: 1, smsId: 1 }, { unique: true, partialFilterExpression: { smsId: { $exists: true } } });
+    // Index for common queries
+    await (transactions as any).createIndex({ userId: 1, date: -1 });
+    await (bills as any).createIndex({ userId: 1 });
+    await (users as any).createIndex({ email: 1 }, { unique: true });
+    console.log('[DB] Indexes initialized');
+  } catch (err) {
+    console.error('[DB] Index initialization failed:', err);
+  }
+}
+
 type CategoryType = 'health' | 'bills' | 'family' | 'work' | 'tasks' | 'subscriptions' | 'finance' | 'habits' | 'travel' | 'events' | 'food' | 'shopping' | 'transport' | 'entertainment' | 'education' | 'investment' | 'others';
 type ReminderType = 'bill' | 'subscription' | 'custom';
 type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -270,18 +290,19 @@ async function parseReminderWithAI(text: string): Promise<{
 
 export async function registerRoutes(app: Express): Promise<Server> {
   await connectMongo();
+  await initIndexes();
   const db = getDb();
-  const users = db.collection('users');
-  const transactions = db.collection('transactions');
-  const bills = db.collection('bills');
-  const family = db.collection('family_members');
-  const otpStore = db.collection('otp_store');
-  const notifications = db.collection('notifications');
-  const reminderLogs = db.collection('reminder_logs');
-  const pushTokens = db.collection('push_tokens');
-  const supportTickets = db.collection('support_tickets');
-  const medicineLogs = db.collection('medicine_logs');
-  const lifeScores = db.collection('life_scores');
+  const users = db.collection('users') as any;
+  const transactions = db.collection('transactions') as any;
+  const bills = db.collection('bills') as any;
+  const family = db.collection('family_members') as any;
+  const otpStore = db.collection('otp_store') as any;
+  const notifications = db.collection('notifications') as any;
+  const reminderLogs = db.collection('reminder_logs') as any;
+  const pushTokens = db.collection('push_tokens') as any;
+  const supportTickets = db.collection('support_tickets') as any;
+  const medicineLogs = db.collection('medicine_logs') as any;
+  const lifeScores = db.collection('life_scores') as any;
 
   // Seed a stable demo login for QA / demos.
   const demoEmail = 'demo@lifewise.test';
@@ -899,30 +920,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(txs) || txs.length === 0) {
         return res.json({ synced: 0, message: 'No transactions to sync' });
       }
-      let synced = 0;
-      let skipped = 0;
-      for (const t of txs) {
+
+      const userId = (req as any).userId;
+      const ops = txs.map((t) => {
         const merchant = String(t.merchant || t.sender || 'Unknown');
         const amount = Number(t.amount) || 0;
         const date = t.date ? new Date(t.date).toISOString() : new Date().toISOString();
         const isDebit = t.isDebit !== false;
-
-        // Duplicate Check: Same user, merchant, amount, date, and type
-        const existing = await transactions.findOne({
-          userId: (req as any).userId,
-          merchant,
-          amount,
-          date,
-          isDebit,
-        });
-
-        if (existing) {
-          skipped++;
-          continue;
-        }
+        const smsId = t.smsId ? String(t.smsId) : null;
 
         const doc = {
-          userId: (req as any).userId,
+          userId,
           merchant,
           amount,
           date,
@@ -930,11 +938,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           category: (t.category as CategoryType) || 'others',
           upiId: t.upiId || '',
           description: t.description || String(t.message || ''),
+          smsId,
+          updatedAt: new Date(),
         };
-        await transactions.insertOne(doc);
-        synced++;
-      }
-      return res.json({ synced, skipped, message: `${synced} synced, ${skipped} duplicates skipped` });
+
+        // If smsId is provided, we use it for atomic upsert to prevent duplicates
+        if (smsId) {
+          return {
+            updateOne: {
+              filter: { userId, smsId },
+              update: { $setOnInsert: doc },
+              upsert: true,
+            },
+          };
+        } else {
+          // Fallback for manual or legacy sync without smsId
+          return {
+            insertOne: { document: doc },
+          };
+        }
+      });
+
+      const result = await (transactions as any).bulkWrite(ops, { ordered: false });
+      
+      const synced = (result.upsertedCount || 0) + (result.insertedCount || 0);
+      const skipped = txs.length - synced;
+
+      return res.json({ 
+        synced, 
+        skipped, 
+        message: `${synced} synced, ${skipped} duplicates skipped` 
+      });
     } catch (err) {
       console.error('Sync from SMS error:', err);
       return res.status(500).json({ message: 'Server error.' });
@@ -1683,12 +1717,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           let suggestion = LEAK_SUGGESTIONS[merchant] || 'Review if this expense is necessary';
           
-          // Price Hike Detection (compare last 2 tx if they exist)
+          // Price Hike Detection (compare latest two tx)
           if (data.amounts.length >= 2) {
-            const latest = data.amounts[0];
+            const latest = data.amounts[0]; 
             const previous = data.amounts[1];
+            // Since we sorted txList by date DESC (line 1687), 
+            // the loop (1692) pushes them into 'amounts' in DESC order.
+            // So index 0 is newest, index 1 is next newest.
             if (latest > previous * 1.15) { // 15% increase
-              suggestion = `⚠️ Price hike detected! ${merchant} increased by ${Math.round((latest/previous - 1) * 100)}%. ${suggestion}`;
+              suggestion = `⚠️ Price hike detected! ${merchant} cost increased from ${previous} to ${latest}. ${suggestion}`;
             }
           }
 
@@ -2347,11 +2384,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const imageUrl = bill.imageUrl || `https://api.dicebear.com/7.x/shapes/png?seed=${bill.category || 'bill'}&backgroundColor=4f46e5`;
 
                 const meta = {
-                  billId: (bill as any)._id.toString(),
+                  type: 'bill',
+                  referenceId: (bill as any)._id.toString(),
+                  billId: (bill as any)._id.toString(), // legacy support
                   amount: bill.amount || 0,
                   dueDate: baseDate.toISOString(),
                   reminderType: bill.reminderType || 'bill',
                   imageUrl,
+                  route: `/bill-details/${(bill as any)._id.toString()}`,
+                  redirectUrl: `/bill-details/${(bill as any)._id.toString()}`,
                 };
 
                 await notifications.insertOne({
@@ -2369,7 +2410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   try {
                     const tokenDocs = await pushTokens
                       .find({ userId: user._id?.toString?.() ?? user._id })
-                      .project<{ token: string }>({ token: 1, _id: 0 })
+                      .project({ token: 1, _id: 0 })
                       .toArray();
 
                     const tokens = tokenDocs.map((t: any) => t.token).filter(Boolean);
@@ -2391,6 +2432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                           data: {
                             type: 'reminder',
                             billId: meta.billId,
+                            route: meta.route,
                           },
                         });
                         console.log(`[Push] Multi-device send to ${tokens.length} tokens for user ${user.email}`);
@@ -2411,6 +2453,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           } catch (err) {
             console.error('Reminder scheduler per-bill error:', err);
+          }
+        }
+
+        // --- NEW: Family Medicine Reminders ---
+        const allFamily = await family.find({}).toArray();
+        for (const member of allFamily) {
+          const meds = Array.isArray(member.medicines) ? member.medicines : [];
+          for (const med of meds) {
+            try {
+              const slots = med.slots || {};
+              // Check each slot (morning, noon, evening)
+              for (const [slotKey, slotTime] of Object.entries(slots)) {
+                if (!slotTime) continue;
+
+                // Parse slotTime (e.g., "9:00 AM")
+                const [time, ampm] = (slotTime as string).split(' ');
+                let [hh, mm] = time.split(':').map(Number);
+                if (ampm === 'PM' && hh < 12) hh += 12;
+                if (ampm === 'AM' && hh === 12) hh = 0;
+
+                const doseTime = new Date(now);
+                doseTime.setHours(hh, mm, 0, 0);
+
+                // Check if doseTime is within window
+                const withinWindow =
+                  doseTime.getTime() >= now.getTime() - 60 * 1000 &&
+                  doseTime.getTime() <= windowEnd.getTime();
+
+                if (!withinWindow) continue;
+
+                const user = await users.findOne({ _id: toId(member.userId) });
+                if (!user) continue;
+
+                const logId = `med-${member._id}-${med.id}-${slotKey}-${doseTime.toISOString().slice(0, 10)}`;
+                const already = await reminderLogs.findOne({
+                   userId: user._id.toString(),
+                   billId: logId, // using billId field for med log uniqueness
+                   channel: 'in_app'
+                });
+                if (already) continue;
+
+                const title = `Time for ${member.name}'s medicine`;
+                const body = `Take ${med.name} (${med.dosage || '1 dose'}) - ${slotKey.charAt(0).toUpperCase() + slotKey.slice(1)}`;
+                const route = `/medicine-details/${member._id.toString()}/${med.id}`;
+
+                await notifications.insertOne({
+                  userId: user._id.toString(),
+                  type: 'reminder',
+                  title,
+                  body,
+                  read: false,
+                  createdAt: new Date(),
+                  meta: { 
+                    type: 'medication', 
+                    referenceId: med.id,
+                    memberId: member._id.toString(), 
+                    medId: med.id,
+                    route,
+                    redirectUrl: route
+                  }
+                });
+
+                const messaging = getFirebaseMessaging();
+                if (messaging) {
+                  const tokenDocs = await pushTokens.find({ userId: user._id.toString() }).project({ token: 1 }).toArray();
+                  const tokens = tokenDocs.map((t: any) => t.token).filter(Boolean);
+                  if (tokens.length) {
+                    await messaging.sendEachForMulticast({
+                      tokens,
+                      notification: { title, body },
+                      data: { type: 'medication', route }
+                    });
+                  }
+                }
+
+                await reminderLogs.insertOne({
+                  userId: user._id.toString(),
+                  billId: logId,
+                  channel: 'in_app',
+                  dayOffset: 0,
+                  sentAt: new Date()
+                });
+              }
+            } catch (medErr) {
+              console.error('Med reminder error:', medErr);
+            }
           }
         }
       } catch (err) {
@@ -2472,7 +2600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Bills stats
         const totalBillsCount = allBills.length;
-        const paidBillsCount = allBills.filter(b => b.isPaid || b.status === 'paid').length;
+        const paidBillsCount = allBills.filter((b: any) => b.isPaid || b.status === 'paid').length;
 
         return res.json({
           period: { start, end },
@@ -2512,20 +2640,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // 1. Spending Score (Budget compliance)
         const userData = await users.findOne({ _id: toId(userId) });
         const monthlyBudget = userData?.monthlyBudget ?? 50000;
-        const monthlySpend = userTxs.filter(tx => tx.isDebit).reduce((s, tx) => s + (tx.amount || 0), 0);
+        const monthlySpend = userTxs.filter((tx: any) => tx.isDebit).reduce((s: number, tx: any) => s + (tx.amount || 0), 0);
         const budgetUsedRatio = Math.min(1.5, (monthlySpend / Math.max(1, monthlyBudget)));
         const spendingScore = Math.max(0, 100 - (budgetUsedRatio * 100));
 
         // 2. Bills Score
         const billRatio = userBills.length > 0
-          ? userBills.filter(b => b.isPaid || b.status === 'paid').length / userBills.length
+          ? userBills.filter((b: any) => b.isPaid || b.status === 'paid').length / userBills.length
           : 1;
         const billsScore = billRatio * 100;
 
         // 3. Health Score (Medicine adherence)
         // Check logs vs expected (we'll simplify for now: percentage of 'taken' vs 'taken'+'skip')
-        const taken = medLogs.filter(l => l.action === 'taken').length;
-        const totalLogs = medLogs.filter(l => l.action === 'taken' || l.action === 'skip').length;
+        const taken = medLogs.filter((l: any) => l.action === 'taken').length;
+        const totalLogs = medLogs.filter((l: any) => l.action === 'taken' || l.action === 'skip').length;
         const healthScore = totalLogs > 0 ? (taken / totalLogs) * 100 : 100;
 
         // Weighted final score

@@ -420,39 +420,61 @@ export default function BillDetailsScreen() {
 
       {/* Floating Bottom Action Bar */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <Pressable
-          style={[styles.bottomBtn, { backgroundColor: '#F1F5F9' }]}
-          onPress={() => setShowSnoozeModal(true)}
-        >
-          <Ionicons name="notifications-off-outline" size={20} color="#475569" />
-          <Text style={[styles.bottomBtnText, { color: '#475569' }]}>Snooze</Text>
-        </Pressable>
-
+        {/* Primary Action Row */}
         <Pressable
           style={[styles.bottomBtnMain, { backgroundColor: isPaid ? '#94A3B8' : '#10B981' }]}
           onPress={onToggleDone}
         >
           <Ionicons name={isPaid ? "refresh-outline" : "checkmark-circle-outline"} size={22} color="#FFFFFF" />
-          <Text style={styles.bottomBtnTextMain}>{isPaid ? 'Mark Unpaid' : 'Mark as Paid'}</Text>
+          <Text 
+            style={styles.bottomBtnTextMain}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {isPaid ? 'Mark Unpaid' : 'Mark as Paid'}
+          </Text>
         </Pressable>
 
-        {bill.status === 'cancelled' ? (
+        {/* Secondary Actions Row */}
+        <View style={styles.secondaryActionsRow}>
           <Pressable
-            style={[styles.bottomBtn, { backgroundColor: '#E0F2FE' }]}
-            onPress={() => uncancelReminder(bill.id)}
+            style={[styles.bottomBtn, { backgroundColor: '#F1F5F9' }]}
+            onPress={() => setShowSnoozeModal(true)}
           >
-            <Ionicons name="arrow-undo-outline" size={20} color="#0369A1" />
-            <Text style={[styles.bottomBtnText, { color: '#0369A1' }]}>Restore</Text>
+            <Ionicons name="notifications-off-outline" size={20} color="#475569" />
+            <Text 
+              style={[styles.bottomBtnText, { color: '#475569' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              Snooze
+            </Text>
           </Pressable>
-        ) : (
-          <Pressable
-            style={[styles.bottomBtn, { backgroundColor: '#FEF2F2' }]}
-            onPress={() => cancelReminder(bill.id)}
-          >
-            <Ionicons name="close-outline" size={20} color="#EF4444" />
-            <Text style={[styles.bottomBtnText, { color: '#EF4444' }]}>Cancel</Text>
-          </Pressable>
-        )}
+
+          {bill.status === 'cancelled' ? (
+            <Pressable
+              style={[styles.bottomBtn, { backgroundColor: '#E0F2FE' }]}
+              onPress={() => uncancelReminder(bill.id)}
+            >
+              <Ionicons name="arrow-undo-outline" size={20} color="#0369A1" />
+              <Text style={[styles.bottomBtnText, { color: '#0369A1' }]}>Restore</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.bottomBtn, { backgroundColor: '#FEF2F2' }]}
+              onPress={() => cancelReminder(bill.id)}
+            >
+              <Ionicons name="close-outline" size={20} color="#EF4444" />
+              <Text 
+                style={[styles.bottomBtnText, { color: '#EF4444' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                Cancel
+              </Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <Modal visible={showEditModal} transparent animationType="slide">
@@ -698,7 +720,7 @@ const styles = StyleSheet.create({
   },
   headerGradient: {
     paddingHorizontal: 20,
-    paddingBottom: 60,
+    paddingBottom: 40,
   },
   headerDecoration1: {
     position: 'absolute',
@@ -804,7 +826,7 @@ const styles = StyleSheet.create({
   contentScroll: {
     flex: 1,
     paddingHorizontal: 20,
-    marginTop: -40,
+    marginTop: 12,
   },
   mainCard: {
     backgroundColor: '#FFFFFF',
@@ -856,7 +878,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   section: {
-    marginTop: 24,
+    marginTop: 32,
   },
   sectionTitle: {
     fontFamily: 'Inter_700Bold',
@@ -1086,24 +1108,29 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#FFFFFF',
     paddingTop: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
+    paddingHorizontal: 16,
+    flexDirection: 'column',
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
   },
   bottomBtn: {
     flex: 1,
-    height: 56,
-    borderRadius: 18,
+    height: 52,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   bottomBtnMain: {
-    flex: 2,
-    height: 56,
+    width: '100%',
+    height: 60,
     borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1115,14 +1142,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
   bottomBtnText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 15,
+    fontSize: 14,
+    flexShrink: 1,
   },
   bottomBtnTextMain: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 16,
+    fontSize: 18,
     color: '#FFFFFF',
+    flexShrink: 1,
   },
   modalBackdropFull: {
     flex: 1,

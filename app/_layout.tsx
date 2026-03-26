@@ -27,6 +27,7 @@ import {
   addPushTokenListener,
 } from "@/lib/notifications";
 import { registerSmsSyncTask } from "@/lib/sms-sync-task";
+import { SeniorProvider } from "@/lib/senior-context";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -245,11 +246,13 @@ export default function RootLayout() {
           <KeyboardProvider>
             <ThemeProvider>
               <CurrencyProvider>
-                <AuthProvider>
-                  <ExpenseProvider>
-                    <AuthGate />
-                  </ExpenseProvider>
-                </AuthProvider>
+                <SeniorProvider>
+                  <AuthProvider>
+                    <ExpenseProvider>
+                      <AuthGate />
+                    </ExpenseProvider>
+                  </AuthProvider>
+                </SeniorProvider>
               </CurrencyProvider>
             </ThemeProvider>
           </KeyboardProvider>

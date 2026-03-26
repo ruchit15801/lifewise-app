@@ -22,6 +22,7 @@ interface CurrencyContextValue {
   code: string;
   setCurrency: (code: string) => void;
   formatAmount: (amount: number) => string;
+  formatCompactAmount: (amount: number) => string;
   currentCurrency: CurrencyOption;
 }
 
@@ -61,13 +62,45 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     return `${sym}${amount}`;
   }, [code]);
 
+  const formatCompactAmount = useCallback((amount: number): string => {
+    const sym = CURRENCIES.find(c => c.code === code)?.symbol || '₹';
+    
+    // For smaller amounts, use standard formatting but maybe less decimals
+    if (amount < 10000) {
+      return formatAmount(amount);
+    }
+    
+    // For 10k to 99k, use K
+    if (amount < 100000) {
+      return `${sym}${(amount / 1000).toFixed(1)}K`;
+    }
+    
+    // For 1L and above (specifically for INR)
+    if (code === 'INR') {
+      if (amount >= 10000000) {
+        return `${sym}${(amount / 10000000).toFixed(1)}Cr`;
+      }
+      return `${sym}${(amount / 100000).toFixed(1)}L`;
+    }
+    
+    // For other currencies, stick to K/M/B
+    if (amount >= 1000000000) {
+      return `${sym}${(amount / 1000000000).toFixed(1)}B`;
+    }
+    if (amount >= 1000000) {
+      return `${sym}${(amount / 1000000).toFixed(1)}M`;
+    }
+    return `${sym}${(amount / 1000).toFixed(1)}K`;
+  }, [code, formatAmount]);
+
   const value = useMemo(() => ({
     symbol: currentCurrency.symbol,
     code,
     setCurrency,
     formatAmount,
+    formatCompactAmount,
     currentCurrency,
-  }), [code, currentCurrency, setCurrency, formatAmount]);
+  }), [code, currentCurrency, setCurrency, formatAmount, formatCompactAmount]);
 
   return (
     <CurrencyContext.Provider value={value}>

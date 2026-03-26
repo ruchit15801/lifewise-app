@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency, CURRENCIES, CurrencyOption } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
+import { useSeniorMode } from '@/lib/senior-context';
 
 function SettingRow({
   icon,
@@ -60,23 +61,16 @@ export default function SettingsScreen() {
   const { colors, mode, toggleTheme, isDark } = useTheme();
   const { currentCurrency, setCurrency, formatAmount } = useCurrency();
   const { monthlyBudget, setMonthlyBudget } = useExpenses();
+  const { isSeniorMode, setSeniorMode } = useSeniorMode();
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [budgetInput, setBudgetInput] = useState(String(monthlyBudget || ''));
-  const [seniorMode, setSeniorMode] = useState(false);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
 
-  useEffect(() => {
-    AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
-      if (v === 'true') setSeniorMode(true);
-    }).catch(() => {});
-  }, []);
-
   const toggleSeniorMode = (val: boolean) => {
     setSeniorMode(val);
-    AsyncStorage.setItem('@lifewise_senior_mode', val ? 'true' : 'false');
   };
 
   const handleBack = () => {
@@ -147,10 +141,10 @@ export default function SettingsScreen() {
             colors={colors}
             rightElement={
               <Switch
-                value={seniorMode}
+                value={isSeniorMode}
                 onValueChange={toggleSeniorMode}
                 trackColor={{ false: colors.inputBorder, true: colors.accent + '50' }}
-                thumbColor={seniorMode ? colors.accent : '#ccc'}
+                thumbColor={isSeniorMode ? colors.accent : '#ccc'}
               />
             }
           />

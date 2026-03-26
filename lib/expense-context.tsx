@@ -227,8 +227,12 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
+    const oldBills = [...bills];
     const status: 'active' | 'paid' = bill.isPaid ? 'active' : 'paid';
     const updated = { ...bill, isPaid: !bill.isPaid, status };
+    
+    // Optimistic Update
+    setBills((prev) => prev.map((b) => (b.id === billId ? updated : b)));
     try {
       const res = await fetchWithAuth(token, `/api/bills/${billId}`, {
         method: 'PUT',
@@ -236,9 +240,9 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(updated),
       });
       if (res.ok) setBills((prev) => prev.map((b) => (b.id === billId ? updated : b)));
+      else setBills(oldBills);
     } catch {
-      // keep optimistic update or revert
-      setBills((prev) => prev.map((b) => (b.id === billId ? updated : b)));
+      setBills(oldBills);
     }
   }, [token, bills]);
 
