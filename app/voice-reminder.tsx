@@ -20,6 +20,7 @@ import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 import { scheduleLocalNotification } from '@/lib/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PremiumLoader from '@/components/PremiumLoader';
 
 type VoiceState = 'idle' | 'recording' | 'review' | 'transcribing' | 'confirming';
 
@@ -91,10 +92,10 @@ function categoryFromSpeech(text: string, reminderType: ReminderType): CategoryT
   if (/(rent|bill|electricity|internet|wifi|phone|water|gas|utility|insurance)/i.test(t)) return 'bills';
 
   // Healthcare.
-  if (/(health|medicine|doctor|hospital|clinic|vitamin|sugar|bp|blood pressure|mg)/i.test(t)) return 'healthcare';
+  if (/(health|medicine|doctor|hospital|clinic|vitamin|sugar|bp|blood pressure|mg)/i.test(t)) return 'health';
 
   // Habits / wellness (map to healthcare visual style).
-  if (/(habit|exercise|workout|gym|water|walk|yoga|meditate|meditation)/i.test(t)) return 'healthcare';
+  if (/(habit|exercise|workout|gym|water|walk|yoga|meditate|meditation)/i.test(t)) return 'health';
 
   // Travel / events often have no amount (map to "others").
   if (/(travel|trip|flight|hotel|vacation|event|birthday|wedding|anniversary|party)/i.test(t)) return 'others';
@@ -176,7 +177,7 @@ function policyForIntent(intent: ReminderIntent): {
         forcedRepeatType: 'daily',
         reminderTypeOverride: 'custom',
         shouldHaveAmount: false,
-        categoryOverride: 'healthcare',
+        categoryOverride: 'health',
         iconOverride: 'medkit',
       };
     case 'habits':
@@ -187,7 +188,7 @@ function policyForIntent(intent: ReminderIntent): {
         forcedRepeatType: 'daily',
         reminderTypeOverride: 'custom',
         shouldHaveAmount: false,
-        categoryOverride: 'healthcare',
+        categoryOverride: 'health',
         iconOverride: 'water',
       };
     case 'bills':
@@ -564,7 +565,7 @@ export default function VoiceReminderScreen() {
       const computedIconByCategory =
         computedCategory === 'bills'
           ? 'receipt'
-          : computedCategory === 'healthcare'
+          : computedCategory === 'health'
             ? 'medkit'
             : computedCategory === 'education'
               ? 'book'
@@ -695,7 +696,7 @@ export default function VoiceReminderScreen() {
               >
                 <Animated.View style={[styles.micInner, micStyle]}>
                   {state === 'transcribing' ? (
-                    <ActivityIndicator color="#0F172A" />
+                    <PremiumLoader size={40} />
                   ) : (
                     <Ionicons
                       name={state === 'recording' ? 'stop' : 'mic'}

@@ -28,6 +28,7 @@ import {
   CategoryType,
 } from '@/lib/data';
 import CategoryIcon from '@/components/CategoryIcon';
+import PremiumLoader from '@/components/PremiumLoader';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -633,7 +634,7 @@ export default function ReportsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <PremiumLoader size={60} text="Generating Report..." />
       </View>
     );
   }

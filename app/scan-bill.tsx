@@ -23,6 +23,7 @@ import { useTheme } from '@/lib/theme-context';
 import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 import { useExpenses } from '@/lib/expense-context';
+import PremiumLoader from '@/components/PremiumLoader';
 import { scheduleLocalNotification } from '@/lib/notifications';
 import { useCurrency } from '@/lib/currency-context';
 
@@ -311,6 +312,7 @@ export default function ScanBillScreen() {
                       </Pressable>
                     </View>
                   </View>
+
                 </View>
               </CameraView>
             ) : (
@@ -375,7 +377,7 @@ export default function ScanBillScreen() {
 
         {step === 'processing' && (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.accent} />
+            <PremiumLoader size={100} text={PROCESS_MESSAGES[processingMsgIdx]} />
             <Text style={[styles.processingTitle, { color: colors.textSecondary }]}>
               {PROCESS_MESSAGES[processingMsgIdx]}
             </Text>

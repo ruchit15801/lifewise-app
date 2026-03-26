@@ -27,8 +27,10 @@ import Animated, {
   withSpring 
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
+import { useAuth } from '@/lib/auth-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useCurrency } from '@/lib/currency-context';
+import { getApiUrl } from '@/lib/query-client';
 import { REPEAT_OPTIONS, ReminderType, RepeatType, REMINDER_TYPE_CONFIG, type Bill } from '@/lib/data';
 import { scheduleLocalNotification } from '@/lib/notifications';
 import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
@@ -79,6 +81,31 @@ export default function BillDetailsScreen() {
   const [tempBillNum, setTempBillNum] = useState<string>(() => (bill?.billNumber || ''));
   const [tempAccNum, setTempAccNum] = useState<string>(() => (bill?.accountNumber || ''));
   const [editError, setEditError] = useState<string>('');
+  const { token } = useAuth();
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  async function fetchHistory() {
+    if (!token) return;
+    try {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}/api/bills/${billId}/history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.slice(0, 2)); // Only show last 2 in preview
+      }
+    } catch (err) {
+      console.error('Fetch history preview error:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  React.useEffect(() => {
+    fetchHistory();
+  }, [billId, token]);
 
   // Pinch to zoom shared values
   const scale = useSharedValue(1);
@@ -116,6 +143,10 @@ export default function BillDetailsScreen() {
     setTempVendor(bill.vendorName || '');
     setTempBillNum(bill.billNumber || '');
     setTempAccNum(bill.accountNumber || '');
+    if (bill.status === 'cancelled') { // Assuming uncancel is desired if bill was cancelled
+      uncancelReminder(bill.id);
+    }
+    fetchHistory(); // Refresh history
   }, [bill]);
 
   const isPaid = bill ? bill.status === 'paid' || bill.isPaid : false;
@@ -170,12 +201,14 @@ export default function BillDetailsScreen() {
   function onToggleDone() {
     if (!bill) return;
     toggleBillPaid(bill.id);
+    fetchHistory(); // Refresh history
   }
 
   function onSnooze(days: number) {
     if (!bill) return;
     snoozeReminder(bill.id, days);
-
+    fetchHistory(); // Refresh history
+    
     // Best-effort schedule for snoozed time.
     const snoozedUntil = new Date();
     snoozedUntil.setDate(snoozedUntil.getDate() + days);
@@ -187,6 +220,13 @@ export default function BillDetailsScreen() {
     }).catch(() => {});
 
     setShowSnoozeModal(false);
+  }
+
+  function onCancelReminder() {
+    if (!bill) return;
+    cancelReminder(bill.id);
+    fetchHistory(); // Refresh history
+    setShowSnoozeModal(false); // Close snooze modal if open
   }
 
   if (!bill) {
@@ -366,22 +406,40 @@ export default function BillDetailsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment History</Text>
           <View style={styles.historyCard}>
-            {[
-              { date: 'Feb 25, 2026', amount: bill.amount, status: 'Paid On Time', icon: 'checkmark-circle' },
-              { date: 'Jan 25, 2026', amount: bill.amount, status: 'Paid On Time', icon: 'checkmark-circle' },
-            ].map((item, idx) => (
-              <View key={idx} style={[styles.historyRow, idx === 1 && { borderBottomWidth: 0 }]}>
-                <View style={styles.historyIconWrap}>
-                  <Ionicons name={item.icon as any} size={20} color="#10B981" />
-                </View>
-                <View style={styles.historyInfo}>
-                  <Text style={styles.historyDate}>{item.date}</Text>
-                  <Text style={styles.historyStatus}>{item.status}</Text>
-                </View>
-                <Text style={styles.historyAmount}>{formatAmount(item.amount)}</Text>
+            {loadingHistory ? (
+              <ActivityIndicator size="small" color="#4F46E5" style={{ padding: 20 }} />
+            ) : history.length === 0 ? (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: '#94A3B8', fontFamily: 'Inter_500Medium', fontSize: 13 }}>
+                  No payment history yet.
+                </Text>
               </View>
-            ))}
-            <Pressable style={styles.viewMoreBtn}>
+            ) : (
+              history.map((item, idx) => (
+                <View key={item._id} style={[styles.historyRow, idx === history.length - 1 && { borderBottomWidth: 0 }]}>
+                  <View style={[styles.historyIconWrap, { backgroundColor: getActionColor(item.action).bg }]}>
+                    <Ionicons name={getActionIcon(item.action)} size={18} color={getActionColor(item.action).text} />
+                  </View>
+                  <View style={styles.historyInfo}>
+                    <Text style={styles.historyDate}>
+                      {new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </Text>
+                    <Text style={[styles.historyStatus, { color: getActionColor(item.action).text }]}>
+                      {item.action.toUpperCase()}
+                    </Text>
+                  </View>
+                  {item.amount ? (
+                    <Text style={styles.historyAmount}>{formatAmount(item.amount)}</Text>
+                  ) : (
+                    <Text style={styles.historyStatus}>{item.note}</Text>
+                  )}
+                </View>
+              ))
+            )}
+            <Pressable 
+              style={styles.viewMoreBtn}
+              onPress={() => router.push(`/bill-history/${bill.id}`)}
+            >
               <Text style={styles.viewMoreText}>View Full History</Text>
               <Ionicons name="chevron-forward" size={14} color="#64748B" />
             </Pressable>
@@ -692,6 +750,26 @@ export default function BillDetailsScreen() {
 }
 
 
+
+function getActionIcon(action: string): any {
+  switch (action) {
+    case 'paid': return 'checkmark-circle';
+    case 'snoozed': return 'notifications-off';
+    case 'cancelled': return 'close-circle';
+    case 'restored': return 'arrow-undo';
+    default: return 'refresh-circle';
+  }
+}
+
+function getActionColor(action: string) {
+  switch (action) {
+    case 'paid': return { bg: '#DCFCE7', text: '#10B981' };
+    case 'snoozed': return { bg: '#F1F5F9', text: '#475569' };
+    case 'cancelled': return { bg: '#FEE2E2', text: '#EF4444' };
+    case 'restored': return { bg: '#E0F2FE', text: '#0EA5E9' };
+    default: return { bg: '#F5F3FF', text: '#7C3AED' };
+  }
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },

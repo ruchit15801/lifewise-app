@@ -8,6 +8,10 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Modal,
+  TextInput,
+  Alert,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +20,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
+import PremiumLoader from '@/components/PremiumLoader';
 import {
   CATEGORIES,
   formatTime,
@@ -111,7 +116,7 @@ export default function TransactionsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <PremiumLoader size={60} text="Fetching Transactions..." />
       </View>
     );
   }

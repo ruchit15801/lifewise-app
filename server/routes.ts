@@ -22,6 +22,7 @@ async function initIndexes() {
   const transactions = db.collection('transactions');
   const bills = db.collection('bills');
   const users = db.collection('users');
+  const billHistory = db.collection('billHistory');
 
   try {
     // Unique index for SMS deduplication: same user, same SMS unique ID
@@ -29,6 +30,7 @@ async function initIndexes() {
     // Index for common queries
     await (transactions as any).createIndex({ userId: 1, date: -1 });
     await (bills as any).createIndex({ userId: 1 });
+    await (billHistory as any).createIndex({ billId: 1, userId: 1, date: -1 });
     await (users as any).createIndex({ email: 1 }, { unique: true });
     console.log('[DB] Indexes initialized');
   } catch (err) {
@@ -1312,6 +1314,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (body.reminderDaysBefore !== undefined) update.reminderDaysBefore = body.reminderDaysBefore;
       const result = await bills.updateOne({ _id: toId(id), userId: (req as any).userId }, { $set: update });
       if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+      // Log history if status changed
+      if (update.status || update.isPaid !== undefined) {
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId: (req as any).userId,
+            date: new Date().toISOString(),
+            action: update.isPaid ? 'paid' : (update.status || 'updated'),
+            amount: update.amount,
+            note: update.isPaid ? 'Marked as paid' : 'Information updated'
+          });
+        }
+      }
+
       return res.json({ ok: true });
     } catch (err) {
       console.error('Put bill error:', err);
@@ -1352,6 +1370,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { $set: { status: 'snoozed', snoozedUntil: snoozedUntil.toISOString(), isPaid: false } }
         );
         if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+        // Log history
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId,
+            date: new Date().toISOString(),
+            action: 'snoozed',
+            note: `Snoozed until ${snoozedUntil.toLocaleDateString()}`
+          });
+        }
+
         return res.json({ ok: true, snoozedUntil: snoozedUntil.toISOString() });
       }
 
@@ -1361,6 +1392,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { $set: { status: 'cancelled', isPaid: false } }
         );
         if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+        // Log history
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId,
+            date: new Date().toISOString(),
+            action: 'cancelled',
+            note: 'Reminder cancelled'
+          });
+        }
+
         return res.json({ ok: true });
       }
 
@@ -1370,12 +1414,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { $set: { status: 'active', isPaid: false } }
         );
         if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+        // Log history
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId,
+            date: new Date().toISOString(),
+            action: 'restored',
+            note: 'Reminder restored'
+          });
+        }
+
         return res.json({ ok: true });
       }
 
       return res.status(400).json({ message: 'Invalid action' });
     } catch (err) {
       console.error('Bill action error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.get('/api/bills/:id/history', authMiddleware, async (req: any, res) => {
+    try {
+      const db = getDb();
+      if (!db) return res.status(500).json({ message: 'DB not available' });
+      const history = await db.collection('billHistory')
+        .find({ billId: toId(req.params.id), userId: (req as any).userId })
+        .sort({ date: -1 })
+        .toArray();
+      return res.json(history);
+    } catch (err) {
+      console.error('Get bill history error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });

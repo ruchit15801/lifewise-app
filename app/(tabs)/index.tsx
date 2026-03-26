@@ -40,6 +40,7 @@ import { useTabBarContentInset } from '@/lib/tab-bar';
 import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
 import { useSeniorMode } from '@/lib/senior-context';
 import CategoryIcon from '@/components/CategoryIcon';
+import PremiumLoader from '@/components/PremiumLoader';
 import {
   CATEGORIES,
   getTodaySpending,
@@ -187,7 +188,9 @@ function MustSmsSyncBanner({
       ]}
     >
       {isSyncingSms ? (
-        <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
+        <View style={{ marginRight: 6 }}>
+          <PremiumLoader size={16} />
+        </View>
       ) : (
         <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
       )}
@@ -1176,7 +1179,7 @@ export default function HomeScreen() {
               ]}
             >
               {isQuickAdding ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <PremiumLoader size={20} />
               ) : (
                 <>
                   <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />

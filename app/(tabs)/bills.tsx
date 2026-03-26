@@ -23,6 +23,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
+import PremiumLoader from '@/components/PremiumLoader';
 import { getIntentPolicy, getReminderIntentFromBill, type ReminderIntent } from '@/lib/reminder-intent';
 import {
   Bill,
@@ -730,7 +731,7 @@ export default function BillsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <PremiumLoader size={80} text="Loading Reminders..." />
       </View>
     );
   }
