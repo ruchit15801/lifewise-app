@@ -2,6 +2,7 @@
   "expo": {
     "name": "LifeWise",
     "slug": "lifewise",
+    "owner": "sdfsdf12",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./logo.png",
@@ -56,13 +57,9 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {
-        "origin": "https://replit.com/"
-      },
       "eas": {
         "projectId": "618d7114-5c6c-4565-8b63-e9b42be5d5af"
       }
-    },
-    "owner": "sdfsdf12"
+    }
   }
 }

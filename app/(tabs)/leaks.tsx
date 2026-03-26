@@ -15,6 +15,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
+import PremiumLoader from '@/components/PremiumLoader';
 import { CATEGORIES, MoneyLeak } from '@/lib/data';
 import { ThemeColors } from '@/constants/colors';
 
@@ -76,7 +77,7 @@ export default function LeaksScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <PremiumLoader size={60} text="Scanning for leaks..." />
       </View>
     );
   }

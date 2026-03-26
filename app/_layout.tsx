@@ -27,6 +27,9 @@ import {
   addPushTokenListener,
 } from "@/lib/notifications";
 import { registerSmsSyncTask } from "@/lib/sms-sync-task";
+import { SeniorProvider } from "@/lib/senior-context";
+import { AlertProvider } from "@/lib/alert-context";
+import CustomAlert from "@/components/CustomAlert";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -214,6 +217,7 @@ function AuthGate() {
         <Stack.Screen name="assistant" />
         <Stack.Screen name="+not-found" />
       </Stack>
+      <CustomAlert />
     </>
   );
 }
@@ -239,22 +243,26 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView>
-          <KeyboardProvider>
-            <ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <KeyboardProvider>
+          <ThemeProvider>
+            <ErrorBoundary>
               <CurrencyProvider>
-                <AuthProvider>
-                  <ExpenseProvider>
-                    <AuthGate />
-                  </ExpenseProvider>
-                </AuthProvider>
+                <SeniorProvider>
+                  <AlertProvider>
+                    <AuthProvider>
+                      <ExpenseProvider>
+                        <AuthGate />
+                      </ExpenseProvider>
+                    </AuthProvider>
+                  </AlertProvider>
+                </SeniorProvider>
               </CurrencyProvider>
-            </ThemeProvider>
-          </KeyboardProvider>
-        </GestureHandlerRootView>
-      </QueryClientProvider>
-    </ErrorBoundary>
+            </ErrorBoundary>
+          </ThemeProvider>
+        </KeyboardProvider>
+      </GestureHandlerRootView>
+    </QueryClientProvider>
   );
 }

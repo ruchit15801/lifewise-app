@@ -5,6 +5,8 @@ import { parseSmsToTransactions } from './parse-sms';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
+import { getApiUrl } from './query-client';
+
 const SMS_SYNC_TASK = 'SMS_SYNC_TASK';
 const LAST_SYNC_TIMESTAMP_KEY = 'last_sms_sync_timestamp';
 
@@ -35,7 +37,7 @@ export async function performSmsSync(token: string) {
     if (parsed.length === 0) return { success: true, synced: 0 };
 
     // Send to backend
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001';
+    const API_URL = getApiUrl();
     const res = await fetch(`${API_URL}/api/transactions/sync-from-sms`, {
       method: 'POST',
       headers: { 

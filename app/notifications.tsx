@@ -91,7 +91,31 @@ export default function NotificationsScreen() {
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => router.push(`/notification-details/${item.id}`)}
+              onPress={() => {
+                const meta = item.meta;
+                const redirectUrl = meta?.redirectUrl || meta?.route;
+                
+                if (redirectUrl) {
+                  router.push(redirectUrl as any);
+                  return;
+                }
+
+                // Retroactive / Root Fix Logic: Infer route if missing
+                if (meta?.type === 'bill' && meta?.referenceId) {
+                  router.push(`/bill-details/${meta.referenceId}` as any);
+                } else if (meta?.type === 'medication' && meta?.memberId && meta?.medId) {
+                  router.push(`/medicine-details/${meta.memberId}/${meta.medId}` as any);
+                } else if (meta?.billId) {
+                  // Fallback for very old notifications
+                  router.push(`/bill-details/${meta.billId}` as any);
+                } else {
+                  // Total fallback to detail page
+                  router.push({
+                    pathname: `/notification-details/${item.id}`,
+                    params: { title: item.title, body: item.body }
+                  } as any);
+                }
+              }}
               style={({ pressed }) => [
                 styles.item,
                 {

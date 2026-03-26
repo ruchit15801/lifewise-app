@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   Platform,
   StyleSheet,
@@ -27,8 +26,14 @@ import Animated, {
   withSpring 
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
+import { useAuth } from '../../lib/auth-context';
+import { useSeniorMode } from '@/lib/senior-context';
+import { useAlert } from '@/lib/alert-context';
+import PremiumLoader from '@/components/PremiumLoader';
+import CustomModal from '@/components/CustomModal';
 import { useExpenses } from '@/lib/expense-context';
 import { useCurrency } from '@/lib/currency-context';
+import { getApiUrl } from '@/lib/query-client';
 import { REPEAT_OPTIONS, ReminderType, RepeatType, REMINDER_TYPE_CONFIG, type Bill } from '@/lib/data';
 import { scheduleLocalNotification } from '@/lib/notifications';
 import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
@@ -61,6 +66,8 @@ export default function BillDetailsScreen() {
     cancelReminder,
     uncancelReminder,
   } = useExpenses();
+  const { isSeniorMode } = useSeniorMode();
+  const { showAlert } = useAlert();
 
   const bill = useMemo(() => bills.find((b) => b.id === billId), [bills, billId]);
 
@@ -79,6 +86,31 @@ export default function BillDetailsScreen() {
   const [tempBillNum, setTempBillNum] = useState<string>(() => (bill?.billNumber || ''));
   const [tempAccNum, setTempAccNum] = useState<string>(() => (bill?.accountNumber || ''));
   const [editError, setEditError] = useState<string>('');
+  const { token } = useAuth();
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  async function fetchHistory() {
+    if (!token) return;
+    try {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}/api/bills/${billId}/history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.slice(0, 2)); // Only show last 2 in preview
+      }
+    } catch (err) {
+      console.error('Fetch history preview error:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  React.useEffect(() => {
+    fetchHistory();
+  }, [billId, token]);
 
   // Pinch to zoom shared values
   const scale = useSharedValue(1);
@@ -116,6 +148,10 @@ export default function BillDetailsScreen() {
     setTempVendor(bill.vendorName || '');
     setTempBillNum(bill.billNumber || '');
     setTempAccNum(bill.accountNumber || '');
+    if (bill.status === 'cancelled') { // Assuming uncancel is desired if bill was cancelled
+      uncancelReminder(bill.id);
+    }
+    fetchHistory(); // Refresh history
   }, [bill]);
 
   const isPaid = bill ? bill.status === 'paid' || bill.isPaid : false;
@@ -170,12 +206,14 @@ export default function BillDetailsScreen() {
   function onToggleDone() {
     if (!bill) return;
     toggleBillPaid(bill.id);
+    fetchHistory(); // Refresh history
   }
 
   function onSnooze(days: number) {
     if (!bill) return;
     snoozeReminder(bill.id, days);
-
+    fetchHistory(); // Refresh history
+    
     // Best-effort schedule for snoozed time.
     const snoozedUntil = new Date();
     snoozedUntil.setDate(snoozedUntil.getDate() + days);
@@ -189,6 +227,13 @@ export default function BillDetailsScreen() {
     setShowSnoozeModal(false);
   }
 
+  function onCancelReminder() {
+    if (!bill) return;
+    cancelReminder(bill.id);
+    fetchHistory(); // Refresh history
+    setShowSnoozeModal(false); // Close snooze modal if open
+  }
+
   if (!bill) {
     return (
       <View style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
@@ -198,8 +243,7 @@ export default function BillDetailsScreen() {
           </Pressable>
         </View>
         <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading reminder...</Text>
+          <PremiumLoader text="Loading reminder..." />
         </View>
       </View>
     );
@@ -242,12 +286,12 @@ export default function BillDetailsScreen() {
           </View>
 
           <View style={styles.headerTop}>
-            <Pressable onPress={() => router.back()} style={styles.headerBackBtn}>
-              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            <Pressable onPress={() => router.back()} style={[styles.headerBackBtn, isSeniorMode && { width: 50, height: 50, borderRadius: 25 }]}>
+              <Ionicons name="chevron-back" size={isSeniorMode ? 32 : 24} color="#FFFFFF" />
             </Pressable>
-            <Text style={styles.headerTitleMain}>Reminder Details</Text>
-            <Pressable onPress={() => setShowEditModal(true)} style={styles.headerEditBtn}>
-              <Ionicons name="pencil" size={20} color="#FFFFFF" />
+            <Text style={[styles.headerTitleMain, isSeniorMode && { fontSize: 22 }]}>Reminder Details</Text>
+            <Pressable onPress={() => setShowEditModal(true)} style={[styles.headerEditBtn, isSeniorMode && { width: 50, height: 50, borderRadius: 25 }]}>
+              <Ionicons name="pencil" size={isSeniorMode ? 28 : 20} color="#FFFFFF" />
             </Pressable>
           </View>
 
@@ -276,8 +320,8 @@ export default function BillDetailsScreen() {
               <Ionicons name="calendar-outline" size={20} color="#4F46E5" />
             </View>
             <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>Due Date</Text>
-              <Text style={styles.infoValue}>
+              <Text style={[styles.infoLabel, isSeniorMode && { fontSize: 16 }]}>Due Date</Text>
+              <Text style={[styles.infoValue, isSeniorMode && { fontSize: 18 }]}>
                 {dueDate?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
               </Text>
             </View>
@@ -366,22 +410,40 @@ export default function BillDetailsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment History</Text>
           <View style={styles.historyCard}>
-            {[
-              { date: 'Feb 25, 2026', amount: bill.amount, status: 'Paid On Time', icon: 'checkmark-circle' },
-              { date: 'Jan 25, 2026', amount: bill.amount, status: 'Paid On Time', icon: 'checkmark-circle' },
-            ].map((item, idx) => (
-              <View key={idx} style={[styles.historyRow, idx === 1 && { borderBottomWidth: 0 }]}>
-                <View style={styles.historyIconWrap}>
-                  <Ionicons name={item.icon as any} size={20} color="#10B981" />
-                </View>
-                <View style={styles.historyInfo}>
-                  <Text style={styles.historyDate}>{item.date}</Text>
-                  <Text style={styles.historyStatus}>{item.status}</Text>
-                </View>
-                <Text style={styles.historyAmount}>{formatAmount(item.amount)}</Text>
+            {loadingHistory ? (
+              <PremiumLoader size={40} />
+            ) : history.length === 0 ? (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: '#94A3B8', fontFamily: 'Inter_500Medium', fontSize: 13 }}>
+                  No payment history yet.
+                </Text>
               </View>
-            ))}
-            <Pressable style={styles.viewMoreBtn}>
+            ) : (
+              history.map((item, idx) => (
+                <View key={item._id} style={[styles.historyRow, idx === history.length - 1 && { borderBottomWidth: 0 }]}>
+                  <View style={[styles.historyIconWrap, { backgroundColor: getActionColor(item.action).bg }]}>
+                    <Ionicons name={getActionIcon(item.action)} size={18} color={getActionColor(item.action).text} />
+                  </View>
+                  <View style={styles.historyInfo}>
+                    <Text style={styles.historyDate}>
+                      {new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </Text>
+                    <Text style={[styles.historyStatus, { color: getActionColor(item.action).text }]}>
+                      {item.action.toUpperCase()}
+                    </Text>
+                  </View>
+                  {item.amount ? (
+                    <Text style={styles.historyAmount}>{formatAmount(item.amount)}</Text>
+                  ) : (
+                    <Text style={styles.historyStatus}>{item.note}</Text>
+                  )}
+                </View>
+              ))
+            )}
+            <Pressable 
+              style={[styles.viewMoreBtn, isSeniorMode && { paddingVertical: 18 }]}
+              onPress={() => router.push({ pathname: '/bill-history/[billId]', params: { billId: bill.id } } as any)}
+            >
               <Text style={styles.viewMoreText}>View Full History</Text>
               <Ionicons name="chevron-forward" size={14} color="#64748B" />
             </Pressable>
@@ -420,135 +482,156 @@ export default function BillDetailsScreen() {
 
       {/* Floating Bottom Action Bar */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        {/* Primary Action Row */}
         <Pressable
-          style={[styles.bottomBtn, { backgroundColor: '#F1F5F9' }]}
-          onPress={() => setShowSnoozeModal(true)}
-        >
-          <Ionicons name="notifications-off-outline" size={20} color="#475569" />
-          <Text style={[styles.bottomBtnText, { color: '#475569' }]}>Snooze</Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.bottomBtnMain, { backgroundColor: isPaid ? '#94A3B8' : '#10B981' }]}
+          style={[styles.bottomBtnMain, { backgroundColor: isPaid ? '#94A3B8' : '#10B981' }, isSeniorMode && { height: 74, borderRadius: 20 }]}
           onPress={onToggleDone}
         >
-          <Ionicons name={isPaid ? "refresh-outline" : "checkmark-circle-outline"} size={22} color="#FFFFFF" />
-          <Text style={styles.bottomBtnTextMain}>{isPaid ? 'Mark Unpaid' : 'Mark as Paid'}</Text>
+          <Ionicons name={isPaid ? "refresh-outline" : "checkmark-circle-outline"} size={isSeniorMode ? 32 : 22} color="#FFFFFF" />
+          <Text 
+            style={[styles.bottomBtnTextMain, isSeniorMode && { fontSize: 20 }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {isPaid ? 'Mark Unpaid' : 'Mark as Paid'}
+          </Text>
         </Pressable>
 
-        {bill.status === 'cancelled' ? (
+        {/* Secondary Actions Row */}
+        <View style={styles.secondaryActionsRow}>
           <Pressable
-            style={[styles.bottomBtn, { backgroundColor: '#E0F2FE' }]}
-            onPress={() => uncancelReminder(bill.id)}
+            style={[styles.bottomBtn, { backgroundColor: '#F1F5F9' }, isSeniorMode && { height: 64, borderRadius: 16 }]}
+            onPress={() => setShowSnoozeModal(true)}
           >
-            <Ionicons name="arrow-undo-outline" size={20} color="#0369A1" />
-            <Text style={[styles.bottomBtnText, { color: '#0369A1' }]}>Restore</Text>
+            <Ionicons name="notifications-off-outline" size={isSeniorMode ? 28 : 20} color="#475569" />
+            <Text 
+              style={[styles.bottomBtnText, { color: '#475569' }, isSeniorMode && { fontSize: 18 }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              Snooze
+            </Text>
           </Pressable>
-        ) : (
-          <Pressable
-            style={[styles.bottomBtn, { backgroundColor: '#FEF2F2' }]}
-            onPress={() => cancelReminder(bill.id)}
-          >
-            <Ionicons name="close-outline" size={20} color="#EF4444" />
-            <Text style={[styles.bottomBtnText, { color: '#EF4444' }]}>Cancel</Text>
-          </Pressable>
-        )}
+
+          {bill.status === 'cancelled' ? (
+            <Pressable
+              style={[styles.bottomBtn, { backgroundColor: '#E0F2FE' }]}
+              onPress={() => uncancelReminder(bill.id)}
+            >
+              <Ionicons name="arrow-undo-outline" size={20} color="#0369A1" />
+              <Text style={[styles.bottomBtnText, { color: '#0369A1' }]}>Restore</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.bottomBtn, { backgroundColor: '#FEF2F2' }]}
+              onPress={() => cancelReminder(bill.id)}
+            >
+              <Ionicons name="close-outline" size={20} color="#EF4444" />
+              <Text 
+                style={[styles.bottomBtnText, { color: '#EF4444' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                Cancel
+              </Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
-      <Modal visible={showEditModal} transparent animationType="slide">
-        <View style={styles.modalBackdropFull}>
-          <View style={[styles.fullSheet, { backgroundColor: '#FFFFFF' }]}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitleBig}>Edit Reminder</Text>
-              <Pressable onPress={() => setShowEditModal(false)}>
-                <Ionicons name="close-circle" size={28} color="#94A3B8" />
-              </Pressable>
+      <CustomModal visible={showEditModal} onClose={() => setShowEditModal(false)}>
+        <View style={styles.sheetHeader}>
+          <Text style={[styles.sheetTitleBig, { color: colors.text }]}>Edit Reminder</Text>
+        </View>
+
+        {!!editError && (
+          <View style={[styles.errorBox, { backgroundColor: colors.dangerDim, marginBottom: 12 }]}>
+            <Ionicons name="alert-circle" size={16} color={colors.danger} />
+            <Text style={[styles.errorText, { color: colors.danger }]}>{editError}</Text>
+          </View>
+        )}
+
+        <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.editGrid}>
+            <View style={styles.editSection}>
+              <Text style={[styles.editSectionTitle, { color: colors.textSecondary }]}>Basic Details</Text>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Name</Text>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
+                  value={tempName}
+                  onChangeText={setTempName}
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Amount (₹)</Text>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
+                  value={tempAmount}
+                  keyboardType="numeric"
+                  onChangeText={setTempAmount}
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Due Date</Text>
+                <Pressable
+                  style={[styles.textInput, { borderColor: colors.border, backgroundColor: colors.inputBg, justifyContent: 'center' }]}
+                  onPress={() => setShowTimePickerModal(true)}
+                >
+                  <Text style={{ color: colors.text }}>
+                    {tempTime.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
 
-            {!!editError && (
-              <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', marginHorizontal: 20, marginBottom: 12 }]}>
-                <Ionicons name="alert-circle" size={16} color="#EF4444" />
-                <Text style={[styles.errorText, { color: '#B91C1C' }]}>{editError}</Text>
+            <View style={styles.editSection}>
+              <Text style={[styles.editSectionTitle, { color: colors.textSecondary }]}>Advanced Metadata</Text>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Vendor Name</Text>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
+                  value={tempVendor}
+                  placeholder="e.g. Netflix"
+                  placeholderTextColor={colors.textTertiary}
+                  onChangeText={setTempVendor}
+                />
               </View>
-            )}
-
-            <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
-              <View style={styles.editGrid}>
-                <View style={styles.editSection}>
-                  <Text style={styles.editSectionTitle}>Basic Details</Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Name</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={tempName}
-                      onChangeText={setTempName}
-                    />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Amount (₹)</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={tempAmount}
-                      keyboardType="numeric"
-                      onChangeText={setTempAmount}
-                    />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Due Date</Text>
-                    <Pressable
-                      style={styles.textInput}
-                      onPress={() => setShowTimePickerModal(true)}
-                    >
-                      <Text style={{ color: '#1E293B' }}>
-                        {tempTime.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View style={styles.editSection}>
-                  <Text style={styles.editSectionTitle}>Advanced Metadata</Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Vendor Name</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={tempVendor}
-                      placeholder="e.g. Netflix"
-                      onChangeText={setTempVendor}
-                    />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Bill Number</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={tempBillNum}
-                      placeholder="Invoice ID"
-                      onChangeText={setTempBillNum}
-                    />
-                  </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Account Number</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={tempAccNum}
-                      placeholder="Your A/C ID"
-                      onChangeText={setTempAccNum}
-                    />
-                  </View>
-                </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Bill Number</Text>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
+                  value={tempBillNum}
+                  placeholder="Invoice ID"
+                  placeholderTextColor={colors.textTertiary}
+                  onChangeText={setTempBillNum}
+                />
               </View>
-            </ScrollView>
-
-            <Pressable style={styles.saveBtnAction} onPress={onSaveEdit}>
-              <LinearGradient
-                colors={['#4F46E5', '#7C3AED']}
-                style={styles.saveGradientAction}
-              >
-                <Text style={styles.saveBtnTextAction}>Save Changes</Text>
-              </LinearGradient>
-            </Pressable>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Account Number</Text>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
+                  value={tempAccNum}
+                  placeholder="Your A/C ID"
+                  placeholderTextColor={colors.textTertiary}
+                  onChangeText={setTempAccNum}
+                />
+              </View>
+            </View>
           </View>
-        </View>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+
+        <Pressable style={styles.saveBtnAction} onPress={onSaveEdit}>
+          <LinearGradient
+            colors={colors.buttonGradient as any}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.saveGradientAction}
+          >
+            <Text style={styles.saveBtnTextAction}>Save Changes</Text>
+          </LinearGradient>
+        </Pressable>
 
         {showTimePickerModal && (
           <DateTimePicker
@@ -561,86 +644,76 @@ export default function BillDetailsScreen() {
             }}
           />
         )}
-      </Modal>
+      </CustomModal>
 
       {/* Repeat picker modal */}
-      <Modal transparent visible={showRepeatPickerModal} animationType="fade">
-        <View style={styles.modalBackdropCentered}>
-          <View style={styles.modalCardCentered}>
-            <Text style={styles.modalTitle}>Repeat</Text>
-            <ScrollView style={{ maxHeight: 260 }}>
-              {REPEAT_OPTIONS.map((opt) => {
-                const active = opt.key === draftRepeat;
-                return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => setDraftRepeat(opt.key)}
-                    style={[styles.repeatRow, active && styles.repeatRowActive]}
-                  >
-                    <Text style={[styles.repeatLabel, active && styles.repeatLabelActive]}>
-                      {opt.label}
-                    </Text>
-                    {active ? <Ionicons name="checkmark" size={16} color="#4F46E5" /> : null}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <View style={styles.modalActionsRow}>
-              <Pressable onPress={() => setShowRepeatPickerModal(false)} style={styles.modalTextButton}>
-                <Text style={styles.modalTextButtonLabel}>Cancel</Text>
-              </Pressable>
+      <CustomModal visible={showRepeatPickerModal} onClose={() => setShowRepeatPickerModal(false)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Repeat</Text>
+        <ScrollView style={{ maxHeight: 260 }}>
+          {REPEAT_OPTIONS.map((opt) => {
+            const active = opt.key === draftRepeat;
+            return (
               <Pressable
-                onPress={() => {
-                  setTempRepeat(draftRepeat);
-                  setShowRepeatPickerModal(false);
-                }}
-                style={styles.modalPrimaryButton}
+                key={opt.key}
+                onPress={() => setDraftRepeat(opt.key)}
+                style={[styles.repeatRow, active && { backgroundColor: colors.accentDim }]}
               >
-                <Text style={styles.modalPrimaryButtonLabel}>Save</Text>
+                <Text style={[styles.repeatLabel, active && { color: colors.accent, fontFamily: 'Inter_600SemiBold' }, { color: colors.text }]}>
+                  {opt.label}
+                </Text>
+                {active ? <Ionicons name="checkmark" size={16} color={colors.accent} /> : null}
               </Pressable>
-            </View>
-          </View>
+            );
+          })}
+        </ScrollView>
+        <View style={styles.modalActionsRow}>
+          <Pressable onPress={() => setShowRepeatPickerModal(false)} style={styles.modalTextButton}>
+            <Text style={[styles.modalTextButtonLabel, { color: colors.textTertiary }]}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setTempRepeat(draftRepeat);
+              setShowRepeatPickerModal(false);
+            }}
+            style={[styles.modalPrimaryButton, { backgroundColor: colors.accent }]}
+          >
+            <Text style={[styles.modalPrimaryButtonLabel, { color: '#FFFFFF' }]}>Save</Text>
+          </Pressable>
         </View>
-      </Modal>
+      </CustomModal>
 
       {/* Snooze modal */}
-      <Modal visible={showSnoozeModal} transparent animationType="fade">
-        <Pressable style={styles.modalBackdropFull} onPress={() => setShowSnoozeModal(false)}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Snooze reminder</Text>
-            <Text style={styles.sheetSubtitle}>Remind me again in…</Text>
+      <CustomModal visible={showSnoozeModal} onClose={() => setShowSnoozeModal(false)}>
+        <Text style={[styles.sheetTitle, { color: colors.text }]}>Snooze reminder</Text>
+        <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Remind me again in…</Text>
 
-            <View style={styles.snoozeGrid}>
-              {[
-                { days: 1, label: '1 Day', icon: 'sunny' as const, accent: '#EA580C' },
-                { days: 2, label: '2 Days', icon: 'partly-sunny' as const, accent: '#F59E0B' },
-                { days: 3, label: '3 Days', icon: 'cloud' as const, accent: '#3B82F6' },
-                { days: 7, label: '1 Week', icon: 'calendar' as const, accent: '#7C3AED' },
-              ].map((opt) => (
-                <Pressable
-                  key={opt.days}
-                  onPress={() => onSnooze(opt.days)}
-                  style={[
-                    styles.snoozeOption,
-                    { backgroundColor: colors.inputBg, borderColor: colors.inputBorder },
-                  ]}
-                >
-                  <View style={[styles.snoozeIconWrap, { backgroundColor: opt.accent + '15' }]}>
-                    <Ionicons name={opt.icon} size={18} color={opt.accent} />
-                  </View>
-                  <Text style={[styles.snoozeOptionText, { color: colors.text }]}>{opt.label}</Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+        <View style={styles.snoozeGrid}>
+          {[
+            { days: 1, label: '1 Day', icon: 'sunny' as const, accent: '#EA580C' },
+            { days: 2, label: '2 Days', icon: 'partly-sunny' as const, accent: '#F59E0B' },
+            { days: 3, label: '3 Days', icon: 'cloud' as const, accent: '#3B82F6' },
+            { days: 7, label: '1 Week', icon: 'calendar' as const, accent: '#7C3AED' },
+          ].map((opt) => (
+            <Pressable
+              key={opt.days}
+              onPress={() => onSnooze(opt.days)}
+              style={[
+                styles.snoozeOption,
+                { backgroundColor: colors.inputBg, borderColor: colors.border },
+              ]}
+            >
+              <View style={[styles.snoozeIconWrap, { backgroundColor: opt.accent + '15' }]}>
+                <Ionicons name={opt.icon} size={18} color={opt.accent} />
+              </View>
+              <Text style={[styles.snoozeOptionText, { color: colors.text }]}>{opt.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </Pressable>
+          ))}
+        </View>
+      </CustomModal>
 
       {/* Bill image modal with zoom */}
-      <Modal visible={showBillImageModal} transparent animationType="fade">
-        <View style={styles.imageModalBackdrop}>
+      <CustomModal visible={showBillImageModal} onClose={() => setShowBillImageModal(false)} fullScreen={true}>
           <Pressable style={styles.imageModalCloseBtn} onPress={() => {
             setShowBillImageModal(false);
             scale.value = 1; // Reset zoom
@@ -661,8 +734,7 @@ export default function BillDetailsScreen() {
               </Animated.View>
             </GestureDetector>
           </View>
-        </View>
-      </Modal>
+      </CustomModal>
 
       </View>
     </GestureHandlerRootView>
@@ -670,6 +742,26 @@ export default function BillDetailsScreen() {
 }
 
 
+
+function getActionIcon(action: string): any {
+  switch (action) {
+    case 'paid': return 'checkmark-circle';
+    case 'snoozed': return 'notifications-off';
+    case 'cancelled': return 'close-circle';
+    case 'restored': return 'arrow-undo';
+    default: return 'refresh-circle';
+  }
+}
+
+function getActionColor(action: string) {
+  switch (action) {
+    case 'paid': return { bg: '#DCFCE7', text: '#10B981' };
+    case 'snoozed': return { bg: '#F1F5F9', text: '#475569' };
+    case 'cancelled': return { bg: '#FEE2E2', text: '#EF4444' };
+    case 'restored': return { bg: '#E0F2FE', text: '#0EA5E9' };
+    default: return { bg: '#F5F3FF', text: '#7C3AED' };
+  }
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
@@ -698,7 +790,7 @@ const styles = StyleSheet.create({
   },
   headerGradient: {
     paddingHorizontal: 20,
-    paddingBottom: 60,
+    paddingBottom: 40,
   },
   headerDecoration1: {
     position: 'absolute',
@@ -804,7 +896,7 @@ const styles = StyleSheet.create({
   contentScroll: {
     flex: 1,
     paddingHorizontal: 20,
-    marginTop: -40,
+    marginTop: 12,
   },
   mainCard: {
     backgroundColor: '#FFFFFF',
@@ -856,7 +948,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   section: {
-    marginTop: 24,
+    marginTop: 32,
   },
   sectionTitle: {
     fontFamily: 'Inter_700Bold',
@@ -1086,24 +1178,29 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#FFFFFF',
     paddingTop: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
+    paddingHorizontal: 16,
+    flexDirection: 'column',
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
   },
   bottomBtn: {
     flex: 1,
-    height: 56,
-    borderRadius: 18,
+    height: 52,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   bottomBtnMain: {
-    flex: 2,
-    height: 56,
+    width: '100%',
+    height: 60,
     borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1115,14 +1212,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
   bottomBtnText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 15,
+    fontSize: 14,
+    flexShrink: 1,
   },
   bottomBtnTextMain: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 16,
+    fontSize: 18,
     color: '#FFFFFF',
+    flexShrink: 1,
   },
   modalBackdropFull: {
     flex: 1,

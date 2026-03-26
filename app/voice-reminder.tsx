@@ -20,6 +20,9 @@ import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 import { scheduleLocalNotification } from '@/lib/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PremiumLoader from '@/components/PremiumLoader';
+import CustomModal from '@/components/CustomModal';
+import { useAlert } from '@/lib/alert-context';
 
 type VoiceState = 'idle' | 'recording' | 'review' | 'transcribing' | 'confirming';
 
@@ -91,10 +94,10 @@ function categoryFromSpeech(text: string, reminderType: ReminderType): CategoryT
   if (/(rent|bill|electricity|internet|wifi|phone|water|gas|utility|insurance)/i.test(t)) return 'bills';
 
   // Healthcare.
-  if (/(health|medicine|doctor|hospital|clinic|vitamin|sugar|bp|blood pressure|mg)/i.test(t)) return 'healthcare';
+  if (/(health|medicine|doctor|hospital|clinic|vitamin|sugar|bp|blood pressure|mg)/i.test(t)) return 'health';
 
   // Habits / wellness (map to healthcare visual style).
-  if (/(habit|exercise|workout|gym|water|walk|yoga|meditate|meditation)/i.test(t)) return 'healthcare';
+  if (/(habit|exercise|workout|gym|water|walk|yoga|meditate|meditation)/i.test(t)) return 'health';
 
   // Travel / events often have no amount (map to "others").
   if (/(travel|trip|flight|hotel|vacation|event|birthday|wedding|anniversary|party)/i.test(t)) return 'others';
@@ -176,7 +179,7 @@ function policyForIntent(intent: ReminderIntent): {
         forcedRepeatType: 'daily',
         reminderTypeOverride: 'custom',
         shouldHaveAmount: false,
-        categoryOverride: 'healthcare',
+        categoryOverride: 'health',
         iconOverride: 'medkit',
       };
     case 'habits':
@@ -187,7 +190,7 @@ function policyForIntent(intent: ReminderIntent): {
         forcedRepeatType: 'daily',
         reminderTypeOverride: 'custom',
         shouldHaveAmount: false,
-        categoryOverride: 'healthcare',
+        categoryOverride: 'health',
         iconOverride: 'water',
       };
     case 'bills':
@@ -306,6 +309,7 @@ export default function VoiceReminderScreen() {
   const { colors } = useTheme();
   const { token } = useAuth();
   const { addReminder, reminderSettings } = useExpenses();
+  const { showAlert } = useAlert();
   const [state, setState] = useState<VoiceState>('idle');
   const [spokenText, setSpokenText] = useState('');
   const [draftText, setDraftText] = useState('');
@@ -564,7 +568,7 @@ export default function VoiceReminderScreen() {
       const computedIconByCategory =
         computedCategory === 'bills'
           ? 'receipt'
-          : computedCategory === 'healthcare'
+          : computedCategory === 'health'
             ? 'medkit'
             : computedCategory === 'education'
               ? 'book'
@@ -695,7 +699,7 @@ export default function VoiceReminderScreen() {
               >
                 <Animated.View style={[styles.micInner, micStyle]}>
                   {state === 'transcribing' ? (
-                    <ActivityIndicator color="#0F172A" />
+                    <PremiumLoader size={40} />
                   ) : (
                     <Ionicons
                       name={state === 'recording' ? 'stop' : 'mic'}
@@ -864,108 +868,101 @@ export default function VoiceReminderScreen() {
       </View>
 
       {/* Time picker dropdown */}
-      <Modal transparent visible={showTimePicker} animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Select time</Text>
-            <View style={styles.timePickerWrap}>
-              <DateTimePicker
-                value={tempTime ?? new Date()}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, selected) => {
-                  if (selected) setTempTime(selected);
-                }}
-              />
-            </View>
-            <View style={styles.modalActionsRow}>
-              <Pressable onPress={() => setShowTimePicker(false)} style={styles.modalTextButton}>
-                <Text style={styles.modalTextButtonLabel}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  if (!tempTime) {
-                    setShowTimePicker(false);
-                    return;
-                  }
-                  setServerParsed((prev) => {
-                    const base = prev?.date ?? new Date();
-                    const next = new Date(base);
-                    next.setHours(tempTime.getHours(), tempTime.getMinutes(), 0, 0);
-                    const baseParsed = prev ?? {
-                      title: spokenText.trim() || 'Reminder',
-                      date: new Date(),
-                      timeLabel: timeLabelFromDate(new Date()),
-                      repeatType: effectiveParsedForUI?.repeatType ?? ('none' as RepeatType),
-                      reminderType: effectiveParsedForUI?.reminderType ?? ('custom' as ReminderType),
-                    };
-                    return {
-                      ...baseParsed,
-                      date: next,
-                      timeLabel: timeLabelFromDate(next),
-                    };
-                  });
-                  setShowTimePicker(false);
-                }}
-                style={[styles.modalPrimaryButton]}
-              >
-                <Text style={styles.modalPrimaryButtonLabel}>Save</Text>
-              </Pressable>
-            </View>
-          </View>
+      <CustomModal visible={showTimePicker} onClose={() => setShowTimePicker(false)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Select time</Text>
+        <View style={styles.timePickerWrap}>
+          <DateTimePicker
+            value={tempTime ?? new Date()}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(_, selected) => {
+              if (selected) setTempTime(selected);
+            }}
+          />
         </View>
-      </Modal>
+        <View style={styles.modalActionsRow}>
+          <Pressable onPress={() => setShowTimePicker(false)} style={styles.modalTextButton}>
+            <Text style={[styles.modalTextButtonLabel, { color: colors.textTertiary }]}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              if (!tempTime) {
+                setShowTimePicker(false);
+                return;
+              }
+              setServerParsed((prev) => {
+                const base = prev?.date ?? new Date();
+                const next = new Date(base);
+                next.setHours(tempTime.getHours(), tempTime.getMinutes(), 0, 0);
+                const baseParsed = prev ?? {
+                  title: spokenText.trim() || 'Reminder',
+                  date: new Date(),
+                  timeLabel: timeLabelFromDate(new Date()),
+                  repeatType: effectiveParsedForUI?.repeatType ?? ('none' as RepeatType),
+                  reminderType: effectiveParsedForUI?.reminderType ?? ('custom' as ReminderType),
+                };
+                return {
+                  ...baseParsed,
+                  date: next,
+                  timeLabel: timeLabelFromDate(next),
+                };
+              });
+              setShowTimePicker(false);
+            }}
+            style={[styles.modalPrimaryButton, { backgroundColor: colors.accent }]}
+          >
+            <Text style={[styles.modalPrimaryButtonLabel, { color: '#FFFFFF' }]}>Save</Text>
+          </Pressable>
+        </View>
+      </CustomModal>
 
       {/* Repeat picker dropdown */}
-      <Modal transparent visible={showRepeatPicker} animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Repeat</Text>
-            <ScrollView style={{ maxHeight: 260 }}>
-              {REPEAT_OPTIONS.map((opt) => {
-                const isActive = tempRepeat === opt.id;
-                return (
-                  <Pressable
-                    key={opt.id}
-                    onPress={() => setTempRepeat(opt.id)}
-                    style={[styles.repeatRow, isActive && styles.repeatRowActive]}
-                  >
-                    <Text style={[styles.repeatLabel, isActive && styles.repeatLabelActive]}>
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <View style={styles.modalActionsRow}>
-              <Pressable onPress={() => setShowRepeatPicker(false)} style={styles.modalTextButton}>
-                <Text style={styles.modalTextButtonLabel}>Cancel</Text>
-              </Pressable>
+      <CustomModal visible={showRepeatPicker} onClose={() => setShowRepeatPicker(false)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Repeat</Text>
+        <ScrollView style={{ maxHeight: 260 }}>
+          {REPEAT_OPTIONS.map((opt) => {
+            const isActive = tempRepeat === opt.id;
+            return (
               <Pressable
-                onPress={() => {
-                  setServerParsed((prev) => {
-                    const baseParsed = prev ?? {
-                      title: spokenText.trim() || 'Reminder',
-                      date: effectiveParsedForUI?.date ?? new Date(),
-                      timeLabel: effectiveParsedForUI?.timeLabel ?? timeLabelFromDate(new Date()),
-                      repeatType: effectiveParsedForUI?.repeatType ?? ('none' as RepeatType),
-                      reminderType: effectiveParsedForUI?.reminderType ?? ('custom' as ReminderType),
-                    };
-                    return {
-                      ...baseParsed,
-                      repeatType: tempRepeat,
-                    };
-                  });
-                  setShowRepeatPicker(false);
-                }}
-                style={styles.modalPrimaryButton}
+                key={opt.id}
+                onPress={() => setTempRepeat(opt.id)}
+                style={[styles.repeatRow, isActive && { backgroundColor: `${colors.accent}15` }]}
               >
-                <Text style={styles.modalPrimaryButtonLabel}>Save</Text>
+                <Text style={[styles.repeatLabel, { color: isActive ? colors.accent : colors.text }, isActive && { fontFamily: 'Inter_600SemiBold' }]}>
+                  {opt.label}
+                </Text>
+                {isActive ? <Ionicons name="checkmark" size={16} color={colors.accent} /> : null}
               </Pressable>
-            </View>
-          </View>
+            );
+          })}
+        </ScrollView>
+        <View style={styles.modalActionsRow}>
+          <Pressable onPress={() => setShowRepeatPicker(false)} style={styles.modalTextButton}>
+            <Text style={[styles.modalTextButtonLabel, { color: colors.textTertiary }]}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setServerParsed((prev) => {
+                const baseParsed = prev ?? {
+                  title: spokenText.trim() || 'Reminder',
+                  date: effectiveParsedForUI?.date ?? new Date(),
+                  timeLabel: effectiveParsedForUI?.timeLabel ?? timeLabelFromDate(new Date()),
+                  repeatType: effectiveParsedForUI?.repeatType ?? ('none' as RepeatType),
+                  reminderType: effectiveParsedForUI?.reminderType ?? ('custom' as ReminderType),
+                };
+                return {
+                  ...baseParsed,
+                  repeatType: tempRepeat,
+                };
+              });
+              setShowRepeatPicker(false);
+            }}
+            style={[styles.modalPrimaryButton, { backgroundColor: colors.accent }]}
+          >
+            <Text style={[styles.modalPrimaryButtonLabel, { color: '#FFFFFF' }]}>Save</Text>
+          </Pressable>
         </View>
-      </Modal>
+      </CustomModal>
     </LinearGradient>
   );
 }

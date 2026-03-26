@@ -7,8 +7,6 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
-  Modal,
-  Alert,
   RefreshControl,
   TextInput,
 } from 'react-native';
@@ -38,7 +36,11 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
 import { getIntentPolicy, getReminderIntentFromBill } from '@/lib/reminder-intent';
+import { useSeniorMode } from '@/lib/senior-context';
+import { useAlert } from '@/lib/alert-context';
 import CategoryIcon from '@/components/CategoryIcon';
+import PremiumLoader from '@/components/PremiumLoader';
+import CustomModal from '@/components/CustomModal';
 import {
   CATEGORIES,
   getTodaySpending,
@@ -50,16 +52,20 @@ import {
   type GreetingPeriod,
 } from '@/lib/data';
 
-function SpendingScoreRing({ score, colors, isDark, onPress }: { score: number; colors: any; isDark: boolean; onPress?: () => void }) {
+function SpendingScoreRing({ score, colors, isDark, onPress, isSeniorMode }: { score: number; colors: any; isDark: boolean; onPress?: () => void; isSeniorMode: boolean }) {
   const clampedScore = Math.min(100, Math.max(0, score));
   const scoreColor = clampedScore >= 70 ? colors.accentMint : clampedScore >= 40 ? colors.warning : colors.danger;
+  const size = isSeniorMode ? 140 : 100;
+  const ringWidth = isSeniorMode ? 6 : 4;
+  const innerSize = size - (isSeniorMode ? 28 : 22);
+  const innerRingWidth = isSeniorMode ? 4 : 2.5;
 
   return (
     <Pressable onPress={onPress} style={ringStyles.container}>
-      <View style={[ringStyles.outerRing, { borderColor: scoreColor + '25' }]}>
-        <View style={[ringStyles.innerRing, { borderColor: scoreColor + '60' }]}>
-          <Text style={[ringStyles.scoreValue, { color: colors.text }]}>{clampedScore}</Text>
-          <Text style={[ringStyles.scoreLabel, { color: colors.textTertiary }]}>SCORE</Text>
+      <View style={[ringStyles.outerRing, { borderColor: scoreColor + '25', width: size, height: size, borderRadius: size / 2, borderWidth: ringWidth }]}>
+        <View style={[ringStyles.innerRing, { borderColor: scoreColor + '60', width: innerSize, height: innerSize, borderRadius: innerSize / 2, borderWidth: innerRingWidth }]}>
+          <Text style={[ringStyles.scoreValue, { color: colors.text }, isSeniorMode && { fontSize: 32 }]}>{clampedScore}</Text>
+          <Text style={[ringStyles.scoreLabel, { color: colors.textTertiary }, isSeniorMode && { fontSize: 12 }]}>SCORE</Text>
         </View>
       </View>
     </Pressable>
@@ -88,52 +94,52 @@ const ringStyles = StyleSheet.create({
   scoreLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 8, letterSpacing: 1.5 },
 });
 
-function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors }: {
-  icon: string; iconColor: string; bgColor: string; title: string; value: string; subtitle: string; colors: any;
+function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors, isSeniorMode }: {
+  icon: string; iconColor: string; bgColor: string; title: string; value: string; subtitle: string; colors: any; isSeniorMode: boolean;
 }) {
   return (
-    <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[styles.insightIconWrap, { backgroundColor: bgColor }]}>
-        <Ionicons name={icon as any} size={18} color={iconColor} />
+    <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }, isSeniorMode && { padding: 20, minHeight: 140 }]}>
+      <View style={[styles.insightIconWrap, { backgroundColor: bgColor }, isSeniorMode && { width: 44, height: 44, borderRadius: 16 }]}>
+        <Ionicons name={icon as any} size={isSeniorMode ? 24 : 18} color={iconColor} />
       </View>
-      <Text style={[styles.insightTitle, { color: colors.textSecondary }]}>{title}</Text>
-      <Text style={[styles.insightValue, { color: colors.text }]}>{value}</Text>
-      <Text style={[styles.insightSubtitle, { color: colors.textTertiary }]}>{subtitle}</Text>
+      <Text style={[styles.insightTitle, { color: colors.textSecondary }, isSeniorMode && { fontSize: 13 }]}>{title}</Text>
+      <Text style={[styles.insightValue, { color: colors.text }, isSeniorMode && { fontSize: 24 }]}>{value}</Text>
+      <Text style={[styles.insightSubtitle, { color: colors.textTertiary }, isSeniorMode && { fontSize: 12 }]}>{subtitle}</Text>
     </View>
   );
 }
 
-function CategoryPill({ category, total, index, colors, formatAmount }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string }) {
+function CategoryPill({ category, total, index, colors, formatAmount, isSeniorMode }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
   const safeCat = (category || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
     <Animated.View entering={Platform.OS !== 'web' ? FadeInRight.delay(index * 80).springify() : undefined}>
-      <View style={[styles.categoryPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={[styles.catIconWrap, { backgroundColor: cat.color + '15' }]}>
-          <CategoryIcon category={category} size={16} />
+      <View style={[styles.categoryPill, { backgroundColor: colors.card, borderColor: colors.border }, isSeniorMode && { paddingHorizontal: 16, paddingVertical: 12 }]}>
+        <View style={[styles.catIconWrap, { backgroundColor: cat.color + '15' }, isSeniorMode && { width: 36, height: 36, borderRadius: 12 }]}>
+          <CategoryIcon category={category} size={isSeniorMode ? 20 : 16} />
         </View>
         <View style={styles.catTextWrap}>
-          <Text style={[styles.categoryPillLabel, { color: colors.textSecondary }]}>{cat.label}</Text>
-          <Text style={[styles.categoryPillAmount, { color: colors.text }]}>{formatAmount(total)}</Text>
+          <Text style={[styles.categoryPillLabel, { color: colors.textSecondary }, isSeniorMode && { fontSize: 13 }]}>{cat.label}</Text>
+          <Text style={[styles.categoryPillAmount, { color: colors.text }, isSeniorMode && { fontSize: 16 }]}>{formatAmount(total)}</Text>
         </View>
       </View>
     </Animated.View>
   );
 }
 
-function TransactionRow({ merchant, amount, category, date, colors, formatAmount }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string }) {
+function TransactionRow({ merchant, amount, category, date, colors, formatAmount, isSeniorMode }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
   const safeCat = (category || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
-    <View style={styles.txRow}>
-      <View style={[styles.txIcon, { backgroundColor: cat.color + '12' }]}>
-        <CategoryIcon category={category} size={18} />
+    <View style={[styles.txRow, isSeniorMode && { paddingVertical: 14 }]}>
+      <View style={[styles.txIcon, { backgroundColor: cat.color + '12' }, isSeniorMode && { width: 44, height: 44, borderRadius: 16 }]}>
+        <CategoryIcon category={category} size={isSeniorMode ? 22 : 18} />
       </View>
       <View style={styles.txInfo}>
-        <Text style={[styles.txMerchant, { color: colors.text }]}>{merchant}</Text>
-        <Text style={[styles.txTime, { color: colors.textTertiary }]}>{formatTime(date)}</Text>
+        <Text style={[styles.txMerchant, { color: colors.text }, isSeniorMode && { fontSize: 16 }]}>{merchant}</Text>
+        <Text style={[styles.txTime, { color: colors.textTertiary }, isSeniorMode && { fontSize: 13 }]}>{formatTime(date)}</Text>
       </View>
-      <Text style={[styles.txAmount, { color: colors.danger }]}>- {formatAmount(amount)}</Text>
+      <Text style={[styles.txAmount, { color: colors.text }, isSeniorMode && { fontSize: 16 }]}>- {formatAmount(amount)}</Text>
     </View>
   );
 }
@@ -186,7 +192,9 @@ function MustSmsSyncBanner({
       ]}
     >
       {isSyncingSms ? (
-        <ActivityIndicator size="small" color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
+        <View style={{ marginRight: 6 }}>
+          <PremiumLoader size={16} />
+        </View>
       ) : (
         <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
       )}
@@ -225,14 +233,8 @@ function TopReminderAlert({
   let label: string;
   if (daysDiff === 0) {
     label = `Due Today • ${next.name}`;
-  } else if (daysDiff === 1) {
-    label = `Due Tomorrow • ${next.name}`;
-  } else if (daysDiff > 1 && daysDiff <= 7) {
-    label = `Due this week • ${next.name}`;
-  } else if (daysDiff < 0) {
-    label = `Overdue • ${next.name}`;
   } else {
-    label = `Upcoming • ${next.name}`;
+    label = `Overdue • ${next.name}`;
   }
 
   const dateLabel = due.toLocaleDateString('en-IN', {
@@ -273,7 +275,7 @@ function TopReminderAlert({
           </View>
         </View>
         <View style={styles.reminderAlertActions}>
-          <TouchableOpacity
+          <Pressable
             onPress={() => onSnooze(next.id)}
             style={[
               styles.alertActionBtn,
@@ -282,8 +284,8 @@ function TopReminderAlert({
           >
             <Ionicons name="notifications-off-outline" size={14} color="#FFFFFF" />
             <Text style={[styles.alertActionText, { color: '#FFFFFF' }]}>Snooze</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             onPress={() => onCancel(next.id)}
             style={[
               styles.alertActionBtn,
@@ -292,7 +294,7 @@ function TopReminderAlert({
           >
             <Ionicons name="close-circle-outline" size={14} color={colors.textTertiary} />
             <Text style={[styles.alertActionText, { color: colors.textTertiary }]}>Cancel</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
     </Animated.View>
@@ -521,7 +523,8 @@ export default function HomeScreen() {
   const { user, token } = useAuth();
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
-  const [seniorMode, setSeniorMode] = useState(false);
+  const { isSeniorMode } = useSeniorMode();
+  const { showAlert } = useAlert();
   const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddText, setQuickAddText] = useState('');
@@ -561,13 +564,7 @@ export default function HomeScreen() {
     }
   }, [token]);
 
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem('@lifewise_senior_mode').then(v => {
-        setSeniorMode(v === 'true');
-      }).catch(() => { });
-    }, [])
-  );
+  // Removed local seniorMode effect (using global context)
 
   const handleScanBill = useCallback(() => {
     router.push('/scan-bill');
@@ -613,25 +610,27 @@ export default function HomeScreen() {
     budgetHealthScore = 0;
   }
 
-  const nowTime = new Date().getTime();
-  const sevenDaysFromNow = nowTime + 7 * 24 * 60 * 60 * 1000;
+  const nowDay = new Date();
+  nowDay.setHours(0, 0, 0, 0);
   const upcomingBills = bills
     .filter((b) => !b.isPaid && !['paid', 'snoozed', 'cancelled'].includes(b.status))
     .filter((b) => {
-      const due = new Date(b.dueDate).getTime();
-      return due >= nowTime - 24 * 60 * 60 * 1000 && due <= sevenDaysFromNow;
+      const due = new Date(b.dueDate);
+      due.setHours(0, 0, 0, 0);
+      // Only show if due date is today or in the past
+      return due.getTime() <= nowDay.getTime();
     })
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   const showComingSoon = () => {
-    if (Platform.OS === 'web') {
-      alert('Coming soon!');
-    } else {
-      Alert.alert('Coming Soon', 'This feature will be available in a future update.');
-    }
+    showAlert({
+      title: 'Coming Soon',
+      message: 'This feature will be available in a future update.',
+      type: 'info',
+    });
   };
 
-  if (seniorMode) {
+  if (isSeniorMode) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <ScrollView
@@ -681,6 +680,12 @@ export default function HomeScreen() {
                 )}
               </Pressable>
               <Pressable
+                onPress={() => router.push('/support')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="help-circle-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
+              <Pressable
                 onPress={() => router.push('/settings')}
                 style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
                 testID="home-settings-btn"
@@ -701,12 +706,11 @@ export default function HomeScreen() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
                 {upcomingBills.map((bill) => {
                   const dueDate = new Date(bill.dueDate);
-                  const intent = getReminderIntentFromBill(bill);
-                  const policy = getIntentPolicy(intent);
+                  const intent = getIntentPolicy(getReminderIntentFromBill(bill));
                   const repeatLabel = REPEAT_OPTIONS.find((r) => r.key === bill.repeatType)?.label || '';
-                  const showDue = policy.showDue;
-                  const showRepeat = policy.showRepeat;
-                  const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+                  const showDue = intent.showDue;
+                  const showRepeat = intent.showRepeat;
+                  const showAmount = intent.shouldHaveAmount && bill.amount > 0;
                   const dueText = dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                   const dueOrRepeatText =
                     showDue && showRepeat
@@ -826,6 +830,12 @@ export default function HomeScreen() {
                 {unreadCount > 0 && <View style={styles.unreadDot} />}
               </Pressable>
               <Pressable
+                onPress={() => router.push('/support')}
+                style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Ionicons name="help-circle-outline" size={20} color={colors.textSecondary} />
+              </Pressable>
+              <Pressable
                 onPress={() => router.push('/settings')}
                 style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
                 testID="home-settings-btn"
@@ -872,7 +882,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
               </View>
-              <SpendingScoreRing score={displayScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} />
+              <SpendingScoreRing score={displayScore} colors={colors} isDark={isDark} onPress={() => setShowScoreDetail(true)} isSeniorMode={isSeniorMode} />
             </View>
             <View style={[styles.heroDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
             <View style={styles.heroStats}>
@@ -904,12 +914,11 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.remindersScroll}>
               {upcomingBills.map((bill) => {
                 const dueDate = new Date(bill.dueDate);
-                const intent = getReminderIntentFromBill(bill);
-                const policy = getIntentPolicy(intent);
+                const intent = getIntentPolicy(getReminderIntentFromBill(bill));
                 const repeatLabel = REPEAT_OPTIONS.find((r) => r.key === bill.repeatType)?.label || '';
-                const showDue = policy.showDue;
-                const showRepeat = policy.showRepeat;
-                const showAmount = policy.shouldHaveAmount && bill.amount > 0;
+                const showDue = intent.showDue;
+                const showRepeat = intent.showRepeat;
+                const showAmount = intent.shouldHaveAmount && bill.amount > 0;
                 const dueText = dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                 const dueOrRepeatText =
                   showDue && showRepeat
@@ -962,6 +971,7 @@ export default function HomeScreen() {
                 value={formatAmount(totalLeakAmount)}
                 subtitle="/month"
                 colors={colors}
+                isSeniorMode={isSeniorMode}
               />
             </Pressable>
             <Pressable onPress={() => router.push('/(tabs)/bills')} style={{ flex: 1 }}>
@@ -973,6 +983,7 @@ export default function HomeScreen() {
                 value={String(unpaidBills)}
                 subtitle="reminders"
                 colors={colors}
+                isSeniorMode={isSeniorMode}
               />
             </Pressable>
             <Pressable onPress={() => router.push('/(tabs)/transactions')} style={{ flex: 1 }}>
@@ -984,6 +995,7 @@ export default function HomeScreen() {
                 value={String(transactions.length)}
                 subtitle="this month"
                 colors={colors}
+                isSeniorMode={isSeniorMode}
               />
             </Pressable>
           </View>
@@ -1043,8 +1055,16 @@ export default function HomeScreen() {
             </View>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-              {sortedCategories.map(([cat, total], idx) => (
-                <CategoryPill key={cat} category={cat as CategoryType} total={total as number} index={idx} colors={colors} formatAmount={formatAmount} />
+              {sortedCategories.map(([catKey, total], idx) => (
+                <CategoryPill
+                  key={`${catKey}-${idx}`}
+                  category={catKey as CategoryType}
+                  total={total}
+                  index={idx}
+                  colors={colors}
+                  formatAmount={formatAmount}
+                  isSeniorMode={isSeniorMode}
+                />
               ))}
             </ScrollView>
           )}
@@ -1068,7 +1088,15 @@ export default function HomeScreen() {
             <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               {recentTxs.map((tx, idx) => (
                 <React.Fragment key={tx.id}>
-                  <TransactionRow merchant={tx.merchant} amount={tx.amount} category={tx.category} date={tx.date} colors={colors} formatAmount={formatAmount} />
+                  <TransactionRow
+                    merchant={tx.merchant}
+                    amount={tx.amount}
+                    category={tx.category}
+                    date={tx.date}
+                    colors={colors}
+                    formatAmount={formatAmount}
+                    isSeniorMode={isSeniorMode}
+                  />
                   {idx < recentTxs.length - 1 && <View style={[styles.txDivider, { backgroundColor: colors.border }]} />}
                 </React.Fragment>
               ))}
@@ -1078,124 +1106,206 @@ export default function HomeScreen() {
 
       </ScrollView>
 
-      <Modal visible={showScoreDetail} transparent animationType="fade">
-        <Pressable style={styles.scoreOverlay} onPress={() => setShowScoreDetail(false)}>
-          <View style={[styles.scoreDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Life Score Breakdown</Text>
-              <Pressable onPress={() => setShowScoreDetail(false)} hitSlop={10}>
-                <Ionicons name="close" size={22} color={colors.textTertiary} />
-              </Pressable>
-            </View>
+      <CustomModal visible={showScoreDetail} onClose={() => setShowScoreDetail(false)}>
+        <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Life Score Breakdown</Text>
+          <Pressable onPress={() => setShowScoreDetail(false)} hitSlop={10}>
+            <Ionicons name="close" size={22} color={colors.textTertiary} />
+          </Pressable>
+        </View>
 
-            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-              <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} />
-            </View>
+        <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+          <SpendingScoreRing score={budgetHealthScore} colors={colors} isDark={isDark} isSeniorMode={isSeniorMode} />
+        </View>
 
-            <View style={styles.scoreBreakdown}>
-              <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
-                <View style={styles.scoreRowLeft}>
-                  <View style={[styles.scoreRowDot, { backgroundColor: colors.accentMint }]} />
-                  <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Budget Control</Text>
-                </View>
-                <Text style={[styles.scoreRowValue, { color: colors.accentMint }]}>
-                  {Math.round(Math.max(0, Math.min(100, 100 - budgetUsed)) * 0.5)}/50
-                </Text>
-              </View>
-              <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
-                <View style={styles.scoreRowLeft}>
-                  <View style={[styles.scoreRowDot, { backgroundColor: colors.accentBlue }]} />
-                  <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Bills Paid</Text>
-                </View>
-                <Text style={[styles.scoreRowValue, { color: colors.accentBlue }]}>
-                  {Math.round(billsPaidRatio * 30)}/30
-                </Text>
-              </View>
-              <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
-                <View style={styles.scoreRowLeft}>
-                  <View style={[styles.scoreRowDot, { backgroundColor: colors.warning }]} />
-                  <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Leak Detection</Text>
-                </View>
-                <Text style={[styles.scoreRowValue, { color: colors.warning }]}>
-                  {totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0}/20
-                </Text>
-              </View>
+        <View style={styles.scoreBreakdown}>
+          <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
+            <View style={styles.scoreRowLeft}>
+              <View style={[styles.scoreRowDot, { backgroundColor: colors.accentMint }]} />
+              <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Budget Control</Text>
             </View>
-
-            <Pressable onPress={() => { setShowScoreDetail(false); showComingSoon(); }} style={[styles.shareBtn, { backgroundColor: colors.accentDim }]}>
-              <Ionicons name="share-outline" size={18} color={colors.accent} />
-              <Text style={[styles.shareBtnText, { color: colors.accent }]}>Share Score Card</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={showQuickAdd} transparent animationType="fade">
-        <Pressable
-          style={styles.scoreOverlay}
-          onPress={() => {
-            if (!isQuickAdding) setShowQuickAdd(false);
-          }}
-        >
-          <View style={[styles.scoreDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Quick Add Reminder</Text>
-              {!isQuickAdding && (
-                <Pressable onPress={() => setShowQuickAdd(false)} hitSlop={10}>
-                  <Ionicons name="close" size={22} color={colors.textTertiary} />
-                </Pressable>
-              )}
-            </View>
-            <Text style={[styles.lifeInsightText, { color: colors.textSecondary, marginBottom: 12 }]}>
-              {`Type something like "Pay electricity bill tomorrow at 8 pm".`}
+            <Text style={[styles.scoreRowValue, { color: colors.accentMint }]}>
+              {Math.round(Math.max(0, Math.min(100, 100 - budgetUsed)) * 0.5)}/50
             </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text,
-                  marginBottom: 16,
-                },
-              ]}
-              value={quickAddText}
-              onChangeText={setQuickAddText}
-              placeholder={`e.g., "Pay electricity bill tomorrow at 8 pm"`}
-              placeholderTextColor={colors.textTertiary}
-              multiline
-              numberOfLines={3}
-            />
+          </View>
+          <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
+            <View style={styles.scoreRowLeft}>
+              <View style={[styles.scoreRowDot, { backgroundColor: colors.accentBlue }]} />
+              <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Bills Paid</Text>
+            </View>
+            <Text style={[styles.scoreRowValue, { color: colors.accentBlue }]}>
+              {Math.round(billsPaidRatio * 30)}/30
+            </Text>
+          </View>
+          <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
+            <View style={styles.scoreRowLeft}>
+              <View style={[styles.scoreRowDot, { backgroundColor: colors.warning }]} />
+              <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Leak Detection</Text>
+            </View>
+            <Text style={[styles.scoreRowValue, { color: colors.warning }]}>
+              {totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0}/20
+            </Text>
+          </View>
+        </View>
+
+        <Pressable onPress={() => { setShowScoreDetail(false); showComingSoon(); }} style={[styles.shareBtn, { backgroundColor: colors.accentDim }]}>
+          <Ionicons name="share-outline" size={18} color={colors.accent} />
+          <Text style={[styles.shareBtnText, { color: colors.accent }]}>Share Score Card</Text>
+        </Pressable>
+      </CustomModal>
+
+      <CustomModal visible={showQuickAdd} onClose={() => setShowQuickAdd(false)}>
+        <View style={[styles.scoreDetailHeader, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.scoreDetailTitle, { color: colors.text }]}>Quick Add Reminder</Text>
+          {!isQuickAdding && (
+            <Pressable onPress={() => setShowQuickAdd(false)} hitSlop={10}>
+              <Ionicons name="close" size={22} color={colors.textTertiary} />
+            </Pressable>
+          )}
+        </View>
+        <Text style={[styles.lifeInsightText, { color: colors.textSecondary, marginBottom: 12 }]}>
+          {`Type something like "Pay electricity bill tomorrow at 8 pm".`}
+        </Text>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: colors.inputBg,
+              borderColor: colors.inputBorder,
+              color: colors.text,
+              marginBottom: 16,
+            },
+          ]}
+          value={quickAddText}
+          onChangeText={setQuickAddText}
+          placeholder={`e.g., "Pay electricity bill tomorrow at 8 pm"`}
+          placeholderTextColor={colors.textTertiary}
+          multiline
+          numberOfLines={3}
+        />
+        <Pressable
+          disabled={!quickAddText.trim() || isQuickAdding}
+          onPress={async () => {
+            if (!quickAddText.trim()) return;
+            setIsQuickAdding(true);
+            await quickAddReminder(quickAddText.trim());
+            setIsQuickAdding(false);
+            setShowQuickAdd(false);
+            setQuickAddText('');
+          }}
+          style={[
+            styles.shareBtn,
+            {
+              backgroundColor: !quickAddText.trim() || isQuickAdding ? colors.accentDim : colors.accent,
+              marginTop: 10,
+            },
+          ]}
+        >
+          {isQuickAdding ? (
+            <PremiumLoader size={20} />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+              <Text style={[styles.shareBtnText, { color: '#FFFFFF' }]}>Create Reminder</Text>
+            </>
+          )}
+        </Pressable>
+      </CustomModal>
+      <CustomModal visible={isSnoozeModalVisible} onClose={() => setIsSnoozeModalVisible(false)}>
+        <View style={styles.modalHeader}>
+          <Text style={[styles.snoozeModalTitle, { color: colors.text }]}>Snooze Reminder</Text>
+          <Pressable
+            onPress={() => setIsSnoozeModalVisible(false)}
+            style={[styles.modalCloseBtn, { backgroundColor: colors.cardElevated }]}
+          >
+            <Ionicons name="close" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+        <Text style={[styles.snoozeModalSubtitle, { color: colors.textSecondary }]}>
+          When should we remind you again?
+        </Text>
+
+        <View style={styles.snoozeOptions}>
+          {[
+            { label: '10 Minutes', desc: 'Quick nudge', icon: 'timer-outline', color: colors.accent, value: { minutes: 10 } },
+            { label: '1 Hour', desc: 'Later today', icon: 'time-outline', color: colors.accentBlue, value: { minutes: 60 } },
+            { label: 'Tomorrow', desc: 'At 9:00 AM', icon: 'sunny-outline', color: colors.warning, value: { days: 1 } },
+            { label: 'Next Week', desc: '7 days later', icon: 'calendar-outline', color: colors.accentMint, value: { days: 7 } },
+          ].map((opt) => (
             <Pressable
-              disabled={!quickAddText.trim() || isQuickAdding}
+              key={opt.label}
               onPress={async () => {
-                if (!quickAddText.trim()) return;
-                setIsQuickAdding(true);
-                await quickAddReminder(quickAddText.trim());
-                setIsQuickAdding(false);
-                setShowQuickAdd(false);
-                setQuickAddText('');
+                if (activeReminderId) {
+                  await snoozeReminder(activeReminderId, opt.value.days || 0, opt.value.minutes || 0);
+                  setIsSnoozeModalVisible(false);
+                  setActiveReminderId(null);
+                }
               }}
-              style={[
-                styles.shareBtn,
+              style={({ pressed }) => [
+                styles.snoozeOption,
                 {
-                  backgroundColor: !quickAddText.trim() || isQuickAdding ? colors.accentDim : colors.accent,
-                  marginTop: 10,
+                  backgroundColor: colors.cardElevated,
+                  borderColor: colors.border,
+                  opacity: pressed ? 0.7 : 1,
                 },
               ]}
             >
-              {isQuickAdding ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                  <Text style={[styles.shareBtnText, { color: '#FFFFFF' }]}>Create Reminder</Text>
-                </>
-              )}
+              <View style={[styles.snoozeIconWrap, { backgroundColor: opt.color + '15' }]}>
+                <Ionicons name={opt.icon as any} size={20} color={opt.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.snoozeOptionLabel, { color: colors.text, fontSize: isSeniorMode ? 18 : 16 }]}>
+                  {opt.label}
+                </Text>
+                <Text style={[styles.snoozeOptionDesc, { color: colors.textTertiary, fontSize: isSeniorMode ? 14 : 12 }]}>
+                  {opt.desc}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable
+          onPress={() => setIsSnoozeModalVisible(false)}
+          style={[styles.snoozeCancelBtn, { borderColor: colors.border }]}
+        >
+          <Text style={[styles.snoozeCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+        </Pressable>
+      </CustomModal>
+
+      <CustomModal visible={isCancelModalVisible} onClose={() => setIsCancelModalVisible(false)}>
+        <View style={{ alignItems: 'center' }}>
+          <View style={[styles.confirmIconWrap, { backgroundColor: colors.dangerDim }]}>
+            <Ionicons name="trash-outline" size={32} color={colors.danger} />
+          </View>
+          <Text style={[styles.confirmTitle, { color: colors.text }]}>Remove Reminder?</Text>
+          <Text style={[styles.confirmSubtitle, { color: colors.textSecondary }]}>
+            Are you sure you want to stop tracking this reminder? You won't get any more alerts for it.
+          </Text>
+
+          <View style={styles.confirmActions}>
+            <Pressable
+              onPress={() => setIsCancelModalVisible(false)}
+              style={[styles.confirmBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.confirmBtnText, { color: colors.textSecondary }]}>No, Keep It</Text>
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                if (activeReminderId) {
+                  await cancelReminder(activeReminderId);
+                  setIsCancelModalVisible(false);
+                  setActiveReminderId(null);
+                }
+              }}
+              style={[styles.confirmBtn, { backgroundColor: colors.danger, borderColor: colors.danger }]}
+            >
+              <Text style={[styles.confirmBtnText, { color: '#FFFFFF' }]}>Yes, Remove</Text>
             </Pressable>
           </View>
-        </Pressable>
-      </Modal>
+        </View>
+      </CustomModal>
     </View>
   );
 }

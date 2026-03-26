@@ -6,6 +6,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/query-client';
+import { useAlert } from '@/lib/alert-context';
 
 type NotificationItem = {
   id: string;
@@ -14,7 +15,10 @@ type NotificationItem = {
   body: string;
   read: boolean;
   createdAt: string;
-  meta?: Record<string, unknown>;
+  meta?: {
+    route?: string;
+    [key: string]: any;
+  };
 };
 
 function formatTimeAgo(dateString: string) {
@@ -34,8 +38,11 @@ export default function NotificationDetailsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
-  const params = useLocalSearchParams<{ notificationId: string }>();
+  const { showAlert } = useAlert();
+  const params = useLocalSearchParams<{ notificationId: string; title?: string; body?: string }>();
   const notificationId = params.notificationId;
+  const passedTitle = params.title;
+  const passedBody = params.body;
 
   const [item, setItem] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,10 +111,61 @@ export default function NotificationDetailsScreen() {
             <Text style={[styles.itemTime, { color: colors.textTertiary }]}>
               {formatTimeAgo(item.createdAt)}
             </Text>
+
+            {item.meta?.route && (
+              <Pressable
+                onPress={async () => {
+                   const route = item.meta?.route;
+                   if (!route) return;
+
+                   // Simple verification for deleted items
+                   try {
+                     if (route.startsWith('/bill-details/')) {
+                       const bid = route.split('/').pop();
+                       const r = await apiRequest('GET', `/api/bills/${bid}`, undefined, token);
+                       if (!r.ok) throw new Error();
+                     } else if (route.startsWith('/medicine-details/')) {
+                       // We can check if family member still has the medicine
+                       const parts = route.split('/');
+                       const mid = parts[parts.length-2];
+                       const medid = parts[parts.length-1];
+                       const r = await apiRequest('GET', '/api/family', undefined, token);
+                       const data = await r.json();
+                       const member = data.find((m: any) => m.id === mid);
+                       if (!member || !member.medicines.find((m: any) => m.id === medid)) throw new Error();
+                     }
+                     router.push(route as any);
+                   } catch (e) {
+                     showAlert({
+                       title: 'Unavailable',
+                       message: 'This item is no longer available.',
+                       type: 'error',
+                     });
+                   }
+                }}
+                style={({ pressed }) => [
+                  styles.actionButton,
+                  { backgroundColor: colors.accent, opacity: pressed ? 0.8 : 1 }
+                ]}
+              >
+                <Text style={styles.actionButtonText}>View Related Item</Text>
+                <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+              </Pressable>
+            )}
           </View>
         </View>
       ) : (
-        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Notification not found.</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.accentDim }]}>
+            <Ionicons name="notifications" size={18} color={colors.accent} />
+          </View>
+          <View style={styles.content}>
+            <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>
+              {passedTitle || 'Notification'}
+            </Text>
+            <Text style={[styles.itemBody, { color: colors.textSecondary }]}>{passedBody || 'Content no longer available.'}</Text>
+          </View>
+        </View>
       )}
     </View>
   );
@@ -158,8 +216,23 @@ const styles = StyleSheet.create({
   },
   itemTime: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    marginTop: 8,
+    fontSize: 12,
+  },
+  actionButton: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
   emptyText: {
     paddingHorizontal: 20,

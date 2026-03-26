@@ -7,7 +7,6 @@ import {
   Pressable,
   Platform,
   TextInput,
-  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,8 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
+import { useAlert } from '@/lib/alert-context';
+import CustomModal from '@/components/CustomModal';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/query-client';
+import { useSeniorMode } from '@/lib/senior-context';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
@@ -72,6 +74,7 @@ export default function FamilyScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { token } = useAuth();
+  const { isSeniorMode } = useSeniorMode();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showAddMedicine, setShowAddMedicine] = useState<string | null>(null);
@@ -268,12 +271,12 @@ export default function FamilyScreen() {
             <View style={[styles.memberCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.memberHeader}>
                 <View style={styles.memberInfo}>
-                  <View style={[styles.memberAvatar, { backgroundColor: colors.accent + '15' }]}>
-                    <Ionicons name={getRelIcon(member.relationship) as any} size={22} color={colors.accent} />
+                  <View style={[styles.memberAvatar, { backgroundColor: colors.accent + (isSeniorMode ? '25' : '15'), width: isSeniorMode ? 56 : 48, height: isSeniorMode ? 56 : 48 }]}>
+                    <Ionicons name={getRelIcon(member.relationship) as any} size={isSeniorMode ? 28 : 22} color={colors.accent} />
                   </View>
                   <View>
-                    <Text style={[styles.memberName, { color: colors.text }]}>{member.name}</Text>
-                    <Text style={[styles.memberRel, { color: colors.textTertiary }]}>
+                    <Text style={[styles.memberName, { color: colors.text, fontSize: isSeniorMode ? 20 : 17 }]}>{member.name}</Text>
+                    <Text style={[styles.memberRel, { color: colors.textTertiary, fontSize: isSeniorMode ? 14 : 12 }]}>
                       {RELATIONSHIPS.find(r => r.key === member.relationship)?.label || member.relationship}
                     </Text>
                   </View>
@@ -323,20 +326,20 @@ export default function FamilyScreen() {
                     ]}
                   >
                     <View style={styles.medInfo}>
-                      <View style={[styles.medIconWrap, { backgroundColor: pillColor + '15' }]}>
-                        <Ionicons name="medkit" size={16} color={pillColor} />
+                      <View style={[styles.medIconWrap, { backgroundColor: pillColor + '15', width: isSeniorMode ? 44 : 36, height: isSeniorMode ? 44 : 36 }]}>
+                        <Ionicons name="medkit" size={isSeniorMode ? 20 : 16} color={pillColor} />
                       </View>
                       <View style={styles.medDetails}>
-                        <Text style={[styles.medName, { color: colors.text }]}>
+                        <Text style={[styles.medName, { color: colors.text, fontSize: isSeniorMode ? 18 : 15 }]}>
                           {med.name}
                           {med.dosage ? `  ${med.dosage}` : ''}
                         </Text>
-                        <Text style={[styles.medSchedule, { color: colors.textTertiary }]}>
+                        <Text style={[styles.medSchedule, { color: (isSeniorMode ? colors.textSecondary : colors.textTertiary), fontSize: isSeniorMode ? 14 : 12 }]}>
                           {scheduleText}
                           {med.instruction === 'before_meal' && ' • Before meal'}
                           {med.instruction === 'after_meal' && ' • After meal'}
                         </Text>
-                        {adherence !== null && (
+                        {adherence !== null && !isSeniorMode && (
                           <Text style={[styles.medAdherence, { color: colors.textSecondary }]}>
                             Adherence: {adherence}%
                             {med.streak ? `  •  Streak ${med.streak} days` : ''}
@@ -354,24 +357,27 @@ export default function FamilyScreen() {
                         </View>
                       )}
                     </View>
-                    <View style={styles.medActions}>
+                    <View style={[styles.medActions, isSeniorMode && { justifyContent: 'space-between', marginTop: 12 }]}>
                       <Pressable
                         onPress={() => markMedicine(member.id, med.id, 'taken')}
-                        style={[styles.medBtn, { backgroundColor: '#10B981' + '12' }]}
+                        style={[styles.medBtn, { backgroundColor: '#10B981' + '12', width: isSeniorMode ? '31%' : 40, height: isSeniorMode ? 48 : 36 }]}
                       >
-                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                        <Ionicons name="checkmark" size={isSeniorMode ? 24 : 18} color="#10B981" />
+                        {isSeniorMode && <Text style={{ color: '#10B981', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>Taken</Text>}
                       </Pressable>
                       <Pressable
                         onPress={() => markMedicine(member.id, med.id, 'snooze')}
-                        style={[styles.medBtn, { backgroundColor: colors.warningDim }]}
+                        style={[styles.medBtn, { backgroundColor: colors.warningDim, width: isSeniorMode ? '31%' : 40, height: isSeniorMode ? 48 : 36 }]}
                       >
-                        <Ionicons name="time" size={18} color={colors.warning} />
+                        <Ionicons name="time" size={isSeniorMode ? 24 : 18} color={colors.warning} />
+                        {isSeniorMode && <Text style={{ color: colors.warning, fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>Later</Text>}
                       </Pressable>
                       <Pressable
                         onPress={() => markMedicine(member.id, med.id, 'skip')}
-                        style={[styles.medBtn, { backgroundColor: colors.dangerDim }]}
+                        style={[styles.medBtn, { backgroundColor: colors.dangerDim, width: isSeniorMode ? '31%' : 40, height: isSeniorMode ? 48 : 36 }]}
                       >
-                        <Ionicons name="close" size={18} color={colors.danger} />
+                        <Ionicons name="close" size={isSeniorMode ? 24 : 18} color={colors.danger} />
+                        {isSeniorMode && <Text style={{ color: colors.danger, fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>Skip</Text>}
                       </Pressable>
                     </View>
                   </View>
@@ -382,332 +388,322 @@ export default function FamilyScreen() {
         ))}
       </ScrollView>
 
-      <Modal visible={showAddMember} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.grabber, { backgroundColor: colors.textTertiary }]} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Family Member</Text>
+      <CustomModal visible={showAddMember} onClose={() => setShowAddMember(false)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Add Family Member</Text>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="Enter name"
-              placeholderTextColor={colors.textTertiary}
-            />
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+          value={newName}
+          onChangeText={setNewName}
+          placeholder="Enter name"
+          placeholderTextColor={colors.textTertiary}
+        />
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Relationship</Text>
-            <View style={styles.relGrid}>
-              {RELATIONSHIPS.map(rel => (
-                <Pressable
-                  key={rel.key}
-                  onPress={() => setSelectedRel(rel.key)}
-                  style={[
-                    styles.relChip,
-                    { backgroundColor: selectedRel === rel.key ? colors.accentDim : colors.inputBg, borderColor: selectedRel === rel.key ? colors.accent : colors.inputBorder },
-                  ]}
-                >
-                  <Ionicons name={rel.icon as any} size={16} color={selectedRel === rel.key ? colors.accent : colors.textSecondary} />
-                  <Text style={[styles.relChipText, { color: selectedRel === rel.key ? colors.accent : colors.textSecondary }]}>{rel.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={styles.modalBtns}>
-              <Pressable onPress={() => setShowAddMember(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={addMember} style={styles.saveBtnWrap}>
-                <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
-                  <Text style={styles.saveBtnText}>Add Member</Text>
-                </LinearGradient>
-              </Pressable>
-            </View>
-          </View>
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Relationship</Text>
+        <View style={styles.relGrid}>
+          {RELATIONSHIPS.map(rel => (
+            <Pressable
+              key={rel.key}
+              onPress={() => setSelectedRel(rel.key)}
+              style={[
+                styles.relChip,
+                { backgroundColor: selectedRel === rel.key ? colors.accentDim : colors.inputBg, borderColor: selectedRel === rel.key ? colors.accent : colors.inputBorder },
+              ]}
+            >
+              <Ionicons name={rel.icon as any} size={16} color={selectedRel === rel.key ? colors.accent : colors.textSecondary} />
+              <Text style={[styles.relChipText, { color: selectedRel === rel.key ? colors.accent : colors.textSecondary }]}>{rel.label}</Text>
+            </Pressable>
+          ))}
         </View>
-      </Modal>
 
-      <Modal visible={!!showAddMedicine} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.card }]}>
-            <View style={[styles.grabber, { backgroundColor: colors.textTertiary }]} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Medicine</Text>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Medicine Name</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-              value={medName}
-              onChangeText={setMedName}
-              placeholder="e.g., Telma 40"
-              placeholderTextColor={colors.textTertiary}
-            />
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Dosage</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-              value={medDosage}
-              onChangeText={setMedDosage}
-              placeholder="e.g., 40mg"
-              placeholderTextColor={colors.textTertiary}
-            />
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Appearance</Text>
-            <View style={styles.relGrid}>
-              {[
-                { key: 'capsule', label: 'Capsule', icon: 'ellipse-outline' },
-                { key: 'tablet', label: 'Tablet', icon: 'square-outline' },
-                { key: 'round', label: 'Round', icon: 'radio-button-on' },
-                { key: 'liquid', label: 'Liquid', icon: 'water' },
-              ].map(opt => (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => setMedAppearance(opt.key as MedAppearance)}
-                  style={[
-                    styles.relChip,
-                    {
-                      backgroundColor:
-                        medAppearance === opt.key ? colors.accentDim : colors.inputBg,
-                      borderColor:
-                        medAppearance === opt.key ? colors.accent : colors.inputBorder,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={opt.icon as any}
-                    size={16}
-                    color={medAppearance === opt.key ? colors.accent : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.relChipText,
-                      {
-                        color:
-                          medAppearance === opt.key ? colors.accent : colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Color</Text>
-            <View style={styles.colorRow}>
-              {['#10B981', '#3B82F6', '#F97316', '#EF4444', '#8B5CF6'].map(c => (
-                <Pressable
-                  key={c}
-                  onPress={() => setMedColor(c)}
-                  style={[
-                    styles.colorDot,
-                    {
-                      backgroundColor: c,
-                      borderColor: medColor === c ? '#FFFFFF' : 'transparent',
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Timing</Text>
-            <View style={styles.slotRow}>
-              <Pressable
-                onPress={() => setSlotMorning(v => !v)}
-                style={[
-                  styles.slotChip,
-                  {
-                    backgroundColor: slotMorning ? colors.accentDim : colors.inputBg,
-                    borderColor: slotMorning ? colors.accent : colors.inputBorder,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.relChipText,
-                    { color: slotMorning ? colors.accent : colors.textSecondary },
-                  ]}
-                >
-                  Morning
-                </Text>
-                <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
-                  {slotMorningTime}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setSlotNoon(v => !v)}
-                style={[
-                  styles.slotChip,
-                  {
-                    backgroundColor: slotNoon ? colors.accentDim : colors.inputBg,
-                    borderColor: slotNoon ? colors.accent : colors.inputBorder,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.relChipText,
-                    { color: slotNoon ? colors.accent : colors.textSecondary },
-                  ]}
-                >
-                  Noon
-                </Text>
-                <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
-                  {slotNoonTime}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setSlotEvening(v => !v)}
-                style={[
-                  styles.slotChip,
-                  {
-                    backgroundColor: slotEvening ? colors.accentDim : colors.inputBg,
-                    borderColor: slotEvening ? colors.accent : colors.inputBorder,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.relChipText,
-                    { color: slotEvening ? colors.accent : colors.textSecondary },
-                  ]}
-                >
-                  Evening
-                </Text>
-                <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
-                  {slotEveningTime}
-                </Text>
-              </Pressable>
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              Instruction
-            </Text>
-            <View style={styles.relGrid}>
-              {[
-                { key: 'before_meal', label: 'Before Meal' },
-                { key: 'after_meal', label: 'After Meal' },
-                { key: 'any', label: "Doesn't Matter" },
-              ].map(opt => (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => setMedInstruction(opt.key as MedInstruction)}
-                  style={[
-                    styles.relChip,
-                    {
-                      backgroundColor:
-                        medInstruction === opt.key ? colors.accentMintDim : colors.inputBg,
-                      borderColor:
-                        medInstruction === opt.key ? colors.accentMint : colors.inputBorder,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.relChipText,
-                      {
-                        color:
-                          medInstruction === opt.key
-                            ? colors.accentMint
-                            : colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              Duration
-            </Text>
-            <View style={styles.relGrid}>
-              {[
-                { key: 'continuous', label: 'Continuous / Lifetime' },
-                { key: 'custom', label: 'Custom' },
-              ].map(opt => (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => setMedScheduleType(opt.key as MedScheduleType)}
-                  style={[
-                    styles.relChip,
-                    {
-                      backgroundColor:
-                        medScheduleType === opt.key ? colors.accentDim : colors.inputBg,
-                      borderColor:
-                        medScheduleType === opt.key ? colors.accent : colors.inputBorder,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.relChipText,
-                      {
-                        color:
-                          medScheduleType === opt.key
-                            ? colors.accent
-                            : colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {medScheduleType === 'custom' && (
-              <>
-                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-                  Start Date (YYYY-MM-DD)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.inputBorder,
-                      color: colors.text,
-                    },
-                  ]}
-                  value={medStartDate}
-                  onChangeText={setMedStartDate}
-                  placeholder={todayIso}
-                  placeholderTextColor={colors.textTertiary}
-                />
-                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-                  End Date (YYYY-MM-DD)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.inputBorder,
-                      color: colors.text,
-                    },
-                  ]}
-                  value={medEndDate}
-                  onChangeText={setMedEndDate}
-                  placeholder="e.g., 2026-04-01"
-                  placeholderTextColor={colors.textTertiary}
-                />
-              </>
-            )}
-
-            <View style={styles.modalBtns}>
-              <Pressable onPress={() => setShowAddMedicine(null)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={addMedicine} style={styles.saveBtnWrap}>
-                <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
-                  <Text style={styles.saveBtnText}>Add Medicine</Text>
-                </LinearGradient>
-              </Pressable>
-            </View>
-          </View>
+        <View style={styles.modalBtns}>
+          <Pressable onPress={() => setShowAddMember(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+          </Pressable>
+          <Pressable onPress={addMember} style={styles.saveBtnWrap}>
+            <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
+              <Text style={styles.saveBtnText}>Add Member</Text>
+            </LinearGradient>
+          </Pressable>
         </View>
-      </Modal>
+      </CustomModal>
+
+      <CustomModal visible={!!showAddMedicine} onClose={() => setShowAddMedicine(null)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Add Medicine</Text>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Medicine Name</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+          value={medName}
+          onChangeText={setMedName}
+          placeholder="e.g., Telma 40"
+          placeholderTextColor={colors.textTertiary}
+        />
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Dosage</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+          value={medDosage}
+          onChangeText={setMedDosage}
+          placeholder="e.g., 40mg"
+          placeholderTextColor={colors.textTertiary}
+        />
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Appearance</Text>
+        <View style={styles.relGrid}>
+          {[
+            { key: 'capsule', label: 'Capsule', icon: 'ellipse-outline' },
+            { key: 'tablet', label: 'Tablet', icon: 'square-outline' },
+            { key: 'round', label: 'Round', icon: 'radio-button-on' },
+            { key: 'liquid', label: 'Liquid', icon: 'water' },
+          ].map(opt => (
+            <Pressable
+              key={opt.key}
+              onPress={() => setMedAppearance(opt.key as MedAppearance)}
+              style={[
+                styles.relChip,
+                {
+                  backgroundColor:
+                    medAppearance === opt.key ? colors.accentDim : colors.inputBg,
+                  borderColor:
+                    medAppearance === opt.key ? colors.accent : colors.inputBorder,
+                },
+              ]}
+            >
+              <Ionicons
+                name={opt.icon as any}
+                size={16}
+                color={medAppearance === opt.key ? colors.accent : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.relChipText,
+                  {
+                    color:
+                      medAppearance === opt.key ? colors.accent : colors.textSecondary,
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Color</Text>
+        <View style={styles.colorRow}>
+          {['#10B981', '#3B82F6', '#F97316', '#EF4444', '#8B5CF6'].map(c => (
+            <Pressable
+              key={c}
+              onPress={() => setMedColor(c)}
+              style={[
+                styles.colorDot,
+                {
+                  backgroundColor: c,
+                  borderColor: medColor === c ? '#FFFFFF' : 'transparent',
+                },
+              ]}
+            />
+          ))}
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Timing</Text>
+        <View style={styles.slotRow}>
+          <Pressable
+            onPress={() => setSlotMorning(v => !v)}
+            style={[
+              styles.slotChip,
+              {
+                backgroundColor: slotMorning ? colors.accentDim : colors.inputBg,
+                borderColor: slotMorning ? colors.accent : colors.inputBorder,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.relChipText,
+                { color: slotMorning ? colors.accent : colors.textSecondary },
+              ]}
+            >
+              Morning
+            </Text>
+            <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
+              {slotMorningTime}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setSlotNoon(v => !v)}
+            style={[
+              styles.slotChip,
+              {
+                backgroundColor: slotNoon ? colors.accentDim : colors.inputBg,
+                borderColor: slotNoon ? colors.accent : colors.inputBorder,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.relChipText,
+                { color: slotNoon ? colors.accent : colors.textSecondary },
+              ]}
+            >
+              Noon
+            </Text>
+            <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
+              {slotNoonTime}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setSlotEvening(v => !v)}
+            style={[
+              styles.slotChip,
+              {
+                backgroundColor: slotEvening ? colors.accentDim : colors.inputBg,
+                borderColor: slotEvening ? colors.accent : colors.inputBorder,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.relChipText,
+                { color: slotEvening ? colors.accent : colors.textSecondary },
+              ]}
+            >
+              Evening
+            </Text>
+            <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
+              {slotEveningTime}
+            </Text>
+          </Pressable>
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+          Instruction
+        </Text>
+        <View style={styles.relGrid}>
+          {[
+            { key: 'before_meal', label: 'Before Meal' },
+            { key: 'after_meal', label: 'After Meal' },
+            { key: 'any', label: "Doesn't Matter" },
+          ].map(opt => (
+            <Pressable
+              key={opt.key}
+              onPress={() => setMedInstruction(opt.key as MedInstruction)}
+              style={[
+                styles.relChip,
+                {
+                  backgroundColor:
+                    medInstruction === opt.key ? colors.accentMintDim : colors.inputBg,
+                  borderColor:
+                    medInstruction === opt.key ? colors.accentMint : colors.inputBorder,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.relChipText,
+                  {
+                    color:
+                      medInstruction === opt.key
+                        ? colors.accentMint
+                        : colors.textSecondary,
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+          Duration
+        </Text>
+        <View style={styles.relGrid}>
+          {[
+            { key: 'continuous', label: 'Continuous / Lifetime' },
+            { key: 'custom', label: 'Custom' },
+          ].map(opt => (
+            <Pressable
+              key={opt.key}
+              onPress={() => setMedScheduleType(opt.key as MedScheduleType)}
+              style={[
+                styles.relChip,
+                {
+                  backgroundColor:
+                    medScheduleType === opt.key ? colors.accentDim : colors.inputBg,
+                  borderColor:
+                    medScheduleType === opt.key ? colors.accent : colors.inputBorder,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.relChipText,
+                  {
+                    color:
+                      medScheduleType === opt.key
+                        ? colors.accent
+                        : colors.textSecondary,
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {medScheduleType === 'custom' && (
+          <>
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+              Start Date (YYYY-MM-DD)
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text,
+                },
+              ]}
+              value={medStartDate}
+              onChangeText={setMedStartDate}
+              placeholder={todayIso}
+              placeholderTextColor={colors.textTertiary}
+            />
+            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+              End Date (YYYY-MM-DD)
+            </Text>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.inputBorder,
+                  color: colors.text,
+                },
+              ]}
+              value={medEndDate}
+              onChangeText={setMedEndDate}
+              placeholder="e.g., 2026-04-01"
+              placeholderTextColor={colors.textTertiary}
+            />
+          </>
+        )}
+
+        <View style={styles.modalBtns}>
+          <Pressable onPress={() => setShowAddMedicine(null)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+          </Pressable>
+          <Pressable onPress={addMedicine} style={styles.saveBtnWrap}>
+            <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
+              <Text style={styles.saveBtnText}>Add Medicine</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      </CustomModal>
     </View>
   );
 }

@@ -10,10 +10,34 @@ import { getFirebaseMessaging } from './firebase-admin';
 import multer from 'multer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
+import { Server as SocketServer } from 'socket.io';
+import { SupportTicketSchema, SupportMessageSchema, type SupportTicket, type SupportMessage } from './db/support-schema';
 
 function toId(id: any): any {
   if (id instanceof ObjectId) return id;
   return /^[a-f0-9]{24}$/i.test(String(id)) ? new ObjectId(id) : id;
+}
+
+async function initIndexes() {
+  const db = getDb();
+  if (!db) return;
+  const transactions = db.collection('transactions');
+  const bills = db.collection('bills');
+  const users = db.collection('users');
+  const billHistory = db.collection('billHistory');
+
+  try {
+    // Unique index for SMS deduplication: same user, same SMS unique ID
+    await (transactions as any).createIndex({ userId: 1, smsId: 1 }, { unique: true, partialFilterExpression: { smsId: { $exists: true } } });
+    // Index for common queries
+    await (transactions as any).createIndex({ userId: 1, date: -1 });
+    await (bills as any).createIndex({ userId: 1 });
+    await (billHistory as any).createIndex({ billId: 1, userId: 1, date: -1 });
+    await (users as any).createIndex({ email: 1 }, { unique: true });
+    console.log('[DB] Indexes initialized');
+  } catch (err) {
+    console.error('[DB] Index initialization failed:', err);
+  }
 }
 
 type CategoryType = 'health' | 'bills' | 'family' | 'work' | 'tasks' | 'subscriptions' | 'finance' | 'habits' | 'travel' | 'events' | 'food' | 'shopping' | 'transport' | 'entertainment' | 'education' | 'investment' | 'others';
@@ -269,19 +293,209 @@ async function parseReminderWithAI(text: string): Promise<{
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      console.log(`[DEBUG] ${req.method} ${req.path}`);
+    }
+    next();
+  });
+
+  // Simplified and moved to top for absolute priority
+  app.post('/api/tickets-read/:id', authMiddleware, async (req, res) => {
+    try {
+      const ticketId = req.params.id;
+      const userId = (req as any).userId;
+      console.log(`[Support] Marking read for ticket ${ticketId} (via /api/tickets-read)`);
+      
+      const result = await (getDb().collection('support_messages') as any).updateMany(
+        { ticketId, senderId: { $ne: userId }, status: { $ne: 'read' } },
+        { $set: { status: 'read' } }
+      );
+      
+      res.json({ success: true, count: result.modifiedCount });
+    } catch (err) {
+      console.error('Mark read error:', err);
+      res.status(500).json({ message: 'Failed to mark messages as read' });
+    }
+  });
+
   await connectMongo();
+  await initIndexes();
   const db = getDb();
-  const users = db.collection('users');
-  const transactions = db.collection('transactions');
-  const bills = db.collection('bills');
-  const family = db.collection('family_members');
-  const otpStore = db.collection('otp_store');
-  const notifications = db.collection('notifications');
-  const reminderLogs = db.collection('reminder_logs');
-  const pushTokens = db.collection('push_tokens');
-  const supportTickets = db.collection('support_tickets');
-  const medicineLogs = db.collection('medicine_logs');
-  const lifeScores = db.collection('life_scores');
+  const users = db.collection('users') as any;
+  const transactions = db.collection('transactions') as any;
+  const bills = db.collection('bills') as any;
+  const family = db.collection('family_members') as any;
+  const otpStore = db.collection('otp_store') as any;
+  const notifications = db.collection('notifications') as any;
+  const reminderLogs = db.collection('reminder_logs') as any;
+  const pushTokens = db.collection('push_tokens') as any;
+  const supportTickets = db.collection('support_tickets') as any;
+  const medicineLogs = db.collection('medicine_logs') as any;
+  const lifeScores = db.collection('life_scores') as any;
+  const supportMessages = db.collection('support_messages') as any;
+
+  // --- Support API Routes (Moved to top for priority) ---
+
+  // Get user's tickets with search, filter, and last message
+  app.get('/api/support/tickets', authMiddleware, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { search, status, sort = 'desc' } = req.query;
+      
+      const query: any = { userId };
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+      
+      const pipeline: any[] = [
+        { $match: query },
+        {
+          $lookup: {
+            from: 'support_messages',
+            let: { ticketId: { $toString: '$_id' } },
+            pipeline: [
+              { $match: { $expr: { $eq: ['$ticketId', '$$ticketId'] } } },
+              { $sort: { createdAt: -1 } },
+              { $limit: 1 }
+            ],
+            as: 'lastMessage'
+          }
+        },
+        { $addFields: { lastMessage: { $arrayElemAt: ['$lastMessage', 0] } } }
+      ];
+
+      if (search) {
+        pipeline.push({
+          $match: {
+            $or: [
+              { subject: { $regex: search, $options: 'i' } },
+              { 'lastMessage.content': { $regex: search, $options: 'i' } },
+              { _id: { $regex: String(search), $options: 'i' } }
+            ]
+          }
+        });
+      }
+
+      pipeline.push({ $sort: { lastMessageAt: sort === 'asc' ? 1 : -1 } });
+
+      const tickets = await (supportTickets as any).aggregate(pipeline).toArray();
+      res.json(tickets);
+    } catch (err) {
+      console.error('Fetch tickets error:', err);
+      res.status(500).json({ message: 'Failed to fetch tickets' });
+    }
+  });
+
+  // Get single ticket details
+  app.get('/api/support/tickets/:id', authMiddleware, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const ticketId = req.params.id;
+      
+      const ticket = await (supportTickets as any).findOne({ _id: toId(ticketId), userId });
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.json(ticket);
+    } catch (err) {
+      console.error('Fetch single ticket error:', err);
+      res.status(500).json({ message: 'Failed to fetch ticket' });
+    }
+  });
+
+  // Update ticket status (e.g., close ticket)
+  app.patch('/api/support/tickets/:id/status', authMiddleware, async (req: any, res) => {
+    try {
+      const ticketId = req.params.id;
+      const { status } = req.body;
+      
+      if (!['active', 'in_progress', 'closed'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid status' });
+      }
+
+      const result = await (supportTickets as any).updateOne(
+        { _id: toId(ticketId) },
+        { $set: { status, updatedAt: new Date() } }
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+
+      res.json({ success: true, status });
+    } catch (err) {
+      console.error('Update status error:', err);
+      res.status(500).json({ message: 'Failed to update status' });
+    }
+  });
+
+  // Create new ticket
+  app.post('/api/support/tickets', authMiddleware, upload.single('media'), async (req: any, res: any) => {
+    try {
+      const userId = (req as any).userId;
+      const { subject, description, category, priority } = req.body;
+      
+      let mediaUrl = '';
+      if (req.file) {
+        if (S3_BUCKET) {
+          const key = `support/${userId}/${Date.now()}-${req.file.originalname}`;
+          await s3.send(new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype,
+          }));
+          mediaUrl = `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+        }
+      }
+
+      const ticketData = SupportTicketSchema.parse({
+        userId,
+        subject,
+        description,
+        category,
+        priority: priority || 'medium',
+        mediaUrl,
+        lastMessageAt: new Date(),
+        status: 'active',
+      });
+
+      const result = await supportTickets.insertOne(ticketData);
+      const ticketId = (result as any).insertedId;
+
+      await supportMessages.insertOne({
+        ticketId: ticketId.toString(),
+        senderId: userId,
+        senderType: 'user',
+        content: description,
+        type: 'text',
+        status: 'sent',
+        createdAt: new Date(),
+      });
+
+      res.status(201).json({ ...ticketData, _id: ticketId });
+    } catch (err) {
+      console.error('Create ticket error:', err);
+      res.status(400).json({ message: 'Failed to create ticket' });
+    }
+  });
+
+  // Get ticket messages
+  app.get('/api/support/tickets/:id/messages', authMiddleware, async (req, res) => {
+    try {
+      const ticketId = req.params.id;
+      const messages = await supportMessages.find({ ticketId }).sort({ createdAt: 1 }).toArray();
+      res.json(messages);
+    } catch (err) {
+      console.error('Fetch messages error:', err);
+      res.status(500).json({ message: 'Failed to fetch messages' });
+    }
+  });
+
+  // Mark all messages as read for a ticket (Moved to /api/tickets-read/:id)
+
+  // --- End Support API Routes ---
 
   // Seed a stable demo login for QA / demos.
   const demoEmail = 'demo@lifewise.test';
@@ -899,30 +1113,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(txs) || txs.length === 0) {
         return res.json({ synced: 0, message: 'No transactions to sync' });
       }
-      let synced = 0;
-      let skipped = 0;
-      for (const t of txs) {
+
+      const userId = (req as any).userId;
+      const ops = txs.map((t) => {
         const merchant = String(t.merchant || t.sender || 'Unknown');
         const amount = Number(t.amount) || 0;
         const date = t.date ? new Date(t.date).toISOString() : new Date().toISOString();
         const isDebit = t.isDebit !== false;
-
-        // Duplicate Check: Same user, merchant, amount, date, and type
-        const existing = await transactions.findOne({
-          userId: (req as any).userId,
-          merchant,
-          amount,
-          date,
-          isDebit,
-        });
-
-        if (existing) {
-          skipped++;
-          continue;
-        }
+        const smsId = t.smsId ? String(t.smsId) : null;
 
         const doc = {
-          userId: (req as any).userId,
+          userId,
           merchant,
           amount,
           date,
@@ -930,11 +1131,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           category: (t.category as CategoryType) || 'others',
           upiId: t.upiId || '',
           description: t.description || String(t.message || ''),
+          smsId,
+          updatedAt: new Date(),
         };
-        await transactions.insertOne(doc);
-        synced++;
-      }
-      return res.json({ synced, skipped, message: `${synced} synced, ${skipped} duplicates skipped` });
+
+        // If smsId is provided, we use it for atomic upsert to prevent duplicates
+        if (smsId) {
+          return {
+            updateOne: {
+              filter: { userId, smsId },
+              update: { $setOnInsert: doc },
+              upsert: true,
+            },
+          };
+        } else {
+          // Fallback for manual or legacy sync without smsId
+          return {
+            insertOne: { document: doc },
+          };
+        }
+      });
+
+      const result = await (transactions as any).bulkWrite(ops, { ordered: false });
+      
+      const synced = (result.upsertedCount || 0) + (result.insertedCount || 0);
+      const skipped = txs.length - synced;
+
+      return res.json({ 
+        synced, 
+        skipped, 
+        message: `${synced} synced, ${skipped} duplicates skipped` 
+      });
     } catch (err) {
       console.error('Sync from SMS error:', err);
       return res.status(500).json({ message: 'Server error.' });
@@ -1278,6 +1505,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (body.reminderDaysBefore !== undefined) update.reminderDaysBefore = body.reminderDaysBefore;
       const result = await bills.updateOne({ _id: toId(id), userId: (req as any).userId }, { $set: update });
       if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+      // Log history if status changed
+      if (update.status || update.isPaid !== undefined) {
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId: (req as any).userId,
+            date: new Date().toISOString(),
+            action: update.isPaid ? 'paid' : (update.status || 'updated'),
+            amount: update.amount,
+            note: update.isPaid ? 'Marked as paid' : 'Information updated'
+          });
+        }
+      }
+
       return res.json({ ok: true });
     } catch (err) {
       console.error('Put bill error:', err);
@@ -1318,6 +1561,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { $set: { status: 'snoozed', snoozedUntil: snoozedUntil.toISOString(), isPaid: false } }
         );
         if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+        // Log history
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId,
+            date: new Date().toISOString(),
+            action: 'snoozed',
+            note: `Snoozed until ${snoozedUntil.toLocaleDateString()}`
+          });
+        }
+
         return res.json({ ok: true, snoozedUntil: snoozedUntil.toISOString() });
       }
 
@@ -1327,6 +1583,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { $set: { status: 'cancelled', isPaid: false } }
         );
         if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+        // Log history
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId,
+            date: new Date().toISOString(),
+            action: 'cancelled',
+            note: 'Reminder cancelled'
+          });
+        }
+
         return res.json({ ok: true });
       }
 
@@ -1336,12 +1605,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { $set: { status: 'active', isPaid: false } }
         );
         if (result.matchedCount === 0) return res.status(404).json({ message: 'Bill not found' });
+
+        // Log history
+        const db = getDb();
+        if (db) {
+          await db.collection('billHistory').insertOne({
+            billId: toId(id),
+            userId,
+            date: new Date().toISOString(),
+            action: 'restored',
+            note: 'Reminder restored'
+          });
+        }
+
         return res.json({ ok: true });
       }
 
       return res.status(400).json({ message: 'Invalid action' });
     } catch (err) {
       console.error('Bill action error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.get('/api/bills/:id/history', authMiddleware, async (req: any, res) => {
+    try {
+      const db = getDb();
+      if (!db) return res.status(500).json({ message: 'DB not available' });
+      const history = await db.collection('billHistory')
+        .find({ billId: toId(req.params.id), userId: (req as any).userId })
+        .sort({ date: -1 })
+        .toArray();
+      return res.json(history);
+    } catch (err) {
+      console.error('Get bill history error:', err);
       return res.status(500).json({ message: 'Server error.' });
     }
   });
@@ -1683,12 +1980,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           let suggestion = LEAK_SUGGESTIONS[merchant] || 'Review if this expense is necessary';
           
-          // Price Hike Detection (compare last 2 tx if they exist)
+          // Price Hike Detection (compare latest two tx)
           if (data.amounts.length >= 2) {
-            const latest = data.amounts[0];
+            const latest = data.amounts[0]; 
             const previous = data.amounts[1];
+            // Since we sorted txList by date DESC (line 1687), 
+            // the loop (1692) pushes them into 'amounts' in DESC order.
+            // So index 0 is newest, index 1 is next newest.
             if (latest > previous * 1.15) { // 15% increase
-              suggestion = `⚠️ Price hike detected! ${merchant} increased by ${Math.round((latest/previous - 1) * 100)}%. ${suggestion}`;
+              suggestion = `⚠️ Price hike detected! ${merchant} cost increased from ${previous} to ${latest}. ${suggestion}`;
             }
           }
 
@@ -2347,11 +2647,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const imageUrl = bill.imageUrl || `https://api.dicebear.com/7.x/shapes/png?seed=${bill.category || 'bill'}&backgroundColor=4f46e5`;
 
                 const meta = {
-                  billId: (bill as any)._id.toString(),
+                  type: 'bill',
+                  referenceId: (bill as any)._id.toString(),
+                  billId: (bill as any)._id.toString(), // legacy support
                   amount: bill.amount || 0,
                   dueDate: baseDate.toISOString(),
                   reminderType: bill.reminderType || 'bill',
                   imageUrl,
+                  route: `/bill-details/${(bill as any)._id.toString()}`,
+                  redirectUrl: `/bill-details/${(bill as any)._id.toString()}`,
                 };
 
                 await notifications.insertOne({
@@ -2369,7 +2673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   try {
                     const tokenDocs = await pushTokens
                       .find({ userId: user._id?.toString?.() ?? user._id })
-                      .project<{ token: string }>({ token: 1, _id: 0 })
+                      .project({ token: 1, _id: 0 })
                       .toArray();
 
                     const tokens = tokenDocs.map((t: any) => t.token).filter(Boolean);
@@ -2391,6 +2695,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                           data: {
                             type: 'reminder',
                             billId: meta.billId,
+                            route: meta.route,
                           },
                         });
                         console.log(`[Push] Multi-device send to ${tokens.length} tokens for user ${user.email}`);
@@ -2411,6 +2716,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           } catch (err) {
             console.error('Reminder scheduler per-bill error:', err);
+          }
+        }
+
+        // --- NEW: Family Medicine Reminders ---
+        const allFamily = await family.find({}).toArray();
+        for (const member of allFamily) {
+          const meds = Array.isArray(member.medicines) ? member.medicines : [];
+          for (const med of meds) {
+            try {
+              const slots = med.slots || {};
+              // Check each slot (morning, noon, evening)
+              for (const [slotKey, slotTime] of Object.entries(slots)) {
+                if (!slotTime) continue;
+
+                // Parse slotTime (e.g., "9:00 AM")
+                const [time, ampm] = (slotTime as string).split(' ');
+                let [hh, mm] = time.split(':').map(Number);
+                if (ampm === 'PM' && hh < 12) hh += 12;
+                if (ampm === 'AM' && hh === 12) hh = 0;
+
+                const doseTime = new Date(now);
+                doseTime.setHours(hh, mm, 0, 0);
+
+                // Check if doseTime is within window
+                const withinWindow =
+                  doseTime.getTime() >= now.getTime() - 60 * 1000 &&
+                  doseTime.getTime() <= windowEnd.getTime();
+
+                if (!withinWindow) continue;
+
+                const user = await users.findOne({ _id: toId(member.userId) });
+                if (!user) continue;
+
+                const logId = `med-${member._id}-${med.id}-${slotKey}-${doseTime.toISOString().slice(0, 10)}`;
+                const already = await reminderLogs.findOne({
+                   userId: user._id.toString(),
+                   billId: logId, // using billId field for med log uniqueness
+                   channel: 'in_app'
+                });
+                if (already) continue;
+
+                const title = `Time for ${member.name}'s medicine`;
+                const body = `Take ${med.name} (${med.dosage || '1 dose'}) - ${slotKey.charAt(0).toUpperCase() + slotKey.slice(1)}`;
+                const route = `/medicine-details/${member._id.toString()}/${med.id}`;
+
+                await notifications.insertOne({
+                  userId: user._id.toString(),
+                  type: 'reminder',
+                  title,
+                  body,
+                  read: false,
+                  createdAt: new Date(),
+                  meta: { 
+                    type: 'medication', 
+                    referenceId: med.id,
+                    memberId: member._id.toString(), 
+                    medId: med.id,
+                    route,
+                    redirectUrl: route
+                  }
+                });
+
+                const messaging = getFirebaseMessaging();
+                if (messaging) {
+                  const tokenDocs = await pushTokens.find({ userId: user._id.toString() }).project({ token: 1 }).toArray();
+                  const tokens = tokenDocs.map((t: any) => t.token).filter(Boolean);
+                  if (tokens.length) {
+                    await messaging.sendEachForMulticast({
+                      tokens,
+                      notification: { title, body },
+                      data: { type: 'medication', route }
+                    });
+                  }
+                }
+
+                await reminderLogs.insertOne({
+                  userId: user._id.toString(),
+                  billId: logId,
+                  channel: 'in_app',
+                  dayOffset: 0,
+                  sentAt: new Date()
+                });
+              }
+            } catch (medErr) {
+              console.error('Med reminder error:', medErr);
+            }
           }
         }
       } catch (err) {
@@ -2472,7 +2863,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Bills stats
         const totalBillsCount = allBills.length;
-        const paidBillsCount = allBills.filter(b => b.isPaid || b.status === 'paid').length;
+        const paidBillsCount = allBills.filter((b: any) => b.isPaid || b.status === 'paid').length;
 
         return res.json({
           period: { start, end },
@@ -2512,20 +2903,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // 1. Spending Score (Budget compliance)
         const userData = await users.findOne({ _id: toId(userId) });
         const monthlyBudget = userData?.monthlyBudget ?? 50000;
-        const monthlySpend = userTxs.filter(tx => tx.isDebit).reduce((s, tx) => s + (tx.amount || 0), 0);
+        const monthlySpend = userTxs.filter((tx: any) => tx.isDebit).reduce((s: number, tx: any) => s + (tx.amount || 0), 0);
         const budgetUsedRatio = Math.min(1.5, (monthlySpend / Math.max(1, monthlyBudget)));
         const spendingScore = Math.max(0, 100 - (budgetUsedRatio * 100));
 
         // 2. Bills Score
         const billRatio = userBills.length > 0
-          ? userBills.filter(b => b.isPaid || b.status === 'paid').length / userBills.length
+          ? userBills.filter((b: any) => b.isPaid || b.status === 'paid').length / userBills.length
           : 1;
         const billsScore = billRatio * 100;
 
         // 3. Health Score (Medicine adherence)
         // Check logs vs expected (we'll simplify for now: percentage of 'taken' vs 'taken'+'skip')
-        const taken = medLogs.filter(l => l.action === 'taken').length;
-        const totalLogs = medLogs.filter(l => l.action === 'taken' || l.action === 'skip').length;
+        const taken = medLogs.filter((l: any) => l.action === 'taken').length;
+        const totalLogs = medLogs.filter((l: any) => l.action === 'taken' || l.action === 'skip').length;
         const healthScore = totalLogs > 0 ? (taken / totalLogs) * 100 : 100;
 
         // Weighted final score
@@ -2553,5 +2944,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+
+  // Initialize Socket.IO
+  const io = new SocketServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  // --- Socket.IO Handlers ---
+  io.on('connection', (socket: any) => {
+    console.log('Socket client connected:', socket.id);
+
+    socket.on('join-ticket', (ticketId: string) => {
+      socket.join(`ticket-${ticketId}`);
+      console.log(`Socket ${socket.id} joined ticket room: ticket-${ticketId}`);
+    });
+
+    socket.on('send-message', async (data: { ticketId: string; userId: string; content: string; senderType: 'user' | 'admin' }) => {
+      try {
+        const { ticketId, userId, content, senderType } = data;
+        
+        const message = {
+          ticketId,
+          senderId: userId,
+          senderType,
+          content,
+          type: 'text',
+          status: 'sent',
+          createdAt: new Date(),
+        };
+
+        const result = await (supportMessages as any).insertOne(message);
+        const savedMessage = { ...message, _id: (result as any).insertedId };
+
+        // Update ticket's lastMessageAt and transition status if admin
+        const updateData: any = { lastMessageAt: new Date(), updatedAt: new Date() };
+        if (senderType === 'admin') {
+          updateData.status = 'in_progress';
+        }
+
+        await (supportTickets as any).updateOne(
+          { _id: toId(ticketId) },
+          { $set: updateData }
+        );
+
+        // Broadcast to the room
+        io.to(`ticket-${ticketId}`).emit('new-message', savedMessage);
+        
+        // If status changed, emit status update
+        if (senderType === 'admin') {
+           io.to(`ticket-${ticketId}`).emit('ticket-status-update', { ticketId, status: 'in_progress' });
+        }
+      } catch (err) {
+        console.error('Socket send-message error:', err);
+      }
+    });
+
+    socket.on('message-delivered', async (data: { ticketId: string; messageId: string }) => {
+      try {
+        const { ticketId, messageId } = data;
+        await (supportMessages as any).updateOne(
+          { _id: toId(messageId), status: 'sent' },
+          { $set: { status: 'delivered' } }
+        );
+        io.to(`ticket-${ticketId}`).emit('message-status-update', { messageId, status: 'delivered' });
+      } catch (err) {
+        console.error('Socket message-delivered error:', err);
+      }
+    });
+
+    socket.on('message-read', async (data: { ticketId: string; messageId: string }) => {
+      try {
+        const { ticketId, messageId } = data;
+        await (supportMessages as any).updateOne(
+          { _id: toId(messageId), status: { $in: ['sent', 'delivered'] } },
+          { $set: { status: 'read' } }
+        );
+        io.to(`ticket-${ticketId}`).emit('message-status-update', { messageId, status: 'read' });
+      } catch (err) {
+        console.error('Socket message-read error:', err);
+      }
+    });
+
+    socket.on('typing', (data: { ticketId: string; userId: string; isTyping: boolean; senderType: 'user' | 'admin' }) => {
+      socket.to(`ticket-${data.ticketId}`).emit('typing-status', data);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket client disconnected:', socket.id);
+    });
+  });
+
   return httpServer;
 }

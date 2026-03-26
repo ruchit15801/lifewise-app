@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/query-client';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
+import Constants from 'expo-constants';
 
 interface User {
   id: string;
@@ -26,7 +27,9 @@ interface AuthContextValue {
   hasOnboarded: boolean;
   completeOnboarding: () => void;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
-   updateProfile: (fields: { name?: string; phone?: string | null; avatarUrl?: string | null; email?: string; dateOfBirth?: string | null }) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (fields: { name?: string; phone?: string | null; avatarUrl?: string | null; email?: string; dateOfBirth?: string | null }) => Promise<{ success: boolean; error?: string }>;
+  verifyOtp: (phone: string, code: string) => Promise<{ success: boolean; error?: string }>;
+  resendOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,9 +48,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   WebBrowser.maybeCompleteAuthSession();
 
-  const [googleRequest, , googlePromptAsync] = Google.useIdTokenAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '',
-  });
+  const [googleRequest, googleResponse, googlePromptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: '152932967230-k3cofknaqa0iompfilk3q69novnpg169.apps.googleusercontent.com',
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri: 'https://auth.expo.io/@sdfsdf12/lifewise',
+      responseType: AuthSession.ResponseType.IdToken,
+    },
+    {
+      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenEndpoint: 'https://oauth2.googleapis.com/token',
+    }
+  );
+
+  useEffect(() => {
+    if (googleRequest) {
+      console.log('--- [DEBUG 15:58] Google Login Diagnostics ---');
+      console.log('Target Client ID:', googleRequest.clientId);
+      console.log('Target Redirect URI:', googleRequest.redirectUri);
+      console.log('---------------------------------------------');
+    }
+  }, [googleRequest]);
+
+  useEffect(() => {
+    if (googleResponse?.type === 'error') {
+      console.error('Google Auth Error Details:', googleResponse.error);
+    }
+  }, [googleResponse]);
 
   useEffect(() => {
     loadState();
@@ -128,20 +155,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = useCallback(async () => {
     try {
       if (!googleRequest) {
+        console.error('Google config missing or still initializing');
         return { success: false, error: 'Google config missing' };
       }
 
+      console.log('Starting Google Login prompt...');
       const result = await googlePromptAsync();
+      console.log('Google Auth Result Type:', result.type);
+
       if (result.type !== 'success') {
-        return { success: false, error: 'Google login cancelled' };
+        const err = result.type === 'error' ? (result as any).error?.message : 'Login cancelled';
+        return { success: false, error: err };
       }
 
-      const authResult = result as AuthSession.AuthSessionResult & { params?: any };
-      const idToken = authResult.params?.id_token;
+      // Extract token with more robust fallback
+      const idToken = result.params?.id_token || result.authentication?.idToken;
+
       if (!idToken) {
+        console.error('No id_token found in result:', JSON.stringify(result));
         return { success: false, error: 'No id_token from Google' };
       }
 
+      console.log('Sending ID Token to backend for verification...');
       const baseUrl = getApiUrl();
       const url = new URL('/api/auth/oauth/google', baseUrl).toString();
       const res = await fetch(url, {
@@ -149,17 +184,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken }),
       });
+
       const data = await res.json();
       if (!res.ok) {
+        console.error('Backend OAuth Error:', data.message);
         return { success: false, error: data.message || 'Google login failed' };
       }
 
+      console.log('Google login successful! User:', data.user?.email);
       setUser(data.user);
       setToken(data.token);
       await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
       await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
       return { success: true };
-    } catch {
+    } catch (err) {
+      console.error('Google login catch error:', err);
       return { success: false, error: 'Google login error' };
     }
   }, [googleRequest, googlePromptAsync]);
@@ -196,6 +235,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [token],
   );
 
+  const verifyOtp = useCallback(async (phone: string, code: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/auth/verify-otp', baseUrl).toString();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.message || 'Verification failed' };
+
+      setUser(data.user);
+      setToken(data.token);
+      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(data.user));
+      await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
+      return { success: true };
+    } catch {
+      return { success: false, error: 'OTP verification error' };
+    }
+  }, []);
+
+  const resendOtp = useCallback(async (phone: string) => {
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/auth/resend-otp', baseUrl).toString();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.message || 'Failed to resend' };
+      return { success: true };
+    } catch {
+      return { success: false, error: 'OTP resend error' };
+    }
+  }, []);
+
   const completeOnboarding = useCallback(() => {
     setHasOnboarded(true);
     AsyncStorage.setItem(STORAGE_KEYS.ONBOARDED, 'true');
@@ -213,7 +291,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     completeOnboarding,
     loginWithGoogle,
     updateProfile,
-  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding, loginWithGoogle, updateProfile]);
+    verifyOtp,
+    resendOtp,
+  }), [user, token, isLoading, hasOnboarded, login, register, logout, completeOnboarding, loginWithGoogle, updateProfile, verifyOtp, resendOtp]);
 
   return (
     <AuthContext.Provider value={value}>
