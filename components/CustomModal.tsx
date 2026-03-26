@@ -13,8 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeIn,
   FadeOut,
-  SlideInDown,
-  SlideOutDown,
+  ZoomIn,
+  ZoomOut,
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useSeniorMode } from '@/lib/senior-context';
@@ -54,14 +54,14 @@ export default function CustomModal({
     >
       <View style={[styles.container, fullScreen && styles.fullScreenContainer]}>
         <Animated.View
-          entering={FadeIn.duration(200)}
+          entering={FadeIn.duration(300)}
           exiting={FadeOut.duration(200)}
           style={StyleSheet.absoluteFill}
         >
           {Platform.OS === 'ios' ? (
-            <BlurView intensity={20} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <BlurView intensity={25} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor || 'rgba(0,0,0,0.45)' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor || 'rgba(0,0,0,0.5)' }]} />
           )}
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         </Animated.View>
@@ -71,39 +71,34 @@ export default function CustomModal({
           style={[styles.keyboardView, fullScreen && styles.fullScreenContainer]}
         >
           <Animated.View
-            entering={fullScreen ? FadeIn.duration(300) : SlideInDown.springify().damping(18).stiffness(120)}
-            exiting={fullScreen ? FadeOut.duration(200) : SlideOutDown.duration(200)}
+            entering={fullScreen ? FadeIn.duration(300) : ZoomIn.duration(350).springify().damping(18)}
+            exiting={fullScreen ? FadeOut.duration(200) : ZoomOut.duration(200)}
             style={[
-              styles.sheet,
+              styles.modalCard,
               {
-                backgroundColor: fullScreen ? (backdropColor || 'rgba(0,0,0,0.95)') : colors.card,
+                backgroundColor: fullScreen ? (backdropColor || colors.bg) : colors.card,
                 borderColor: colors.border,
                 height: height as any,
-                maxHeight: SCREEN_HEIGHT * (fullScreen ? 1 : 0.9),
+                maxHeight: SCREEN_HEIGHT * (fullScreen ? 1 : 0.85),
+                width: fullScreen ? '100%' : Math.min(Dimensions.get('window').width * 0.9, 400),
               },
               fullScreen && styles.fullScreenSheet,
             ]}
           >
-            {!fullScreen && (
-              <View style={styles.handleContainer}>
-                <View style={[styles.handle, { backgroundColor: colors.border }]} />
-              </View>
-            )}
-
-            {showCloseButton && (
+            {!fullScreen && showCloseButton && (
               <Pressable
                 onPress={onClose}
                 style={[
                   styles.closeBtn,
-                  { backgroundColor: colors.inputBg },
+                  { backgroundColor: colors.border + '40' },
                   isSeniorMode && { width: 44, height: 44, borderRadius: 22 }
                 ]}
               >
-                <Ionicons name="close" size={isSeniorMode ? 28 : 20} color={colors.textSecondary} />
+                <Ionicons name="close" size={isSeniorMode ? 28 : 20} color={colors.text} />
               </Pressable>
             )}
 
-            <View style={styles.content}>
+            <View style={[styles.content, fullScreen && { paddingTop: 60 }]}>
               {children}
             </View>
           </Animated.View>
@@ -116,26 +111,28 @@ export default function CustomModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fullScreenContainer: {
-    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
   },
   keyboardView: {
     width: '100%',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sheet: {
-    width: '100%',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    borderTopWidth: 1,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  modalCard: {
+    borderRadius: 32,
+    borderWidth: 1,
+    paddingBottom: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 20,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 25,
+    overflow: 'hidden',
   },
   fullScreenSheet: {
     height: '100%',
@@ -144,28 +141,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     paddingBottom: 0,
   },
-  handleContainer: {
-    width: '100%',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  handle: {
-    width: 40,
-    height: 5,
-    borderRadius: 2.5,
-  },
   closeBtn: {
     position: 'absolute',
     top: 16,
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
   },
   content: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    paddingTop: 32,
   },
 });

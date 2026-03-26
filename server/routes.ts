@@ -88,13 +88,11 @@ async function sendSmsOtp(phone: string, otp: string): Promise<void> {
         body: new URLSearchParams({ To: phone, From: from!, Body: body }),
       });
       if (!res.ok) {
-        const err = await res.text();
-        console.error('Twilio SMS error:', err);
       }
     } catch (e) {
       console.error('SMS send error:', e);
     }
-  } else {
+  } else if (process.env.NODE_ENV !== 'production') {
     console.log(`[SMS OTP] Phone: ${phone}, OTP: ${otp}`);
   }
 }
@@ -124,6 +122,33 @@ function authMiddleware(req: any, res: any, next: any) {
   }
 }
 
+function adminAuthMiddleware(req: any, res: any, next: any) {
+  const auth = req.headers.authorization;
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+  
+  if (!token) {
+    return res.status(401).json({ message: 'Admin authentication required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    (req as any).userId = decoded.userId;
+    req.userEmail = decoded.email;
+
+    // Hardcoded admin for now, or check for admin role
+    const isAdmin = decoded.email === 'admin@lifewise.app' || 
+                    decoded.email === 'demo@lifewise.test' ||
+                    decoded.email === 'admin@lifewise.com';
+    
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+    }
+
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
 function renderReminderEmailTemplate(params: {
   userName: string;
   reminderType: ReminderType;
@@ -293,12 +318,7 @@ async function parseReminderWithAI(text: string): Promise<{
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      console.log(`[DEBUG] ${req.method} ${req.path}`);
-    }
-    next();
-  });
+
 
   // Simplified and moved to top for absolute priority
   app.post('/api/tickets-read/:id', authMiddleware, async (req, res) => {
@@ -334,6 +354,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const medicineLogs = db.collection('medicine_logs') as any;
   const lifeScores = db.collection('life_scores') as any;
   const supportMessages = db.collection('support_messages') as any;
+  const plans = db.collection('plans') as any;
+  const promoCodes = db.collection('promo_codes') as any;
 
   // --- Support API Routes (Moved to top for priority) ---
 
@@ -497,7 +519,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- End Support API Routes ---
 
+  // Seed official admin user
+  const officialAdminEmail = 'admin@lifewise.com';
+  const officialAdminPassword = 'Ruchit@1415';
+  
+  try {
+    const existingAdmin = await users.findOne({ email: officialAdminEmail });
+    const adminHash = await bcrypt.hash(officialAdminPassword, 10);
+    if (!existingAdmin) {
+      await users.insertOne({
+        name: 'Super Admin',
+        email: officialAdminEmail,
+        passwordHash: adminHash,
+        role: 'admin',
+        createdAt: new Date(),
+        phone: '+910000000000',
+        phoneVerified: true
+      });
+      console.log('[seed] Official admin user created:', officialAdminEmail);
+    } else {
+      await users.updateOne(
+        { _id: existingAdmin._id },
+        { $set: { passwordHash: adminHash, role: 'admin' } }
+      );
+      console.log('[seed] Official admin user updated:', officialAdminEmail);
+    }
+  } catch (e) {
+    console.error('[seed] Official admin failed:', e);
+  }
+
   // Seed a stable demo login for QA / demos.
+  const adminEmail = 'admin@lifewise.com';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Ruchit@1415';
+  
   const demoEmail = 'demo@lifewise.test';
   const demoPassword = process.env.DEMO_USER_PASSWORD || 'Radhe@1415';
   const demoName = 'Demo User';
@@ -589,6 +643,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[seed] demo data refreshed for:', demoEmail);
     } catch (seedErr) {
       console.error('[seed] demo data failed:', seedErr);
+    }
+
+    // Seed Plans and Promo Codes
+    try {
+      const planCount = await plans.countDocuments();
+      if (planCount === 0) {
+        await plans.insertMany([
+          { 
+            name: "Basic Shield", 
+            type: "basic", 
+            price: 499, 
+            interval: "month", 
+            features: ["Basic Support", "Limit to 5 Bills", "Family of 2"],
+            status: "active",
+            activeUsers: 142,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          },
+          { 
+            name: "Premium Guard", 
+            type: "premium", 
+            price: 1299, 
+            interval: "month", 
+            features: ["Priority Support", "Unlimited Bills", "Full Family Suite", "AI Insights"],
+            status: "active",
+            activeUsers: 89,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          },
+          { 
+            name: "Enterprise Core", 
+            type: "enterprise", 
+            price: 4999, 
+            interval: "year", 
+            features: ["24/7 Dedicated Agent", "Asset Management", "Legal Assistance", "Custom Reporting"],
+            status: "active",
+            activeUsers: 12,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        ]);
+        console.log('[seed] Plans initialized');
+      }
+
+      const promoCount = await promoCodes.countDocuments();
+      if (promoCount === 0) {
+        await promoCodes.insertMany([
+          { 
+            code: "WELCOME50", 
+            discountPercent: 50, 
+            description: "First month discount", 
+            status: "active", 
+            redemptions: 45, 
+            maxRedemptions: 100,
+            expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            createdAt: new Date()
+          },
+          { 
+            code: "LIFEWISE", 
+            discountPercent: 20, 
+            description: "Platform wide launch offer", 
+            status: "active", 
+            redemptions: 12, 
+            maxRedemptions: 500,
+            createdAt: new Date()
+          }
+        ]);
+        console.log('[seed] Promo codes initialized');
+      }
+    } catch (err) {
+      console.error('[seed] Admin seeding failed:', err);
     }
   }
 
@@ -2941,6 +3066,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ message: 'Server error.' });
       }
     })();
+  });
+
+  // ----- Admin API -----
+  app.get('/api/admin/stats', adminAuthMiddleware, async (req, res) => {
+    try {
+      const [userCount, ticketCount, totalTransactions, transactionStats] = await Promise.all([
+        users.countDocuments(),
+        supportTickets.countDocuments(),
+        transactions.countDocuments(),
+        transactions.aggregate([
+          { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
+        ]).toArray()
+      ]);
+
+      const openTickets = await supportTickets.countDocuments({ status: { $in: ["active", "in_progress"] } });
+
+      res.json({
+        users: userCount,
+        tickets: ticketCount,
+        openTickets,
+        transactions: totalTransactions,
+        volume: transactionStats[0]?.totalAmount || 0
+      });
+    } catch (err) {
+      console.error('Admin stats error:', err);
+      res.status(500).json({ message: 'Failed to fetch admin statistics' });
+    }
+  });
+
+  app.get('/api/admin/analytics/growth', adminAuthMiddleware, async (req, res) => {
+    try {
+      // Mock growth data for the last 7 days
+      const data = [
+        { name: 'Mon', users: 12, revenue: 4500 },
+        { name: 'Tue', users: 19, revenue: 5200 },
+        { name: 'Wed', users: 15, revenue: 4800 },
+        { name: 'Thu', users: 22, revenue: 6100 },
+        { name: 'Fri', users: 30, revenue: 7500 },
+        { name: 'Sat', users: 25, revenue: 6800 },
+        { name: 'Sun', users: 35, revenue: 8200 },
+      ];
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to fetch growth analytics' });
+    }
+  });
+
+  app.get('/api/admin/users', adminAuthMiddleware, async (req, res) => {
+    try {
+      const list = await users.find().sort({ createdAt: -1 }).limit(100).toArray();
+      const out = list.map((u: any) => ({
+        id: u._id.toString(),
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        phoneVerified: !!u.phoneVerified,
+        createdAt: u.createdAt,
+      }));
+      res.json(out);
+    } catch (err) {
+      console.error('Admin users error:', err);
+      res.status(500).json({ message: 'Failed to fetch users' });
+    }
+  });
+
+  app.get('/api/admin/support/tickets', adminAuthMiddleware, async (req, res) => {
+    try {
+      const list = await supportTickets.find().sort({ updatedAt: -1 }).toArray();
+      res.json(list);
+    } catch (err) {
+      console.error('Admin tickets error:', err);
+      res.status(500).json({ message: 'Failed to fetch tickets' });
+    }
+  });
+
+  app.get('/api/admin/support/tickets/:id/messages', adminAuthMiddleware, async (req, res) => {
+    try {
+      const ticketId = req.params.id;
+      const messages = await supportMessages.find({ ticketId }).sort({ createdAt: 1 }).toArray();
+      res.json(messages);
+    } catch (err) {
+      console.error('Admin messages error:', err);
+      res.status(500).json({ message: 'Failed to fetch messages' });
+    }
+  });
+
+  // ----- Plans API -----
+  app.get('/api/admin/plans', adminAuthMiddleware, async (req, res) => {
+    try {
+      const list = await plans.find().sort({ price: 1 }).toArray();
+      res.json(list);
+    } catch (err) {
+      console.error('Admin plans error:', err);
+      res.status(500).json({ message: 'Failed to fetch plans' });
+    }
+  });
+
+  app.post('/api/admin/plans', adminAuthMiddleware, async (req, res) => {
+    try {
+      const plan = { ...req.body, createdAt: new Date(), updatedAt: new Date() };
+      await plans.insertOne(plan);
+      res.status(201).json(plan);
+    } catch (err) {
+      console.error('Admin plans create error:', err);
+      res.status(500).json({ message: 'Failed to create plan' });
+    }
+  });
+
+  // ----- Promo Codes API -----
+  app.get('/api/admin/promo-codes', adminAuthMiddleware, async (req, res) => {
+    try {
+      const list = await promoCodes.find().sort({ createdAt: -1 }).toArray();
+      res.json(list);
+    } catch (err) {
+      console.error('Admin promo codes error:', err);
+      res.status(500).json({ message: 'Failed to fetch promo codes' });
+    }
+  });
+
+  app.post('/api/admin/promo-codes', adminAuthMiddleware, async (req, res) => {
+    try {
+      const code = { ...req.body, createdAt: new Date() };
+      await promoCodes.insertOne(code);
+      res.status(201).json(code);
+    } catch (err) {
+      console.error('Admin promo codes create error:', err);
+      res.status(500).json({ message: 'Failed to create promo code' });
+    }
   });
 
   const httpServer = createServer(app);

@@ -1,7 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { getMemoryDb } from './memory';
 
-const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL || 'mongodb://localhost:27017';
 const DB_NAME = process.env.MONGODB_DB_NAME || 'lifewise';
 const CONNECT_TIMEOUT_MS = 5000;
 
@@ -9,12 +8,17 @@ let client: MongoClient;
 let db: Db | null = null;
 let useMemory = false;
 
+function getMongoUri() {
+  return process.env.MONGODB_URI || process.env.DATABASE_URL || 'mongodb://localhost:27017';
+}
+
 export async function connectMongo(): Promise<Db | ReturnType<typeof getMemoryDb>> {
   if (useMemory) return getMemoryDb();
   if (db) return db;
 
   try {
-    client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: CONNECT_TIMEOUT_MS });
+    const uri = getMongoUri();
+    client = new MongoClient(uri, { serverSelectionTimeoutMS: CONNECT_TIMEOUT_MS });
     await client.connect();
     db = client.db(DB_NAME);
     await ensureIndexes(db);
