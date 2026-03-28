@@ -43,8 +43,6 @@ export default function CustomModal({
   const { colors, isDark } = useTheme();
   const { isSeniorMode } = useSeniorMode();
 
-  if (!visible) return null;
-
   return (
     <Modal
       visible={visible}
@@ -53,56 +51,60 @@ export default function CustomModal({
       onRequestClose={onClose}
     >
       <View style={[styles.container, fullScreen && styles.fullScreenContainer]}>
-        <Animated.View
-          entering={FadeIn.duration(300)}
-          exiting={FadeOut.duration(200)}
-          style={StyleSheet.absoluteFill}
-        >
-          {Platform.OS === 'ios' ? (
-            <BlurView intensity={25} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor || 'rgba(0,0,0,0.5)' }]} />
-          )}
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        </Animated.View>
+        {visible && (
+          <>
+            <Animated.View
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(200)}
+              style={StyleSheet.absoluteFill}
+            >
+              {Platform.OS === 'ios' ? (
+                <BlurView intensity={25} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor || 'rgba(0,0,0,0.5)' }]} />
+              )}
+              <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+            </Animated.View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.keyboardView, fullScreen && styles.fullScreenContainer]}
-        >
-          <Animated.View
-            entering={fullScreen ? FadeIn.duration(300) : ZoomIn.duration(350).springify().damping(18)}
-            exiting={fullScreen ? FadeOut.duration(200) : ZoomOut.duration(200)}
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: fullScreen ? (backdropColor || colors.bg) : colors.card,
-                borderColor: colors.border,
-                height: height as any,
-                maxHeight: SCREEN_HEIGHT * (fullScreen ? 1 : 0.85),
-                width: fullScreen ? '100%' : Math.min(Dimensions.get('window').width * 0.9, 400),
-              },
-              fullScreen && styles.fullScreenSheet,
-            ]}
-          >
-            {!fullScreen && showCloseButton && (
-              <Pressable
-                onPress={onClose}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={[styles.keyboardView, fullScreen && styles.fullScreenContainer]}
+            >
+              <Animated.View
+                entering={fullScreen ? FadeIn.duration(300) : ZoomIn.duration(400).springify().damping(25).stiffness(120)}
+                exiting={fullScreen ? FadeOut.duration(200) : ZoomOut.duration(200)}
                 style={[
-                  styles.closeBtn,
-                  { backgroundColor: colors.border + '40' },
-                  isSeniorMode && { width: 44, height: 44, borderRadius: 22 }
+                  styles.modalCard,
+                  {
+                    backgroundColor: fullScreen ? (backdropColor || colors.bg) : colors.card,
+                    borderColor: colors.border,
+                    height: height as any,
+                    maxHeight: SCREEN_HEIGHT * (fullScreen ? 1 : 0.85),
+                    width: fullScreen ? '100%' : Math.min(Dimensions.get('window').width * 0.9, 400),
+                  },
+                  fullScreen && styles.fullScreenSheet,
                 ]}
               >
-                <Ionicons name="close" size={isSeniorMode ? 28 : 20} color={colors.text} />
-              </Pressable>
-            )}
+                {!fullScreen && showCloseButton && (
+                  <Pressable
+                    onPress={onClose}
+                    style={[
+                      styles.closeBtn,
+                      { backgroundColor: colors.border + '40' },
+                      isSeniorMode && { width: 44, height: 44, borderRadius: 22 }
+                    ]}
+                  >
+                    <Ionicons name="close" size={isSeniorMode ? 28 : 20} color={colors.text} />
+                  </Pressable>
+                )}
 
-            <View style={[styles.content, fullScreen && { paddingTop: 60 }]}>
-              {children}
-            </View>
-          </Animated.View>
-        </KeyboardAvoidingView>
+                <View style={[styles.content, fullScreen && { paddingTop: 60 }]}>
+                  {children}
+                </View>
+              </Animated.View>
+            </KeyboardAvoidingView>
+          </>
+        )}
       </View>
     </Modal>
   );

@@ -71,7 +71,6 @@ export default function BillDetailsScreen() {
 
   const bill = useMemo(() => bills.find((b) => b.id === billId), [bills, billId]);
 
-  const [showEditModal, setShowEditModal] = useState(false);
   const [showSnoozeModal, setShowSnoozeModal] = useState(false);
   const [showBillImageModal, setShowBillImageModal] = useState(false);
   const [showTimePickerModal, setShowTimePickerModal] = useState(false);
@@ -199,7 +198,6 @@ export default function BillDetailsScreen() {
       triggerAt: nextDue,
     }).catch(() => {});
 
-    setShowEditModal(false);
     setEditError('');
   }
 
@@ -290,7 +288,7 @@ export default function BillDetailsScreen() {
               <Ionicons name="chevron-back" size={isSeniorMode ? 32 : 24} color="#FFFFFF" />
             </Pressable>
             <Text style={[styles.headerTitleMain, isSeniorMode && { fontSize: 22 }]}>Reminder Details</Text>
-            <Pressable onPress={() => setShowEditModal(true)} style={[styles.headerEditBtn, isSeniorMode && { width: 50, height: 50, borderRadius: 25 }]}>
+            <Pressable onPress={() => router.push({ pathname: '/edit-reminder', params: { id: bill.id } })} style={[styles.headerEditBtn, isSeniorMode && { width: 50, height: 50, borderRadius: 25 }]}>
               <Ionicons name="pencil" size={isSeniorMode ? 28 : 20} color="#FFFFFF" />
             </Pressable>
           </View>
@@ -539,112 +537,7 @@ export default function BillDetailsScreen() {
         </View>
       </View>
 
-      <CustomModal visible={showEditModal} onClose={() => setShowEditModal(false)}>
-        <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitleBig, { color: colors.text }]}>Edit Reminder</Text>
-        </View>
-
-        {!!editError && (
-          <View style={[styles.errorBox, { backgroundColor: colors.dangerDim, marginBottom: 12 }]}>
-            <Ionicons name="alert-circle" size={16} color={colors.danger} />
-            <Text style={[styles.errorText, { color: colors.danger }]}>{editError}</Text>
-          </View>
-        )}
-
-        <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.editGrid}>
-            <View style={styles.editSection}>
-              <Text style={[styles.editSectionTitle, { color: colors.textSecondary }]}>Basic Details</Text>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Name</Text>
-                <TextInput
-                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
-                  value={tempName}
-                  onChangeText={setTempName}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Amount (₹)</Text>
-                <TextInput
-                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
-                  value={tempAmount}
-                  keyboardType="numeric"
-                  onChangeText={setTempAmount}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Due Date</Text>
-                <Pressable
-                  style={[styles.textInput, { borderColor: colors.border, backgroundColor: colors.inputBg, justifyContent: 'center' }]}
-                  onPress={() => setShowTimePickerModal(true)}
-                >
-                  <Text style={{ color: colors.text }}>
-                    {tempTime.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.editSection}>
-              <Text style={[styles.editSectionTitle, { color: colors.textSecondary }]}>Advanced Metadata</Text>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Vendor Name</Text>
-                <TextInput
-                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
-                  value={tempVendor}
-                  placeholder="e.g. Netflix"
-                  placeholderTextColor={colors.textTertiary}
-                  onChangeText={setTempVendor}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Bill Number</Text>
-                <TextInput
-                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
-                  value={tempBillNum}
-                  placeholder="Invoice ID"
-                  placeholderTextColor={colors.textTertiary}
-                  onChangeText={setTempBillNum}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textTertiary }]}>Account Number</Text>
-                <TextInput
-                  style={[styles.textInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.inputBg }]}
-                  value={tempAccNum}
-                  placeholder="Your A/C ID"
-                  placeholderTextColor={colors.textTertiary}
-                  onChangeText={setTempAccNum}
-                />
-              </View>
-            </View>
-          </View>
-          <View style={{ height: 40 }} />
-        </ScrollView>
-
-        <Pressable style={styles.saveBtnAction} onPress={onSaveEdit}>
-          <LinearGradient
-            colors={colors.buttonGradient as any}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.saveGradientAction}
-          >
-            <Text style={styles.saveBtnTextAction}>Save Changes</Text>
-          </LinearGradient>
-        </Pressable>
-
-        {showTimePickerModal && (
-          <DateTimePicker
-            value={tempTime}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={(_, date) => {
-              if (Platform.OS === 'android') setShowTimePickerModal(false);
-              if (date) setTempTime(date);
-            }}
-          />
-        )}
-      </CustomModal>
+      {/* Edit modal removed in favor of full screen app/edit-reminder.tsx */}
 
       {/* Repeat picker modal */}
       <CustomModal visible={showRepeatPickerModal} onClose={() => setShowRepeatPickerModal(false)}>

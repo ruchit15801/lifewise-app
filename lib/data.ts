@@ -130,6 +130,7 @@ export const ICON_OPTIONS = [
   'flash', 'wifi', 'phone-portrait', 'home', 'play', 'musical-notes',
   'barbell', 'shield-checkmark', 'card', 'water', 'car', 'cart',
   'film', 'book', 'medkit', 'game-controller', 'newspaper', 'globe',
+  'bulb', 'airplane',
 ];
 
 export function generateId(): string {

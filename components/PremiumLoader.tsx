@@ -9,6 +9,8 @@ import Animated, {
   Easing,
   interpolate,
   Extrapolate,
+  FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -113,11 +115,15 @@ export default function PremiumLoader({
 
   if (fullScreen || overlay) {
     return (
-      <View style={[StyleSheet.absoluteFill, styles.overlay, overlay && { backgroundColor: isDark ? 'rgba(15, 23, 42, 0.7)' : 'rgba(248, 250, 252, 0.7)' }]}>
+      <Animated.View 
+        entering={FadeIn.duration(300)}
+        exiting={FadeOut.duration(250)}
+        style={[StyleSheet.absoluteFill, styles.overlay, overlay && { backgroundColor: isDark ? 'rgba(15, 23, 42, 0.7)' : 'rgba(248, 250, 252, 0.7)' }]}
+      >
         <Container {...containerProps} style={StyleSheet.absoluteFill}>
           {content}
         </Container>
-      </View>
+      </Animated.View>
     );
   }
 

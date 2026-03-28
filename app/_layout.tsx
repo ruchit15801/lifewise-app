@@ -209,6 +209,7 @@ function AuthGate() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="bill-details/[billId]" />
+        <Stack.Screen name="edit-reminder" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="settings" />

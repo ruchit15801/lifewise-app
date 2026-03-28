@@ -15,7 +15,7 @@ import { useAuth } from './auth-context';
 import { useAlert } from './alert-context';
 import { readSmsFromDeviceWithMeta, requestSmsPermissionDetails } from './sms-reader';
 import { parseSmsToTransactions } from './parse-sms';
-import { performSmsSync } from './sms-sync-task';
+import { performSmsSync, SmsSyncPhase } from './sms-sync-task';
 
 const STORAGE_KEYS = {
   BUDGET: '@lifewise_budget',
@@ -28,9 +28,11 @@ interface ExpenseContextValue {
   leaks: MoneyLeak[];
   isLoading: boolean;
   isSyncingSms: boolean;
+  smsSyncPhase: SmsSyncPhase;
   smsSyncStatus: string | null;
   smsSyncProgressCurrent: number | null;
   smsSyncProgressTotal: number | null;
+  smsSyncDetail: string | null;
   smsSampleSenders: string[];
   lastSmsReadCount: number | null;
   lastSmsSyncCount: number | null;
@@ -70,9 +72,11 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   const [leaks, setLeaks] = useState<MoneyLeak[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingSms, setIsSyncingSms] = useState(false);
+  const [smsSyncPhase, setSmsSyncPhase] = useState<SmsSyncPhase>('idle');
   const [smsSyncStatus, setSmsSyncStatus] = useState<string | null>(null);
   const [smsSyncProgressCurrent, setSmsSyncProgressCurrent] = useState<number | null>(null);
   const [smsSyncProgressTotal, setSmsSyncProgressTotal] = useState<number | null>(null);
+  const [smsSyncDetail, setSmsSyncDetail] = useState<string | null>(null);
   const [smsSampleSenders, setSmsSampleSenders] = useState<string[]>([]);
   const [lastSmsReadCount, setLastSmsReadCount] = useState<number | null>(null);
   const [lastSmsSyncCount, setLastSmsSyncCount] = useState<number | null>(null);
@@ -192,38 +196,43 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      setSmsSyncPhase('fetching');
       setSmsSyncStatus('Reading SMS inbox...');
-      console.log('[SMS-Debug] Reading SMS from device...');
-      const readResult = await readSmsFromDeviceWithMeta(200);
-      console.log('[SMS-Debug] Read result:', { 
-        moduleAvailable: readResult.moduleAvailable, 
-        error: readResult.error, 
-        messagesCount: readResult.messages.length 
+
+      console.log('[SMS-Debug] Starting sync...');
+      const syncResult = await performSmsSync(token, (prog) => {
+        setSmsSyncPhase(prog.phase);
+        if (prog.phase === 'fetching') {
+          setSmsSyncStatus('Reading SMS inbox...');
+        } else if (prog.phase === 'parsing') {
+          setSmsSyncStatus(`Identifying transactions...`);
+          setSmsSyncProgressTotal(prog.total || null);
+        } else if (prog.phase === 'uploading') {
+          setSmsSyncStatus('Securely syncing to cloud...');
+          setSmsSyncProgressCurrent(prog.current || null);
+          setSmsSyncProgressTotal(prog.total || null);
+          setSmsSyncDetail(prog.detail || null);
+        }
       });
 
-      if (!readResult.moduleAvailable) {
-        setSmsSyncStatus('SMS Sync Not Available: Requires a Development Build (APK). Expo Go is not supported.');
-        setIsSyncingSms(false);
-        return;
-      }
-      
-      const syncResult = await performSmsSync(token);
       console.log('[SMS-Debug] Sync result:', syncResult);
       
       if (syncResult.success) {
         setLastSmsSyncCount(syncResult.synced);
-        setSmsSyncStatus(`Sync complete. ${syncResult.synced} transactions synced, ${syncResult.skipped ?? 0} duplicates skipped.`);
+        setSmsSyncPhase('completed');
+        setSmsSyncStatus(`Sync complete. ${syncResult.synced} transactions synced.`);
         await loadData();
+        // Reset phase after delay if synced something, or keep idle
+        setTimeout(() => setSmsSyncPhase('idle'), 5000);
       } else {
+        // If it failed because of module unavailable, we might want a specific status
+        setSmsSyncPhase('error');
         setSmsSyncStatus('SMS sync failed. Please check permissions.');
       }
     } catch (err) {
       console.error('SMS sync error:', err);
+      setSmsSyncPhase('error');
       setSmsSyncStatus('SMS sync failed unexpectedly.');
-      setSmsSyncProgressCurrent(null);
-      setSmsSyncProgressTotal(null);
-      setLastSmsReadCount(0);
-      setLastSmsSyncCount(0);
       await loadData();
     } finally {
       setIsSyncingSms(false);
@@ -441,9 +450,11 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       leaks,
       isLoading,
       isSyncingSms,
+      smsSyncPhase,
       smsSyncStatus,
       smsSyncProgressCurrent,
       smsSyncProgressTotal,
+      smsSyncDetail,
       smsSampleSenders,
       lastSmsReadCount,
       lastSmsSyncCount,
@@ -470,9 +481,11 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       leaks,
       isLoading,
       isSyncingSms,
+      smsSyncPhase,
       smsSyncStatus,
       smsSyncProgressCurrent,
       smsSyncProgressTotal,
+      smsSyncDetail,
       smsSampleSenders,
       lastSmsReadCount,
       lastSmsSyncCount,

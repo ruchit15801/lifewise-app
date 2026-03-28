@@ -18,6 +18,7 @@ export interface SmsSyncProgress {
   total?: number;
   synced?: number;
   skipped?: number;
+  detail?: string;
 }
 
 /**
@@ -57,7 +58,12 @@ export async function performSmsSync(
       return { success: true, synced: 0 };
     }
 
-    onProgress?.({ phase: 'uploading', current: parsed.length, total: parsed.length });
+    onProgress?.({
+      phase: 'uploading',
+      current: parsed.length,
+      total: parsed.length,
+      detail: parsed[0]?.merchant
+    });
     // Send to backend
     const API_URL = getApiUrl();
     const res = await fetch(`${API_URL}/api/transactions/sync-from-sms`, {

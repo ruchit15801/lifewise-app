@@ -25,6 +25,7 @@ import Animated, {
   withSpring,
   withSequence,
   withDelay,
+  Easing,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { TouchableOpacity } from 'react-native-gesture-handler';
@@ -144,64 +145,144 @@ function TransactionRow({ merchant, amount, category, date, colors, formatAmount
   );
 }
 
+import { SmsSyncPhase } from '@/lib/sms-sync-task';
+
+const PulsingStatusDot = ({ color, size = 8 }: { color: string; size?: number }) => {
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(0.5);
+
+  useEffect(() => {
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(2, { duration: 1200, easing: Easing.out(Easing.ease) }),
+        withTiming(1, { duration: 0 })
+      ),
+      -1,
+      false
+    );
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(0, { duration: 1200, easing: Easing.out(Easing.ease) }),
+        withTiming(0.5, { duration: 0 })
+      ),
+      -1,
+      false
+    );
+  }, []);
+
+  const animatedRingStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: color,
+          },
+          animatedRingStyle,
+        ]}
+      />
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: color,
+        }}
+      />
+    </View>
+  );
+};
+
 function MustSmsSyncBanner({
   colors,
   isSyncingSms,
-  smsSyncStatus,
+  smsSyncPhase,
+  smsSyncDetail,
   smsSyncProgressCurrent,
   smsSyncProgressTotal,
-  lastSmsReadCount,
   lastSmsSyncCount,
 }: {
   colors: any;
   isSyncingSms: boolean;
+  smsSyncPhase: SmsSyncPhase;
   smsSyncStatus: string | null;
+  smsSyncDetail: string | null;
   smsSyncProgressCurrent: number | null;
   smsSyncProgressTotal: number | null;
-  lastSmsReadCount: number | null;
   lastSmsSyncCount: number | null;
 }) {
-  const progressText =
-    smsSyncProgressCurrent != null && smsSyncProgressTotal != null
-      ? `${smsSyncProgressCurrent}/${smsSyncProgressTotal}`
-      : null;
+  const progressWidth = useSharedValue(0);
+  
+  useEffect(() => {
+    if (smsSyncPhase === 'fetching') progressWidth.value = withSpring(0.15);
+    else if (smsSyncPhase === 'parsing') progressWidth.value = withSpring(0.45);
+    else if (smsSyncPhase === 'uploading') {
+      const p = smsSyncProgressTotal ? (smsSyncProgressCurrent || 0) / smsSyncProgressTotal : 0.8;
+      progressWidth.value = withSpring(0.5 + p * 0.4);
+    } else if (smsSyncPhase === 'completed') progressWidth.value = withTiming(1, { duration: 400 });
+    else progressWidth.value = withTiming(0);
+  }, [smsSyncPhase, smsSyncProgressCurrent, smsSyncProgressTotal]);
 
-  const countText =
-    lastSmsSyncCount != null
-      ? `synced ${lastSmsSyncCount}`
-      : lastSmsReadCount != null
-        ? `read ${lastSmsReadCount}`
-        : null;
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progressWidth.value * 100}%`,
+  }));
 
-  const primaryLine = isSyncingSms
-    ? `MUST • SMS syncing${progressText ? ` ${progressText}` : ''}${countText ? ` • ${countText}` : ''}`
-    : lastSmsReadCount != null || lastSmsSyncCount != null
-      ? `MUST • SMS synced • read ${lastSmsReadCount ?? 0} • synced ${lastSmsSyncCount ?? 0}`
-      : null;
+  if (smsSyncPhase === 'idle' && !isSyncingSms) return null;
 
-  if (!primaryLine) return null;
+  const isError = smsSyncPhase === 'error';
+  const isDone = smsSyncPhase === 'completed';
+  
+  const accentColor = isError 
+    ? colors.danger 
+    : isDone 
+      ? colors.accentMint 
+      : colors.accent;
+
+  const statusText = isError 
+    ? 'Sync Failed' 
+    : isDone 
+      ? `Successfully synced ${lastSmsSyncCount ?? 0} new transactions`
+      : smsSyncPhase === 'fetching' 
+        ? 'Scanning SMS inbox...'
+        : smsSyncPhase === 'parsing'
+          ? `Searching... (${smsSyncProgressTotal ?? 0} found)`
+          : `Syncing ${smsSyncDetail ? smsSyncDetail + ' ' : ''}(${smsSyncProgressCurrent ?? 0}/${smsSyncProgressTotal ?? 0})`;
 
   return (
-    <View
-      style={[
-        styles.mustBanner,
-        {
-          backgroundColor: isSyncingSms ? colors.accentDim : colors.card,
-          borderColor: colors.border,
-        },
-      ]}
+    <Animated.View 
+      entering={FadeInDown.springify()} 
+      exiting={FadeOutUp}
+      style={[styles.mustMinimalFullBanner, { borderColor: accentColor + '20', backgroundColor: colors.card }]}
     >
-      {isSyncingSms ? (
-        <View style={{ marginRight: 6 }}>
-          <PremiumLoader size={16} />
+      <View style={styles.mustMinimalContent}>
+        {isSyncingSms && !isDone && !isError ? (
+           <PulsingStatusDot color={accentColor} size={8} />
+        ) : (
+          <Ionicons 
+            name={isError ? "alert-circle" : isDone ? "checkmark-circle" : "sync"} 
+            size={14} 
+            color={accentColor} 
+          />
+        )}
+        <Text style={[styles.mustMinimalText, { color: colors.text }]} numberOfLines={1}>
+          {statusText}
+        </Text>
+      </View>
+      
+      {isSyncingSms && !isDone && !isError && (
+        <View style={[styles.minimalProgressBg, { backgroundColor: colors.border }]}>
+          <Animated.View style={[styles.minimalProgressFill, { backgroundColor: accentColor }, progressStyle]} />
         </View>
-      ) : (
-        <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
       )}
-      <Text style={[styles.mustBannerText, { color: colors.text }]} numberOfLines={1}>
-        {primaryLine}
-      </Text>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -507,10 +588,11 @@ export default function HomeScreen() {
     leaks,
     isLoading,
     isSyncingSms,
+    smsSyncPhase,
     smsSyncStatus,
     smsSyncProgressCurrent,
     smsSyncProgressTotal,
-    lastSmsReadCount,
+    smsSyncDetail,
     lastSmsSyncCount,
     monthlyBudget,
     lifeScore,
@@ -661,10 +743,11 @@ export default function HomeScreen() {
           <MustSmsSyncBanner
             colors={colors}
             isSyncingSms={isSyncingSms || isLoading}
+            smsSyncPhase={smsSyncPhase}
+            smsSyncDetail={smsSyncDetail}
             smsSyncStatus={smsSyncStatus}
             smsSyncProgressCurrent={smsSyncProgressCurrent}
             smsSyncProgressTotal={smsSyncProgressTotal}
-            lastSmsReadCount={lastSmsReadCount}
             lastSmsSyncCount={lastSmsSyncCount}
           />
           <View style={styles.header}>
@@ -812,10 +895,11 @@ export default function HomeScreen() {
         <MustSmsSyncBanner
           colors={colors}
           isSyncingSms={isSyncingSms || isLoading}
+          smsSyncPhase={smsSyncPhase}
+          smsSyncDetail={smsSyncDetail}
           smsSyncStatus={smsSyncStatus}
           smsSyncProgressCurrent={smsSyncProgressCurrent}
           smsSyncProgressTotal={smsSyncProgressTotal}
-          lastSmsReadCount={lastSmsReadCount}
           lastSmsSyncCount={lastSmsSyncCount}
         />
         <Animated.View entering={Platform.OS !== 'web' ? FadeInDown.duration(500) : undefined}>
@@ -1682,20 +1766,38 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
   },
-  mustBanner: {
+  mustMinimalFullBanner: {
     alignSelf: 'stretch',
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 8,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    overflow: 'hidden',
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  mustMinimalContent: {
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
-  mustBannerText: {
+  mustMinimalText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
+    fontSize: 13,
+    flex: 1,
+  },
+  minimalProgressBg: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+  },
+  minimalProgressFill: {
+    height: '100%',
   },
   confirmModalCard: {
     borderRadius: 24,

@@ -94,6 +94,7 @@ function ReminderCard({
 }) {
   const { colors, isDark } = useTheme();
   const { formatAmount } = useCurrency();
+  const router = useRouter();
   const [showActions, setShowActions] = useState(false);
   const effectiveDate = (bill.status === 'snoozed' && bill.snoozedUntil) ? bill.snoozedUntil : bill.dueDate;
   const daysLeft = getDaysUntil(effectiveDate);
@@ -206,7 +207,7 @@ function ReminderCard({
             <Pressable
               onPress={() => {
                 try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
-                onEdit();
+                router.push({ pathname: '/edit-reminder', params: { id: bill.id } });
               }}
               style={[styles.cardActionBtn, { backgroundColor: colors.accentDim }, isSeniorMode && { height: 60, borderRadius: 16 }]}
             >
@@ -238,285 +239,7 @@ function ReminderCard({
   );
 }
 
-function AddEditModal({
-  visible,
-  onClose,
-  onSave,
-  editBill,
-  reminderSettings,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSave: (bill: Omit<Bill, 'id'> | Bill) => void;
-  editBill: Bill | null;
-  reminderSettings: { soundEnabled: boolean; vibrationEnabled: boolean; defaultReminderDays: number[] };
-}) {
-  const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [reminderType, setReminderType] = useState<ReminderType>('bill');
-  const [repeatType, setRepeatType] = useState<RepeatType>('monthly');
-  const [category, setCategory] = useState<CategoryType>('bills');
-  const [selectedIcon, setSelectedIcon] = useState('flash');
-  const [modalError, setModalError] = useState('');
-  const [dueDate, setDueDate] = useState<Date>(() => {
-    const d = new Date();
-    d.setHours(9, 0, 0, 0);
-    return d;
-  });
-  const [showIconPicker, setShowIconPicker] = useState(false);
-
-  const deriveReminderTypeFromCategory = (cat: CategoryType): ReminderType => {
-    if (cat === 'bills') return 'bill';
-    if (cat === 'entertainment') return 'subscription';
-    return 'custom';
-  };
-
-  const defaultIconForCategory = (cat: CategoryType): string | null => {
-    // Map categories to the intent icons used by `getReminderIntentFromBill`.
-    switch (cat) {
-      case 'bills':
-        return REMINDER_TYPE_CONFIG.bill.icon;
-      case 'entertainment':
-        return REMINDER_TYPE_CONFIG.subscription.icon;
-      case 'health':
-        return 'medkit';
-      case 'investment':
-        return 'trending-up';
-      case 'transport':
-        return 'globe';
-      default:
-        return null;
-    }
-  };
-
-  React.useEffect(() => {
-    if (editBill) {
-      setModalError('');
-      setName(editBill.name);
-      setAmount(editBill.amount.toString());
-      setReminderType(editBill.reminderType);
-      setRepeatType(editBill.repeatType);
-      setCategory(editBill.category);
-      setSelectedIcon(editBill.icon);
-      const d = new Date(editBill.dueDate);
-      if (!Number.isNaN(d.getTime())) setDueDate(d);
-    } else {
-      setModalError('');
-      setName('');
-      setAmount('');
-      setReminderType('custom');
-      setRepeatType('monthly');
-      setCategory('bills');
-      setSelectedIcon('flash');
-      const d = new Date();
-      d.setHours(9, 0, 0, 0);
-      setDueDate(d);
-    }
-  }, [editBill, visible, reminderSettings]);
-
-  // Merge "Type" into "Category": category drives reminderType and default icon.
-  React.useEffect(() => {
-    setReminderType(deriveReminderTypeFromCategory(category));
-
-    const nextIcon = defaultIconForCategory(category);
-    if (nextIcon) setSelectedIcon(nextIcon);
-  }, [category]);
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      setModalError('Please enter a name for the reminder');
-      return;
-    }
-
-    const parsedAmount = amount.trim() ? parseFloat(amount) : 0;
-    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-      setModalError('Please enter a valid amount');
-      return;
-    }
-
-    // Some reminder intents don't require an amount (health/habits/travel/tasks/events).
-    const derivedIntent = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
-    const intentPolicy = getIntentPolicy(derivedIntent);
-    if (intentPolicy.shouldHaveAmount && parsedAmount <= 0) {
-      setModalError(`Please enter an amount for this ${derivedIntent}`);
-      return;
-    }
-    setModalError('');
-
-    if (editBill) {
-      onSave({
-        ...editBill,
-        name: name.trim(),
-        amount: parsedAmount,
-        dueDate: dueDate.toISOString(),
-        category,
-        icon: selectedIcon,
-        reminderType,
-        repeatType,
-      });
-    } else {
-      const effectiveReminderDays =
-        Array.isArray(reminderSettings.defaultReminderDays) &&
-          reminderSettings.defaultReminderDays.length > 0
-          ? reminderSettings.defaultReminderDays
-          : [3, 1, 0];
-
-      onSave({
-        name: name.trim(),
-        amount: parsedAmount,
-        dueDate: dueDate.toISOString(),
-        category,
-        isPaid: false,
-        icon: selectedIcon,
-        reminderType,
-        repeatType,
-        status: 'active' as const,
-        reminderDaysBefore: effectiveReminderDays,
-      });
-    }
-
-    onClose();
-  };
-
-  const derivedIntentForSave = getReminderIntentFromBill({ icon: selectedIcon, reminderType } as any);
-  const intentPolicyForSave = getIntentPolicy(derivedIntentForSave);
-  const canSave =
-    !!name.trim() &&
-    (!intentPolicyForSave.shouldHaveAmount || (amount.trim() && Number(amount) > 0));
-
-  return (
-    <CustomModal visible={visible} onClose={onClose}>
-      <View style={styles.modalHeader}>
-        <Text style={[styles.modalTitle, { color: colors.text }]}>{editBill ? 'Edit Reminder' : 'New Reminder'}</Text>
-        <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
-        </Pressable>
-      </View>
-
-      {!!modalError && (
-        <View style={[styles.errorBox, { backgroundColor: colors.dangerDim, marginHorizontal: 20 }]}>
-          <Ionicons name="alert-circle" size={16} color={colors.danger} />
-          <Text style={[styles.errorText, { color: colors.danger }]}>{modalError}</Text>
-        </View>
-      )}
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-          value={name}
-          onChangeText={setName}
-          placeholder="e.g., Electricity Bill"
-          placeholderTextColor={colors.textTertiary}
-        />
-
-        <View style={styles.rowFields}>
-          <View style={styles.halfField}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Amount</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="0"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="numeric"
-            />
-          </View>
-          <View style={styles.halfField}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Due Date</Text>
-            <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-              <Text style={[styles.dateLikeText, { color: colors.text }]}>
-                {dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </Text>
-              <Ionicons name="calendar" size={18} color={colors.textTertiary} />
-            </View>
-          </View>
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Time</Text>
-        <View style={[styles.input, styles.dateLikeInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-          <Text style={[styles.dateLikeText, { color: colors.text }]}>
-            {dueDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
-          </Text>
-          <Ionicons name="time" size={18} color={colors.textTertiary} />
-        </View>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Repeat</Text>
-        <View style={styles.chipRow}>
-          {REPEAT_OPTIONS.map(opt => (
-            <Pressable
-              key={opt.key}
-              onPress={() => setRepeatType(opt.key)}
-              style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, repeatType === opt.key && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
-            >
-              <Text style={[styles.chipText, { color: colors.textTertiary }, repeatType === opt.key && { color: colors.accent }]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Category</Text>
-        <View style={styles.chipRow}>
-          {CATEGORY_OPTIONS.map(opt => (
-            <Pressable
-              key={opt.key}
-              onPress={() => setCategory(opt.key)}
-              style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, category === opt.key && { backgroundColor: CATEGORIES[opt.key].color + '15', borderColor: CATEGORIES[opt.key].color + '40' }]}
-            >
-              <Text style={[styles.chipText, { color: colors.textTertiary }, category === opt.key && { color: CATEGORIES[opt.key].color }]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Icon</Text>
-        <Pressable onPress={() => setShowIconPicker(!showIconPicker)} style={[styles.iconPickerToggle, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
-          <View style={[styles.selectedIconWrap, { backgroundColor: colors.accent + '15' }]}>
-            <Ionicons name={selectedIcon as any} size={20} color={colors.accent} />
-          </View>
-          <Text style={[styles.iconPickerText, { color: colors.textSecondary }]}>Tap to change icon</Text>
-          <Ionicons name={showIconPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
-        </Pressable>
-
-        {showIconPicker && (
-          <View style={styles.iconGrid}>
-            {ICON_OPTIONS.map(icon => (
-              <Pressable
-                key={icon}
-                onPress={() => { setSelectedIcon(icon); setShowIconPicker(false); }}
-                style={[styles.iconOption, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, selectedIcon === icon && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
-              >
-                <Ionicons name={icon as any} size={22} color={selectedIcon === icon ? colors.accent : colors.textSecondary} />
-              </Pressable>
-            ))}
-          </View>
-        )}
-      </ScrollView>
-
-      <Pressable
-        onPress={handleSave}
-        style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
-        disabled={!canSave}
-        testID="save-reminder-btn"
-      >
-        <LinearGradient
-          colors={canSave ? (colors.buttonGradient as unknown as [string, string]) : [colors.cardElevated, colors.cardElevated]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.saveBtnGradient}
-        >
-          <Ionicons name={editBill ? 'checkmark' : 'add'} size={20} color={canSave ? '#FFFFFF' : colors.textTertiary} />
-          <Text style={[styles.saveBtnText, { color: '#FFFFFF' }, !canSave && { color: colors.textTertiary }]}>
-            {editBill ? 'Save Changes' : 'Add Reminder'}
-          </Text>
-        </LinearGradient>
-      </Pressable>
-    </CustomModal>
-  );
-}
+// Combined AddEditModal removed in favor of full screen app/edit-reminder.tsx
 
 function SnoozeModal({ visible, onClose, onSnooze }: { visible: boolean; onClose: () => void; onSnooze: (days: number) => void }) {
   const { colors } = useTheme();
@@ -667,7 +390,6 @@ export default function BillsScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSnoozeModal, setShowSnoozeModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [editBill, setEditBill] = useState<Bill | null>(null);
   const [snoozeBillId, setSnoozeBillId] = useState<string | null>(null);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -756,7 +478,7 @@ export default function BillsScreen() {
                 <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
               </Pressable>
               <Pressable
-                onPress={() => { setEditBill(null); setShowAddModal(true); }}
+                onPress={() => router.push('/edit-reminder')}
                 testID="add-reminder-btn"
                 accessibilityLabel="Add reminder"
               >
@@ -872,10 +594,7 @@ export default function BillsScreen() {
                     setSnoozeBillId(bill.id);
                     setShowSnoozeModal(true);
                   }}
-                  onEdit={() => {
-                    setEditBill(bill);
-                    setShowAddModal(true);
-                  }}
+                  onEdit={() => router.push({ pathname: '/edit-reminder', params: { id: bill.id } })}
                   onDelete={() => handleDelete(bill.id)}
                 />
               ))}
@@ -894,7 +613,7 @@ export default function BillsScreen() {
                 onPress={() => router.push(`/bill-details/${bill.id}`)}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
                 onSnooze={() => { setSnoozeBillId(bill.id); setShowSnoozeModal(true); }}
-                onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
+                onEdit={() => router.push({ pathname: '/edit-reminder', params: { id: bill.id } })}
                 onDelete={() => handleDelete(bill.id)}
                 index={idx}
                 isSeniorMode={isSeniorMode}
@@ -915,7 +634,7 @@ export default function BillsScreen() {
                 onPress={() => router.push(`/bill-details/${bill.id}`)}
                 onMarkPaid={() => toggleBillPaid(bill.id)}
                 onSnooze={() => { }}
-                onEdit={() => { setEditBill(bill); setShowAddModal(true); }}
+                onEdit={() => router.push({ pathname: '/edit-reminder', params: { id: bill.id } })}
                 onDelete={() => handleDelete(bill.id)}
                 index={idx}
                 isSeniorMode={isSeniorMode}
@@ -937,13 +656,7 @@ export default function BillsScreen() {
         )}
       </ScrollView>
 
-      <AddEditModal
-        visible={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditBill(null); }}
-        onSave={handleSave}
-        editBill={editBill}
-        reminderSettings={reminderSettings}
-      />
+        {/* Modals removed in favor of full screen app/edit-reminder.tsx */}
 
       <SnoozeModal
         visible={showSnoozeModal}
