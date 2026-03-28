@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -39,6 +40,7 @@ export default function LifeMemoryScreen() {
   const memories = useMemo((): MemoryCard[] => {
     const cards: MemoryCard[] = [];
 
+    // 1. Spending Pattern (Day of week)
     const dayTotals: Record<string, number> = {};
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     transactions.forEach(tx => {
@@ -53,13 +55,14 @@ export default function LifeMemoryScreen() {
         id: 'day_pattern',
         icon: 'calendar',
         iconColor: '#8B5CF6',
-        title: 'Spending Pattern',
-        insight: `You tend to spend the most on ${topDay[0]}s. Average: ${formatAmount(Math.round(topDay[1] / 4))} per ${topDay[0]}.`,
+        title: 'Spending Rhythm',
+        insight: `Your peak spending day is ${topDay[0]}. Typically, you spend ${formatAmount(Math.round(topDay[1] / 4))} on those days.`,
         tag: 'Pattern',
         category: 'habits',
       });
     }
 
+    // 2. Top Category
     const catTotals: Partial<Record<CategoryType, number>> = {};
     transactions.forEach(tx => {
       if (tx.isDebit) {
@@ -75,28 +78,29 @@ export default function LifeMemoryScreen() {
         id: 'top_category',
         icon: cat.icon,
         iconColor: cat.color,
-        title: 'Top Category',
-        insight: `${cat.label} is your highest spending category at ${formatAmount(topCat[1] as number)} this month.`,
+        title: 'Primary Category',
+        insight: `${cat.label} leads your expenses at ${formatAmount(topCat[1] as number)} this month.`,
         tag: 'Spending',
         category: catKey,
       });
     }
 
-    // New AI: Subscription Sentinel
-    if (bills.length > 0) {
-      const yearlySubscriptions = bills.reduce((s, b) => s + b.amount * 12, 0);
+    // 3. Subscription Sentinel (Strictly filter subscriptions)
+    const subscriptions = bills.filter(b => b.reminderType === 'subscription');
+    if (subscriptions.length > 0) {
+      const yearlySubscriptions = subscriptions.reduce((s, b) => s + b.amount * 12, 0);
       cards.push({
         id: 'sub_sentinel',
         icon: 'refresh-circle',
         iconColor: '#3B82F6',
-        title: 'Subscription Sentinel',
-        insight: `You have ${bills.length} active subscriptions. Projected yearly cost: ${formatAmount(yearlySubscriptions)}.`,
-        tag: 'Subscriptions',
-        category: 'subscriptions',
+        title: 'Subscription Tracker',
+        insight: `Tracking ${subscriptions.length} recurring services. Estimated yearly commitment: ${formatAmount(yearlySubscriptions)}.`,
+        tag: 'Recurring',
+        category: 'entertainment',
       });
     }
 
-    // New AI: Wealth Wisdom (Weekly Comparison)
+    // 4. Wealth Wisdom (Weekly Comparison)
     const now = new Date();
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -115,99 +119,63 @@ export default function LifeMemoryScreen() {
         id: 'wealth_wisdom',
         icon: 'stats-chart',
         iconColor: diff > 0 ? '#EF4444' : '#10B981',
-        title: 'Wealth Wisdom',
+        title: 'Financial Momentum',
         insight: diff > 0 
-          ? `Your spending is up ${Math.round(diff)}% compared to last week. Let's look for leaks!` 
-          : `Great job! You spent ${Math.abs(Math.round(diff))}% less than last week.`,
+          ? `Expenses rose by ${Math.round(diff)}% this week. A quick review might help!` 
+          : `Excellent progress! Your spending decreased by ${Math.abs(Math.round(diff))}% this week.`,
         tag: 'Wealth',
       });
     }
 
-    // New AI: Nocturnal Nibbles (Late night food)
+    // 5. Nocturnal Nibbles
     const lateNightFood = transactions.filter(tx => {
       const date = new Date(tx.date);
       const hour = date.getHours();
-      // Using 'habits' as the category for food-related habits if 'food' is not available
-      return (tx.category as string === 'food' || tx.category === 'habits') && (hour >= 22 || hour <= 4);
+      return (tx.category === 'food' || tx.category === 'habits') && (hour >= 22 || hour <= 4);
     });
 
-    if (lateNightFood.length >= 3) {
+    if (lateNightFood.length >= 2) {
       cards.push({
         id: 'nocturnal_nibbles',
         icon: 'moon',
         iconColor: '#1E293B',
-        title: 'Nocturnal Nibbles',
-        insight: `We noticed ${lateNightFood.length} late-night food orders this month. This habit costs you approx. ${formatAmount(lateNightFood.reduce((s, tx) => s + tx.amount, 0))} monthly.`,
-        tag: 'Health',
+        title: 'Late-Night Habits',
+        insight: `Noted ${lateNightFood.length} late-night orders. Monthly total: ${formatAmount(lateNightFood.reduce((s, tx) => s + tx.amount, 0))}.`,
+        tag: 'Lifestyle',
         category: 'habits',
       });
     }
 
+    // 6. Favourite Merchant
     const merchantCounts: Record<string, number> = {};
     transactions.forEach(tx => {
       merchantCounts[tx.merchant] = (merchantCounts[tx.merchant] || 0) + 1;
     });
     const favMerchant = Object.entries(merchantCounts).sort(([, a], [, b]) => b - a)[0];
-    if (favMerchant) {
+    if (favMerchant && favMerchant[1] > 2) {
       cards.push({
         id: 'fav_merchant',
         icon: 'heart',
         iconColor: '#EC4899',
-        title: 'Favourite Place',
-        insight: `You visit ${favMerchant[0]} the most - ${favMerchant[1]} times this month.`,
-        tag: 'Habit',
+        title: 'Top Destination',
+        insight: `You frequent ${favMerchant[0]} regularly—visited ${favMerchant[1]} times this month.`,
+        tag: 'Frequented',
         category: 'others',
       });
     }
 
-    const foodTxByDay: Record<number, number> = {};
-    // Casting to string to allow comparison with potential legacy data
-    transactions.filter(tx => (tx.category as string === 'food' || tx.category === 'habits') && tx.isDebit).forEach(tx => {
-      const day = new Date(tx.date).getDay();
-      foodTxByDay[day] = (foodTxByDay[day] || 0) + 1;
-    });
-    const topFoodDay = Object.entries(foodTxByDay).sort(([, a], [, b]) => b - a)[0];
-    if (topFoodDay) {
-      cards.push({
-        id: 'food_pattern',
-        icon: 'fast-food',
-        iconColor: '#F97316',
-        title: 'Food Ordering',
-        insight: `You order food the most on ${dayNames[Number(topFoodDay[0])]}s. Consider meal prepping!`,
-        tag: 'Food',
-        category: 'habits',
-      });
-    }
-
+    // 7. Savings Leaks
     if (leaks.length > 0) {
       const totalLeaks = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
       cards.push({
         id: 'leak_insight',
-        icon: 'water',
-        iconColor: '#EF4444',
-        title: 'Savings Opportunity',
-        insight: `We detected ${leaks.length} potential money leaks. You could save up to ${formatAmount(totalLeaks * 12)} yearly.`,
-        tag: 'Savings',
+        icon: 'flash',
+        iconColor: '#F59E0B',
+        title: 'Smart Optimization',
+        insight: `Detected ${leaks.length} optimization opportunities. Potential annual savings: ${formatAmount(totalLeaks * 12)}.`,
+        tag: 'Efficiency',
         category: 'finance',
       });
-    }
-
-    const healthTxs = transactions.filter(tx => (tx.category === 'health' || tx.category as string === 'healthcare' || tx.category as string === 'medicine') && tx.isDebit);
-    if (healthTxs.length > 0) {
-      const topHealthMerchant = Object.entries(
-        healthTxs.reduce((acc, tx) => { acc[tx.merchant] = (acc[tx.merchant] || 0) + 1; return acc; }, {} as Record<string, number>)
-      ).sort(([, a], [, b]) => b - a)[0];
-      if (topHealthMerchant) {
-        cards.push({
-          id: 'health_pref',
-          icon: 'medkit',
-          iconColor: '#10B981',
-          title: 'Healthcare Preference',
-          insight: `${topHealthMerchant[0]} is your go-to for healthcare needs.`,
-          tag: 'Health',
-          category: 'health',
-        });
-      }
     }
 
     return cards;
@@ -222,71 +190,183 @@ export default function LifeMemoryScreen() {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingTop: topInset + 16, paddingBottom: bottomInset + 20 }]}
+        contentContainerStyle={[
+          styles.scroll, 
+          { paddingTop: topInset + 8, paddingBottom: bottomInset + 8 }
+        ]}
       >
-        <View style={styles.headerRow}>
-          <Pressable onPress={handleBack} hitSlop={10}>
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+        <View style={styles.header}>
+          <Pressable onPress={handleBack} hitSlop={15} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
           </Pressable>
-          <View style={styles.headerCenter}>
+          <View style={styles.headerContent}>
             <Text style={[styles.title, { color: colors.text }]}>Life Memory</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Things we remember for you</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Personal Insights & Patterns</Text>
           </View>
-          <View style={{ width: 24 }} />
+          <View style={{ width: 44 }} />
         </View>
 
-        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.summaryIcon, { backgroundColor: colors.accentDim }]}>
-            <Ionicons name="sparkles" size={24} color={colors.accent} />
+        <LinearGradient
+          colors={isDark ? ['#1E293B', '#0F172A'] : ['#F8FAFC', '#F1F5F9']}
+          style={[styles.summaryBanner]}
+        >
+          <View style={[styles.sparkleWrap, { backgroundColor: colors.accent + '20' }]}>
+            <Ionicons name="sparkles" size={20} color={colors.accent} />
           </View>
-          <Text style={[styles.summaryText, { color: colors.textSecondary }]}>
-            {`We\u2019ve analyzed your spending patterns and remembered ${memories.length} insights about your lifestyle.`}
-          </Text>
-        </View>
+          <View style={styles.bannerInfo}>
+            <Text style={[styles.bannerTitle, { color: colors.text }]}>{memories.length} Key Insights</Text>
+            <Text style={[styles.bannerText, { color: colors.textSecondary }]}>
+              Analyzed from your recent activity
+            </Text>
+          </View>
+        </LinearGradient>
 
-        {memories.map((memory, idx) => (
-          <Animated.View
-            key={memory.id}
-            entering={Platform.OS !== 'web' ? FadeInDown.delay(idx * 60).duration(400) : undefined}
-          >
-            <View style={[styles.memoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.memoryTop}>
-                <View style={[styles.memoryIconWrap, { backgroundColor: memory.iconColor + '15' }]}>
-                  {memory.category ? (
-                    <CategoryIcon category={memory.category} size={20} />
-                  ) : (
-                    <Ionicons name={memory.icon as any} size={20} color={memory.iconColor} />
-                  )}
+        <View style={styles.cardsGrid}>
+          {memories.map((memory, idx) => (
+            <Animated.View
+              key={memory.id}
+              entering={Platform.OS !== 'web' ? FadeInDown.delay(100 + idx * 80).duration(500) : undefined}
+              style={styles.cardWrapper}
+            >
+              <View style={[
+                styles.memoryCard, 
+                { backgroundColor: colors.card, borderColor: colors.border }
+              ]}>
+                <View style={styles.cardHeader}>
+                  <View style={[styles.iconBox, { backgroundColor: memory.iconColor + '15' }]}>
+                    {memory.category ? (
+                      <CategoryIcon category={memory.category} size={22} />
+                    ) : (
+                      <Ionicons name={memory.icon as any} size={22} color={memory.iconColor} />
+                    )}
+                  </View>
+                  <View style={[styles.tag, { backgroundColor: memory.iconColor + '10' }]}>
+                    <Text style={[styles.tagLabel, { color: memory.iconColor }]}>{memory.tag}</Text>
+                  </View>
                 </View>
-                <View style={[styles.tagBadge, { backgroundColor: memory.iconColor + '12' }]}>
-                  <Text style={[styles.tagText, { color: memory.iconColor }]}>{memory.tag}</Text>
+                
+                <View style={styles.cardBody}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>{memory.title}</Text>
+                  <Text style={[styles.cardInsight, { color: colors.textSecondary }]}>{memory.insight}</Text>
                 </View>
               </View>
-              <Text style={[styles.memoryTitle, { color: colors.text }]}>{memory.title}</Text>
-              <Text style={[styles.memoryInsight, { color: colors.textSecondary }]}>{memory.insight}</Text>
-            </View>
-          </Animated.View>
-        ))}
+            </Animated.View>
+          ))}
+        </View>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { paddingHorizontal: 20 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
-  headerCenter: { alignItems: 'center', gap: 2 },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 22 },
-  subtitle: { fontFamily: 'Inter_400Regular', fontSize: 13 },
-  summaryCard: { borderRadius: 20, padding: 20, borderWidth: 1, marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  summaryIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  summaryText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
-  memoryCard: { borderRadius: 20, padding: 20, borderWidth: 1, marginBottom: 12, gap: 10 },
-  memoryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  memoryIconWrap: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  tagBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
-  tagText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
-  memoryTitle: { fontFamily: 'Inter_700Bold', fontSize: 17 },
-  memoryInsight: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 21 },
+  container: { 
+    flex: 1 
+  },
+  scroll: { 
+    paddingHorizontal: 16 
+  },
+  header: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    marginBottom: 20 
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerContent: { 
+    alignItems: 'center' 
+  },
+  title: { 
+    fontFamily: 'Inter_700Bold', 
+    fontSize: 22,
+    letterSpacing: -0.5,
+  },
+  subtitle: { 
+    fontFamily: 'Inter_500Medium', 
+    fontSize: 13,
+    marginTop: 2,
+  },
+  summaryBanner: {
+    padding: 16,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  sparkleWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  bannerInfo: {
+    flex: 1,
+  },
+  bannerTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+  },
+  bannerText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    marginTop: 1,
+  },
+  cardsGrid: {
+    gap: 12,
+  },
+  cardWrapper: {
+    marginBottom: 4,
+  },
+  memoryCard: { 
+    borderRadius: 24, 
+    padding: 20, 
+    borderWidth: 1, 
+    gap: 12,
+  },
+  cardHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+  },
+  iconBox: { 
+    width: 46, 
+    height: 46, 
+    borderRadius: 16, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  tag: { 
+    paddingHorizontal: 12, 
+    paddingVertical: 5, 
+    borderRadius: 10 
+  },
+  tagLabel: { 
+    fontFamily: 'Inter_700Bold', 
+    fontSize: 10, 
+    textTransform: 'uppercase' as const, 
+    letterSpacing: 0.6 
+  },
+  cardBody: {
+    gap: 6,
+  },
+  cardTitle: { 
+    fontFamily: 'Inter_700Bold', 
+    fontSize: 18,
+    letterSpacing: -0.3,
+  },
+  cardInsight: { 
+    fontFamily: 'Inter_400Regular', 
+    fontSize: 14, 
+    lineHeight: 22,
+    opacity: 0.9,
+  },
 });

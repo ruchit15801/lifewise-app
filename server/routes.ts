@@ -36,6 +36,7 @@ async function initIndexes() {
   const bills = db.collection('bills');
   const users = db.collection('users');
   const billHistory = db.collection('billHistory');
+  const family = db.collection('family_members');
 
   try {
     // Unique index for SMS deduplication: same user, same SMS unique ID
@@ -45,6 +46,7 @@ async function initIndexes() {
     await (bills as any).createIndex({ userId: 1 });
     await (billHistory as any).createIndex({ billId: 1, userId: 1, date: -1 });
     await (users as any).createIndex({ email: 1 }, { unique: true });
+    await (family as any).createIndex({ userId: 1 });
     console.log('[DB] Indexes initialized');
   } catch (err) {
     console.error('[DB] Index initialization failed:', err);
@@ -442,6 +444,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const promoCodes = db.collection('promo_codes') as any;
   const systemSettings = db.collection('system_settings') as any;
   const billHistory = db.collection('bill_history') as any;
+
+  console.log('[DEBUG] registerRoutes: Initializing priority routes');
+
+  // --- Priority: File Uploads ---
+  app.post('/api/upload', authMiddleware, upload.single('file'), async (req: any, res: any) => {
+    console.log('[DEBUG] POST /api/upload hit');
+    try {
+      if (!S3_BUCKET) {
+        console.error('[DEBUG] S3_BUCKET not set');
+        return res.status(500).json({ message: 'S3 bucket not configured.' });
+      }
+      const file = (req as any).file;
+      if (!file || !file.buffer) {
+        console.error('[DEBUG] No file in request');
+        return res.status(400).json({ message: 'file is required' });
+      }
+      const key = `uploads/${(req as any).userId}/${Date.now()}-${file.originalname}`;
+      await s3.send(new PutObjectCommand({
+        Bucket: S3_BUCKET, Key: key, Body: file.buffer, ContentType: file.mimetype || 'image/jpeg', ACL: 'public-read',
+      } as any));
+      const url = `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+      console.log('[DEBUG] Upload success:', url);
+      return res.status(201).json({ url });
+    } catch (err) {
+      console.error('[DEBUG] Upload error:', err);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  // --- Priority: Family Hub ---
+  app.get('/api/family', authMiddleware, async (req, res) => {
+    console.log('[DEBUG] GET /api/family hit');
+    try {
+      const list = await family
+        .find({ userId: (req as any).userId })
+        .sort({ createdAt: -1 })
+        .toArray();
+      const out = list.map((m: any) => ({
+        id: m._id.toString(),
+        name: m.name,
+        relationship: m.relationship || 'self',
+        avatarUrl: (m as any).avatarUrl || null,
+        medicines: Array.isArray(m.medicines) ? m.medicines : [],
+      }));
+      return res.json(out);
+    } catch (err) {
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.post('/api/family', authMiddleware, async (req, res) => {
+    console.log('[DEBUG] POST /api/family hit');
+    try {
+      const { name, relationship, avatarUrl } = req.body;
+      const doc = {
+        userId: (req as any).userId,
+        name: String(name || 'New Member').trim(),
+        relationship: String(relationship || 'self'),
+        avatarUrl: avatarUrl || null,
+        medicines: [],
+        createdAt: new Date(),
+      };
+      const result = await family.insertOne(doc);
+      return res.status(201).json({ id: result.insertedId.toString(), ...doc });
+    } catch (err) {
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.put('/api/family/:id', authMiddleware, async (req, res) => {
+    console.log('[DEBUG] PUT /api/family/:id hit:', req.params.id);
+    try {
+      const { id } = req.params;
+      const { name, relationship, avatarUrl } = req.body;
+      const update: any = { updatedAt: new Date() };
+      if (name !== undefined) update.name = String(name).trim();
+      if (relationship !== undefined) update.relationship = String(relationship);
+      if (avatarUrl !== undefined) update.avatarUrl = avatarUrl;
+      const result = await family.updateOne({ _id: toId(id), userId: (req as any).userId }, { $set: update });
+      if (result.matchedCount === 0) return res.status(404).json({ message: 'Not found' });
+      const updated = await family.findOne({ _id: toId(id) });
+      return res.json({ id: updated!._id.toString(), ...updated });
+    } catch (err) {
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+
+  app.delete('/api/family/:id', authMiddleware, async (req, res) => {
+    console.log('[DEBUG] DELETE /api/family/:id hit:', req.params.id);
+    try {
+      const result = await family.deleteOne({ _id: toId(req.params.id), userId: (req as any).userId });
+      if (result.deletedCount === 0) return res.status(404).json({ message: 'Not found' });
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
 
   // --- Support API Routes (Moved to top for priority) ---
 
@@ -2523,61 +2622,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ----- Family Hub (members + medicines) -----
-  app.get('/api/family', authMiddleware, async (req, res) => {
-    try {
-      const list = await family.find({ userId: (req as any).userId }).toArray();
-      const out = list.map((m: any) => ({
-        id: m._id.toString(),
-        name: m.name,
-        relationship: m.relationship || 'self',
-        medicines: Array.isArray(m.medicines) ? m.medicines : [],
-      }));
-      return res.json(out);
-    } catch (err) {
-      console.error('Get family error:', err);
-      return res.status(500).json({ message: 'Server error.' });
-    }
-  });
-
-  app.post('/api/family', authMiddleware, async (req, res) => {
-    try {
-      const { name, relationship } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: 'Name is required' });
-      }
-      const doc = {
-        userId: (req as any).userId,
-        name: String(name).trim(),
-        relationship: String(relationship || 'self'),
-        medicines: [] as unknown[],
-        createdAt: new Date(),
-      };
-      const result = await family.insertOne(doc);
-      return res.status(201).json({
-        id: result.insertedId.toString(),
-        name: doc.name,
-        relationship: doc.relationship,
-        medicines: [],
-      });
-    } catch (err) {
-      console.error('Post family error:', err);
-      return res.status(500).json({ message: 'Server error.' });
-    }
-  });
-
-  app.delete('/api/family/:id', authMiddleware, async (req, res) => {
-    try {
-      const result = await family.deleteOne({ _id: toId(req.params.id), userId: (req as any).userId });
-      if (result.deletedCount === 0) {
-        return res.status(404).json({ message: 'Family member not found' });
-      }
-      return res.json({ ok: true });
-    } catch (err) {
-      console.error('Delete family error:', err);
-      return res.status(500).json({ message: 'Server error.' });
-    }
-  });
-
   app.post('/api/family/:id/medicines', authMiddleware, async (req, res) => {
     try {
       const memberId = req.params.id;

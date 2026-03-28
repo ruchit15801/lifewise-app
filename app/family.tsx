@@ -17,6 +17,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/query-client';
 import { useSeniorMode } from '@/lib/senior-context';
+import { Avatar } from '../components/Avatar';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
@@ -56,6 +57,7 @@ interface FamilyMember {
   id: string;
   name: string;
   relationship: string;
+  avatarUrl?: string | null;
   medicines: Medicine[];
 }
 
@@ -185,9 +187,7 @@ export default function FamilyScreen() {
               >
                 <View style={styles.memberHeader}>
                   <View style={styles.memberInfo}>
-                    <View style={[styles.avatarWrap, { backgroundColor: colors.accent + '15' }]}>
-                      <Ionicons name={getRelIcon(member.relationship) as any} size={24} color={colors.accent} />
-                    </View>
+                    <Avatar name={member.name} uri={member.avatarUrl} size={48} />
                     <View>
                       <Text style={[styles.memberName, { color: colors.text }]}>{member.name}</Text>
                       <Text style={[styles.memberRel, { color: colors.textTertiary }]}>
@@ -198,12 +198,21 @@ export default function FamilyScreen() {
                   <View style={styles.memberActions}>
                     <Pressable 
                       onPress={() => router.push({
+                        pathname: '/edit-family-member',
+                        params: { id: member.id }
+                      })}
+                      style={[styles.actionBtn, { backgroundColor: colors.accentDim }]}
+                    >
+                      <Ionicons name="create-outline" size={18} color={colors.accent} />
+                    </Pressable>
+                    <Pressable 
+                      onPress={() => router.push({
                         pathname: '/add-medicine',
                         params: { memberId: member.id, memberName: member.name }
                       })}
                       style={[styles.actionBtn, { backgroundColor: colors.accentMintDim }]}
                     >
-                      <Ionicons name="add" size={20} color={colors.accentMint} />
+                      <Ionicons name="add" size={22} color={colors.accentMint} />
                     </Pressable>
                     <Pressable 
                       onPress={() => deleteMember(member.id)}

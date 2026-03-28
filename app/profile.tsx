@@ -80,14 +80,14 @@ export default function ProfileScreen() {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { paddingTop: topInset + 12 }]}>
         <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))} hitSlop={10}>
-          <Ionicons name="arrow-back" size={24} color={colors.textOnAccent || '#0F172A'} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.textOnAccent || '#0F172A' }]}>Edit Profile</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.headerCard, { backgroundColor: colors.heroBg || '#EEF2FF' }]}>
+        <View style={[styles.headerCard, { backgroundColor: colors.accentDim }]}>
           <Pressable onPress={handlePickAvatar} style={[styles.avatarCircle, { backgroundColor: '#FFFFFF' }]}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
@@ -99,11 +99,11 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
           <View style={styles.headerTextWrap}>
-            <Text style={[styles.headerName, { color: colors.textOnAccent || '#0F172A' }]}>
+            <Text style={[styles.headerName, { color: colors.text }]}>
               {name || user?.name || 'Your name'}
             </Text>
             <View style={styles.emailRow}>
-              <Text style={[styles.emailValue, { color: colors.textOnAccent || '#0F172A' }]} numberOfLines={1}>
+              <Text style={[styles.emailValue, { color: colors.textSecondary }]} numberOfLines={1}>
                 {user?.email}
               </Text>
               <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(255,255,255,0.9)' }]}>
@@ -142,17 +142,18 @@ export default function ProfileScreen() {
             </View>
 
             <Text style={[styles.label, { color: colors.textSecondary, marginTop: 14 }]}>Email</Text>
-            <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+            <View style={[styles.inputRow, { borderColor: colors.border + '40', backgroundColor: colors.inputBg, opacity: 0.7 }]}>
               <Ionicons name="mail-outline" size={18} color={colors.textTertiary} />
               <TextInput
-                style={[styles.input, { color: colors.text }]}
+                style={[styles.input, { color: colors.textTertiary }]}
                 value={email}
-                onChangeText={setEmail}
+                editable={false}
                 placeholder="Add email"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
+              <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
             </View>
 
             <Text style={[styles.label, { color: colors.textSecondary, marginTop: 14 }]}>Date of Birth</Text>

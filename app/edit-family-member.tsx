@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,18 +8,19 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Avatar } from '../components/Avatar';
 
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
+import { Avatar } from '../components/Avatar';
 
 const RELATIONSHIPS = [
   { key: 'self', label: 'Self', icon: 'person' },
@@ -30,8 +31,9 @@ const RELATIONSHIPS = [
   { key: 'other', label: 'Other', icon: 'ellipsis-horizontal' },
 ];
 
-export default function AddFamilyMemberScreen() {
+export default function EditFamilyMemberScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { token } = useAuth();
@@ -41,34 +43,38 @@ export default function AddFamilyMemberScreen() {
   const [relationship, setRelationship] = useState('other');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = async () => {
-    if (!name.trim()) {
-      setError('Please enter a name');
-      return;
-    }
-    if (!token) return;
+  useEffect(() => {
+    fetchMember();
+  }, [id]);
 
-    setIsSaving(true);
+  const fetchMember = async () => {
+    if (!token || !id) return;
     try {
-      const res = await apiRequest(
-        'POST',
-        '/api/family',
-        { name: name.trim(), relationship, avatarUrl },
-        token
-      );
+      // In a real app, we might have a GET /api/family/:id 
+      // but for now we'll fetch all and find the one.
+      const res = await apiRequest('GET', '/api/family', null, token);
       if (res.ok) {
-        router.back();
+        const data = await res.json();
+        const member = data.find((m: any) => m.id === id);
+        if (member) {
+          setName(member.name);
+          setRelationship(member.relationship || 'other');
+          setAvatarUrl(member.avatarUrl || null);
+        } else {
+          setError('Member not found');
+        }
       } else {
-        setError('Failed to add member. Please try again.');
+        setError('Failed to load member details');
       }
     } catch (e) {
-      console.error('Add family member error:', e);
+      console.error('Fetch member error:', e);
       setError('An unexpected error occurred.');
     } finally {
-      setIsSaving(false);
+      setIsLoading(false);
     }
   };
 
@@ -91,7 +97,7 @@ export default function AddFamilyMemberScreen() {
   };
 
   const uploadImage = async (uri: string) => {
-    // Show local preview immediately — looks responsive
+    // Show local preview immediately
     setAvatarUrl(uri);
     if (!token) return;
     setIsUploading(true);
@@ -114,24 +120,58 @@ export default function AddFamilyMemberScreen() {
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
-        setAvatarUrl(data.url); // Replace preview with permanent S3 URL
+        setAvatarUrl(data.url);
         console.log('[Upload] Success:', data.url);
       } else {
         const text = await res.text();
         console.error('[Upload] Server error:', res.status, text.slice(0, 200));
-        // Keep local preview — member can still be saved with local URI
-        // (will work as long as caches persist; for permanent storage S3 is needed)
         if (!res.ok) setError(`Upload failed (${res.status}). Avatar saved locally.`);
       }
     } catch (e) {
       console.error('[Upload] Exception:', e);
-      // Keep local URI as avatar, don't block the user
+      // Keep local URI — don't block user
     } finally {
       setIsUploading(false);
     }
   };
 
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('Please enter a name');
+      return;
+    }
+    if (!token || !id) return;
+
+    setIsSaving(true);
+    try {
+      const res = await apiRequest(
+        'PUT',
+        `/api/family/${id}`,
+        { name: name.trim(), relationship, avatarUrl },
+        token
+      );
+      if (res.ok) {
+        router.back();
+      } else {
+        setError('Failed to update member. Please try again.');
+      }
+    } catch (e) {
+      console.error('Update family member error:', e);
+      setError('An unexpected error occurred.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const headerHeight = 130 + insets.top;
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -152,13 +192,13 @@ export default function AddFamilyMemberScreen() {
               <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={15}>
                 <Ionicons name="chevron-back" size={24} color={colors.text} />
               </Pressable>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>Add New Member</Text>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Member</Text>
             </View>
 
             <View style={styles.headerContent}>
               <View style={styles.avatarSection}>
                 <Pressable onPress={pickImage} style={styles.avatarContainer}>
-                  <Avatar name={name || 'New Member'} uri={avatarUrl} size={88} />
+                  <Avatar name={name || 'Member'} uri={avatarUrl} size={88} />
                   <View style={[styles.editIconBtn, { backgroundColor: colors.accent }]}>
                     <Ionicons name="camera" size={16} color="#FFF" />
                   </View>
@@ -171,12 +211,12 @@ export default function AddFamilyMemberScreen() {
               </View>
 
               <View style={styles.headerNameBlock}>
-                <Text style={[styles.contextLabel, { color: colors.textSecondary }]}>Enter Member Details</Text>
+                <Text style={[styles.contextLabel, { color: colors.textSecondary }]}>Member Name</Text>
                 <TextInput
                   style={[styles.nameInput, { color: colors.text }]}
                   value={name}
                   onChangeText={setName}
-                  placeholder="Name of..."
+                  placeholder="Enter Name"
                   placeholderTextColor={colors.textTertiary}
                 />
                 <View style={[styles.nameUnderline, { backgroundColor: colors.accent }]} />
@@ -227,13 +267,6 @@ export default function AddFamilyMemberScreen() {
                 );
               })}
             </View>
-
-            <View style={[styles.infoCard, { backgroundColor: colors.accentDim + '30', borderColor: colors.accent + '30' }]}>
-               <Ionicons name="information-circle-outline" size={20} color={colors.accent} />
-               <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                 Adding family members helps you track their health, medicines, and reminders in one place.
-               </Text>
-            </View>
           </View>
         </ScrollView>
 
@@ -254,8 +287,8 @@ export default function AddFamilyMemberScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Ionicons name="person-add-outline" size={24} color="#FFF" />
-              <Text style={styles.saveBtnText}>{isSaving ? 'Adding Member...' : 'Add Family Member'}</Text>
+              <Ionicons name="checkmark-outline" size={24} color="#FFF" />
+              <Text style={styles.saveBtnText}>{isSaving ? 'Saving Changes...' : 'Save Changes'}</Text>
             </LinearGradient>
           </Pressable>
         </View>
@@ -407,22 +440,8 @@ const styles = StyleSheet.create({
   },
   checkWrap: {
     position: 'absolute',
-    top: 14,
-    right: 14,
-  },
-  infoCard: {
-    marginTop: 24,
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  infoText: {
-    flex: 1,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 20,
+    top: 12,
+    right: 12,
   },
   footer: {
     position: 'absolute',
