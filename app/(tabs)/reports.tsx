@@ -45,7 +45,7 @@ function CategoryBar({ category, total, percentage, maxPercentage, colors, isDar
           <CategoryIcon category={category} size={18} />
         </View>
         <View style={styles.catBarInfo}>
-          <Text style={[styles.catBarName, { color: colors.text }, isSeniorMode && { fontSize: 16 }]}>{cat.label}</Text>
+          <Text style={[styles.catBarName, { color: colors.text }, isSeniorMode && { fontSize: 16 }]} numberOfLines={1}>{cat.label}</Text>
           <Text style={[styles.catBarPercent, { color: colors.textTertiary }, isSeniorMode && { fontSize: 13 }]}>{Math.round(percentage)}%</Text>
         </View>
       </View>
@@ -496,11 +496,13 @@ export default function ReportsScreen() {
     : 100;
 
   // Weighted Dynamic Score: Spending 50%, Bills 30%, Health 20%
-  const dynamicScore = Math.round(
-    spendingScore * 0.5 +
-    billsScore * 0.3 +
-    healthScore * 0.2
-  );
+  const hasActivity = reportTxs.length > 0 || reportBills.length > 0 || medicines.length > 0;
+  
+  const dynamicScore = hasActivity ? Math.round(
+    (monthlyBudget > 0 ? spendingScore : (reportTxs.length > 0 ? spendingScore : 100)) * 0.5 +
+    (reportBills.length > 0 ? billsScore : 100) * 0.3 +
+    (medicines.length > 0 ? healthScore : 100) * 0.2
+  ) : 0;
 
   const lifeScoreDisplay = dynamicScore;
   const lifeScoreLabel = 'Estimated Score';
@@ -527,7 +529,13 @@ export default function ReportsScreen() {
       ? Math.round((prevMedicinesTaken / medicines.length) * 100)
       : 100;
 
-    return Math.round(prevSpendingScore * 0.5 + prevBillsScore * 0.3 + prevHealthScore * 0.2);
+    const hasPrevActivity = prevTxs.length > 0 || prevBillsCount > 0 || medicines.length > 0;
+
+    return hasPrevActivity ? Math.round(
+      (monthlyBudget > 0 ? prevSpendingScore : (prevTxs.length > 0 ? prevSpendingScore : 100)) * 0.5 + 
+      (prevBillsCount > 0 ? prevBillsScore : 100) * 0.3 + 
+      (medicines.length > 0 ? prevHealthScore : 100) * 0.2
+    ) : 0;
   }, [prevPaidBills, prevBills, medicines, prevPredicate, prevTotalSpent, monthlyBudget, daysInPeriod]);
 
   const comparison = useMemo(() => {
@@ -1118,7 +1126,7 @@ export default function ReportsScreen() {
                       <Ionicons name={cat.icon as any} size={18} color={cat.color} />
                     </View>
                     <View style={styles.merchantInfo}>
-                      <Text style={[styles.merchantName, { color: colors.text }]}>{merchant}</Text>
+                      <Text style={[styles.merchantName, { color: colors.text }]} numberOfLines={1}>{merchant}</Text>
                       <Text style={[styles.merchantCount, { color: colors.textTertiary }]}>{data.count} transactions</Text>
                     </View>
                     <Text style={[styles.merchantAmount, { color: colors.text }]}>{formatAmount(data.total)}</Text>

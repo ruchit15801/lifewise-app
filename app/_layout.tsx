@@ -215,6 +215,8 @@ function AuthGate() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="life-memory" />
         <Stack.Screen name="family" />
+        <Stack.Screen name="add-family-member" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="add-medicine" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="assistant" />
         <Stack.Screen name="+not-found" />
       </Stack>

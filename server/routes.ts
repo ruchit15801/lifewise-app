@@ -3132,18 +3132,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Weighted final score
         // Budget: 50%, Bills: 30%, Health: 20%
-        const finalScore = Math.round(
+        const hasActivity = userTxs.length > 0 || userBills.length > 0 || medLogs.length > 0;
+
+        const finalScore = hasActivity ? Math.round(
           spendingScore * 0.5 +
-          billsScore * 0.3 +
-          healthScore * 0.2
-        );
+          (userBills.length > 0 ? billsScore : 100) * 0.3 +
+          (totalLogs > 0 ? healthScore : 100) * 0.2
+        ) : 0;
 
         return res.json({
           score: finalScore,
           breakdown: {
             spending: Math.round(spendingScore),
-            bills: Math.round(billsScore),
-            health: Math.round(healthScore),
+            bills: userBills.length > 0 ? Math.round(billsScore) : 0,
+            health: totalLogs > 0 ? Math.round(healthScore) : 0,
           },
           updatedAt: now.toISOString(),
         });

@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme-context';
 import { useAlert } from '@/lib/alert-context';
@@ -76,25 +76,6 @@ export default function FamilyScreen() {
   const { token } = useAuth();
   const { isSeniorMode } = useSeniorMode();
   const [members, setMembers] = useState<FamilyMember[]>([]);
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [showAddMedicine, setShowAddMedicine] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
-  const [selectedRel, setSelectedRel] = useState('self');
-  const [medName, setMedName] = useState('');
-  const [medDosage, setMedDosage] = useState('');
-  const [medAppearance, setMedAppearance] = useState<MedAppearance>('tablet');
-  const [medColor, setMedColor] = useState('#10B981');
-  const [medInstruction, setMedInstruction] = useState<MedInstruction>('any');
-  const [slotMorning, setSlotMorning] = useState(true);
-  const [slotNoon, setSlotNoon] = useState(false);
-  const [slotEvening, setSlotEvening] = useState(false);
-  const [slotMorningTime, setSlotMorningTime] = useState('9:00 AM');
-  const [slotNoonTime, setSlotNoonTime] = useState('1:00 PM');
-  const [slotEveningTime, setSlotEveningTime] = useState('8:00 PM');
-  const [medScheduleType, setMedScheduleType] = useState<MedScheduleType>('continuous');
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const [medStartDate, setMedStartDate] = useState(todayIso);
-  const [medEndDate, setMedEndDate] = useState('');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : Math.max(insets.bottom, 20);
@@ -110,84 +91,13 @@ export default function FamilyScreen() {
     }
   }, [token]);
 
-  useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
+  useFocusEffect(
+    useCallback(() => {
+      loadMembers();
+    }, [loadMembers])
+  );
 
-  const addMember = () => {
-    if (!newName.trim()) return;
-    if (!token) return;
-    (async () => {
-      try {
-        const res = await apiRequest(
-          'POST',
-          '/api/family',
-          { name: newName.trim(), relationship: selectedRel },
-          token,
-        );
-        const created = (await res.json()) as FamilyMember;
-        setMembers(prev => [...prev, created]);
-        setNewName('');
-        setSelectedRel('self');
-        setShowAddMember(false);
-      } catch (e) {
-        console.error('Add family member error:', e);
-      }
-    })();
-  };
 
-  const addMedicine = () => {
-    if (!medName.trim() || !showAddMedicine) return;
-    if (!token) return;
-    (async () => {
-      try {
-        const slots: MedicineSlots = {};
-        if (slotMorning) slots.morning = slotMorningTime;
-        if (slotNoon) slots.noon = slotNoonTime;
-        if (slotEvening) slots.evening = slotEveningTime;
-
-        const body = {
-          name: medName.trim(),
-          dosage: medDosage.trim(),
-          appearance: medAppearance,
-          color: medColor,
-          instruction: medInstruction,
-          slots,
-          scheduleType: medScheduleType,
-          startDate: medStartDate,
-          endDate: medScheduleType === 'custom' ? medEndDate || null : null,
-        };
-
-        const res = await apiRequest(
-          'POST',
-          `/api/family/${showAddMedicine}/medicines`,
-          body,
-          token,
-        );
-        const updatedMember = (await res.json()) as FamilyMember;
-        setMembers(prev =>
-          prev.map(m => (m.id === updatedMember.id ? updatedMember : m)),
-        );
-        setMedName('');
-        setMedDosage('');
-        setMedAppearance('tablet');
-        setMedColor('#10B981');
-        setMedInstruction('any');
-        setSlotMorning(true);
-        setSlotNoon(false);
-        setSlotEvening(false);
-        setSlotMorningTime('9:00 AM');
-        setSlotNoonTime('1:00 PM');
-        setSlotEveningTime('8:00 PM');
-        setMedScheduleType('continuous');
-        setMedStartDate(todayIso);
-        setMedEndDate('');
-        setShowAddMedicine(null);
-      } catch (e) {
-        console.error('Add medicine error:', e);
-      }
-    })();
-  };
 
   const markMedicine = (memberId: string, medId: string, action: 'taken' | 'snooze' | 'skip') => {
     if (!token) return;
@@ -239,7 +149,7 @@ export default function FamilyScreen() {
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </Pressable>
           <Text style={[styles.screenTitle, { color: colors.text }]}>Family Hub</Text>
-          <Pressable onPress={() => setShowAddMember(true)} hitSlop={10}>
+          <Pressable onPress={() => router.push('/add-family-member')} hitSlop={10}>
             <Ionicons name="add-circle" size={28} color={colors.accent} />
           </Pressable>
         </View>
@@ -282,7 +192,13 @@ export default function FamilyScreen() {
                   </View>
                 </View>
                 <View style={styles.memberActions}>
-                  <Pressable onPress={() => setShowAddMedicine(member.id)} hitSlop={8}>
+                  <Pressable 
+                    onPress={() => router.push({
+                      pathname: '/add-medicine',
+                      params: { memberId: member.id, memberName: member.name }
+                    })} 
+                    hitSlop={8}
+                  >
                     <View style={[styles.smallActionBtn, { backgroundColor: colors.accentMintDim }]}>
                       <Ionicons name="add" size={16} color={colors.accentMint} />
                     </View>
@@ -388,322 +304,7 @@ export default function FamilyScreen() {
         ))}
       </ScrollView>
 
-      <CustomModal visible={showAddMember} onClose={() => setShowAddMember(false)}>
-        <Text style={[styles.modalTitle, { color: colors.text }]}>Add Family Member</Text>
 
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-          value={newName}
-          onChangeText={setNewName}
-          placeholder="Enter name"
-          placeholderTextColor={colors.textTertiary}
-        />
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Relationship</Text>
-        <View style={styles.relGrid}>
-          {RELATIONSHIPS.map(rel => (
-            <Pressable
-              key={rel.key}
-              onPress={() => setSelectedRel(rel.key)}
-              style={[
-                styles.relChip,
-                { backgroundColor: selectedRel === rel.key ? colors.accentDim : colors.inputBg, borderColor: selectedRel === rel.key ? colors.accent : colors.inputBorder },
-              ]}
-            >
-              <Ionicons name={rel.icon as any} size={16} color={selectedRel === rel.key ? colors.accent : colors.textSecondary} />
-              <Text style={[styles.relChipText, { color: selectedRel === rel.key ? colors.accent : colors.textSecondary }]}>{rel.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.modalBtns}>
-          <Pressable onPress={() => setShowAddMember(false)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-            <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-          </Pressable>
-          <Pressable onPress={addMember} style={styles.saveBtnWrap}>
-            <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
-              <Text style={styles.saveBtnText}>Add Member</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-      </CustomModal>
-
-      <CustomModal visible={!!showAddMedicine} onClose={() => setShowAddMedicine(null)}>
-        <Text style={[styles.modalTitle, { color: colors.text }]}>Add Medicine</Text>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Medicine Name</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-          value={medName}
-          onChangeText={setMedName}
-          placeholder="e.g., Telma 40"
-          placeholderTextColor={colors.textTertiary}
-        />
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Dosage</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-          value={medDosage}
-          onChangeText={setMedDosage}
-          placeholder="e.g., 40mg"
-          placeholderTextColor={colors.textTertiary}
-        />
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Appearance</Text>
-        <View style={styles.relGrid}>
-          {[
-            { key: 'capsule', label: 'Capsule', icon: 'ellipse-outline' },
-            { key: 'tablet', label: 'Tablet', icon: 'square-outline' },
-            { key: 'round', label: 'Round', icon: 'radio-button-on' },
-            { key: 'liquid', label: 'Liquid', icon: 'water' },
-          ].map(opt => (
-            <Pressable
-              key={opt.key}
-              onPress={() => setMedAppearance(opt.key as MedAppearance)}
-              style={[
-                styles.relChip,
-                {
-                  backgroundColor:
-                    medAppearance === opt.key ? colors.accentDim : colors.inputBg,
-                  borderColor:
-                    medAppearance === opt.key ? colors.accent : colors.inputBorder,
-                },
-              ]}
-            >
-              <Ionicons
-                name={opt.icon as any}
-                size={16}
-                color={medAppearance === opt.key ? colors.accent : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.relChipText,
-                  {
-                    color:
-                      medAppearance === opt.key ? colors.accent : colors.textSecondary,
-                  },
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Color</Text>
-        <View style={styles.colorRow}>
-          {['#10B981', '#3B82F6', '#F97316', '#EF4444', '#8B5CF6'].map(c => (
-            <Pressable
-              key={c}
-              onPress={() => setMedColor(c)}
-              style={[
-                styles.colorDot,
-                {
-                  backgroundColor: c,
-                  borderColor: medColor === c ? '#FFFFFF' : 'transparent',
-                },
-              ]}
-            />
-          ))}
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Timing</Text>
-        <View style={styles.slotRow}>
-          <Pressable
-            onPress={() => setSlotMorning(v => !v)}
-            style={[
-              styles.slotChip,
-              {
-                backgroundColor: slotMorning ? colors.accentDim : colors.inputBg,
-                borderColor: slotMorning ? colors.accent : colors.inputBorder,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.relChipText,
-                { color: slotMorning ? colors.accent : colors.textSecondary },
-              ]}
-            >
-              Morning
-            </Text>
-            <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
-              {slotMorningTime}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setSlotNoon(v => !v)}
-            style={[
-              styles.slotChip,
-              {
-                backgroundColor: slotNoon ? colors.accentDim : colors.inputBg,
-                borderColor: slotNoon ? colors.accent : colors.inputBorder,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.relChipText,
-                { color: slotNoon ? colors.accent : colors.textSecondary },
-              ]}
-            >
-              Noon
-            </Text>
-            <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
-              {slotNoonTime}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setSlotEvening(v => !v)}
-            style={[
-              styles.slotChip,
-              {
-                backgroundColor: slotEvening ? colors.accentDim : colors.inputBg,
-                borderColor: slotEvening ? colors.accent : colors.inputBorder,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.relChipText,
-                { color: slotEvening ? colors.accent : colors.textSecondary },
-              ]}
-            >
-              Evening
-            </Text>
-            <Text style={[styles.slotTime, { color: colors.textTertiary }]}>
-              {slotEveningTime}
-            </Text>
-          </Pressable>
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-          Instruction
-        </Text>
-        <View style={styles.relGrid}>
-          {[
-            { key: 'before_meal', label: 'Before Meal' },
-            { key: 'after_meal', label: 'After Meal' },
-            { key: 'any', label: "Doesn't Matter" },
-          ].map(opt => (
-            <Pressable
-              key={opt.key}
-              onPress={() => setMedInstruction(opt.key as MedInstruction)}
-              style={[
-                styles.relChip,
-                {
-                  backgroundColor:
-                    medInstruction === opt.key ? colors.accentMintDim : colors.inputBg,
-                  borderColor:
-                    medInstruction === opt.key ? colors.accentMint : colors.inputBorder,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.relChipText,
-                  {
-                    color:
-                      medInstruction === opt.key
-                        ? colors.accentMint
-                        : colors.textSecondary,
-                  },
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-          Duration
-        </Text>
-        <View style={styles.relGrid}>
-          {[
-            { key: 'continuous', label: 'Continuous / Lifetime' },
-            { key: 'custom', label: 'Custom' },
-          ].map(opt => (
-            <Pressable
-              key={opt.key}
-              onPress={() => setMedScheduleType(opt.key as MedScheduleType)}
-              style={[
-                styles.relChip,
-                {
-                  backgroundColor:
-                    medScheduleType === opt.key ? colors.accentDim : colors.inputBg,
-                  borderColor:
-                    medScheduleType === opt.key ? colors.accent : colors.inputBorder,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.relChipText,
-                  {
-                    color:
-                      medScheduleType === opt.key
-                        ? colors.accent
-                        : colors.textSecondary,
-                  },
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {medScheduleType === 'custom' && (
-          <>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              Start Date (YYYY-MM-DD)
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text,
-                },
-              ]}
-              value={medStartDate}
-              onChangeText={setMedStartDate}
-              placeholder={todayIso}
-              placeholderTextColor={colors.textTertiary}
-            />
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              End Date (YYYY-MM-DD)
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.inputBorder,
-                  color: colors.text,
-                },
-              ]}
-              value={medEndDate}
-              onChangeText={setMedEndDate}
-              placeholder="e.g., 2026-04-01"
-              placeholderTextColor={colors.textTertiary}
-            />
-          </>
-        )}
-
-        <View style={styles.modalBtns}>
-          <Pressable onPress={() => setShowAddMedicine(null)} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-            <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-          </Pressable>
-          <Pressable onPress={addMedicine} style={styles.saveBtnWrap}>
-            <LinearGradient colors={[...colors.buttonGradient] as [string, string]} style={styles.saveBtn}>
-              <Text style={styles.saveBtnText}>Add Medicine</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-      </CustomModal>
     </View>
   );
 }

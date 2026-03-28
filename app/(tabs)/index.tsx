@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -676,19 +676,21 @@ export default function HomeScreen() {
   const totalLeakAmount = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
   const userName = user?.name?.split(' ')[0] || 'User';
 
-  const billsPaidRatio = bills.length > 0 ? bills.filter(b => b.isPaid).length / bills.length : 0;
-  let budgetHealthScore = Math.round(
+  const billsPaidRatio = useMemo(() => bills.length > 0 ? bills.filter(b => b.status === 'paid' || b.isPaid).length / bills.length : 0, [bills]);
+  const hasActivity = useMemo(() => transactions.length > 0 || bills.length > 0 || leaks.length > 0, [transactions, bills, leaks]);
+
+  let budgetHealthScore = useMemo(() => hasActivity ? Math.round(
     Math.max(0, Math.min(100, 100 - budgetUsed)) * 0.5 +
-    billsPaidRatio * 30 +
-    (totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0)
-  );
+    (bills.length > 0 ? billsPaidRatio * 100 : 100) * 0.3 +
+    (leaks.length > 0 ? (totalLeakAmount < 1000 ? 100 : totalLeakAmount < 3000 ? 50 : 0) : 100) * 0.2
+  ) : 0, [hasActivity, budgetUsed, bills.length, billsPaidRatio, leaks.length, totalLeakAmount]);
 
   // Life Score from backend (high precision)
   const officialLifeScore = lifeScore?.score ?? 85;
   const displayScore = lifeScore != null ? lifeScore.score : budgetHealthScore;
 
-  // If everything is effectively zero, keep score at 0 to avoid confusion.
-  if (monthlySpend === 0 && bills.length === 0 && totalLeakAmount === 0 && lifeScore == null) {
+  // Clean up displayScore for initial state
+  if (!hasActivity && lifeScore == null) {
     budgetHealthScore = 0;
   }
 
@@ -1218,7 +1220,7 @@ export default function HomeScreen() {
               <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Bills Paid</Text>
             </View>
             <Text style={[styles.scoreRowValue, { color: colors.accentBlue }]}>
-              {Math.round(billsPaidRatio * 30)}/30
+              {Math.round((bills.length > 0 ? billsPaidRatio * 100 : 100) * 0.3)}/30
             </Text>
           </View>
           <View style={[styles.scoreRow, { borderBottomColor: colors.border }]}>
@@ -1227,7 +1229,7 @@ export default function HomeScreen() {
               <Text style={[styles.scoreRowLabel, { color: colors.text }]}>Leak Detection</Text>
             </View>
             <Text style={[styles.scoreRowValue, { color: colors.warning }]}>
-              {totalLeakAmount < 1000 ? 20 : totalLeakAmount < 3000 ? 10 : 0}/20
+              {Math.round((leaks.length > 0 ? (totalLeakAmount < 1000 ? 100 : totalLeakAmount < 3000 ? 50 : 0) : 100) * 0.2)}/20
             </Text>
           </View>
         </View>

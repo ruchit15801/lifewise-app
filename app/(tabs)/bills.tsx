@@ -300,11 +300,8 @@ function SettingsModal({
 
   return (
     <CustomModal visible={visible} onClose={onClose}>
-      <View style={styles.modalHeader}>
+      <View style={[styles.modalHeader, { paddingBottom: 8 }]}>
         <Text style={[styles.modalTitle, { color: colors.text }]}>Reminder Settings</Text>
-        <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
-        </Pressable>
       </View>
 
       <View style={styles.settingsContent}>
@@ -314,49 +311,53 @@ function SettingsModal({
             <Pressable
               key={d}
               onPress={() => toggleDay(d)}
-              style={[styles.chip, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }, days.includes(d) && { backgroundColor: colors.accentDim, borderColor: colors.accent + '40' }]}
+              style={[
+                styles.chip, 
+                { backgroundColor: colors.inputBg, borderColor: colors.border + '40' }, 
+                days.includes(d) && { backgroundColor: colors.accentDim, borderColor: colors.accent + '60' }
+              ]}
             >
-              <Text style={[styles.chipText, { color: colors.textTertiary }, days.includes(d) && { color: colors.accent }]}>
+              <Text style={[styles.chipText, { color: colors.textSecondary }, days.includes(d) && { color: colors.accent, fontFamily: 'Inter_600SemiBold' }]}>
                 {d === 0 ? 'Due day' : `${d}d before`}
               </Text>
             </Pressable>
           ))}
         </View>
 
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+        <View style={[styles.settingRow, { borderTopColor: colors.border + '40' }]}>
           <View style={styles.settingInfo}>
             <View style={[styles.settingIconWrap, { backgroundColor: colors.accentDim }]}>
-              <Ionicons name="volume-high" size={18} color={colors.accent} />
+              <Ionicons name="volume-high" size={20} color={colors.accent} />
             </View>
-            <Text style={[styles.settingLabel, { color: colors.text }]}>Sound</Text>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Sound Notifications</Text>
           </View>
           <Switch
             value={sound}
             onValueChange={setSound}
-            trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
+            trackColor={{ false: colors.inputBg, true: colors.accent + '40' }}
             thumbColor={sound ? colors.accent : colors.textTertiary}
           />
         </View>
 
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+        <View style={[styles.settingRow, { borderTopColor: colors.border + '40' }]}>
           <View style={styles.settingInfo}>
             <View style={[styles.settingIconWrap, { backgroundColor: colors.accentBlueDim }]}>
-              <Ionicons name="phone-portrait" size={18} color={colors.accentBlue} />
+              <Ionicons name="pulse-outline" size={20} color={colors.accentBlue} />
             </View>
-            <Text style={[styles.settingLabel, { color: colors.text }]}>Vibration</Text>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Haptic Feedback</Text>
           </View>
           <Switch
             value={vibration}
             onValueChange={setVibration}
-            trackColor={{ false: colors.inputBg, true: colors.accent + '50' }}
-            thumbColor={vibration ? colors.accent : colors.textTertiary}
+            trackColor={{ false: colors.inputBg, true: colors.accentBlue + '40' }}
+            thumbColor={vibration ? colors.accentBlue : colors.textTertiary}
           />
         </View>
       </View>
 
       <Pressable
         onPress={() => { onSave({ soundEnabled: sound, vibrationEnabled: vibration, defaultReminderDays: days }); onClose(); }}
-        style={styles.saveBtn}
+        style={({ pressed }) => [styles.saveBtn, { opacity: pressed ? 0.9 : 1, marginTop: 12 }]}
       >
         <LinearGradient
           colors={colors.buttonGradient as unknown as [string, string]}
@@ -364,7 +365,7 @@ function SettingsModal({
           end={{ x: 1, y: 0 }}
           style={styles.saveBtnGradient}
         >
-          <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
           <Text style={[styles.saveBtnText, { color: '#FFFFFF' }]}>Save Settings</Text>
         </LinearGradient>
       </Pressable>
