@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Lock, Mail, ArrowRight, Loader2 } from "lucide-react";
+import { getApiUrl } from "@/lib/api-config";
 import Image from "next/image";
+import logo from "../../../logo.png";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -20,7 +22,7 @@ export default function LoginPage() {
 
     try {
       // For now, mock the login or call the API
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(getApiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -64,7 +66,7 @@ export default function LoginPage() {
           >
             <div className="absolute inset-0 bg-primary-600/5 blur-2xl rounded-full" />
             <Image 
-              src="/logo.png" 
+              src={logo} 
               alt="LifeWise Logo" 
               width={56} 
               height={56} 

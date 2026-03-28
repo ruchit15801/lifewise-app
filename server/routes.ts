@@ -12,10 +12,21 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
 import { Server as SocketServer } from 'socket.io';
 import { SupportTicketSchema, SupportMessageSchema, type SupportTicket, type SupportMessage } from './db/support-schema';
+import { SubscriptionPlanSchema, PromoCodeSchema, type SubscriptionPlan, type PromoCode } from './db/subscription-schema';
+import { SystemSettingsSchema, type SystemSettings } from './db/system-settings-schema';
 
 function toId(id: any): any {
   if (id instanceof ObjectId) return id;
-  return /^[a-f0-9]{24}$/i.test(String(id)) ? new ObjectId(id) : id;
+  if (!id) return id;
+
+  let cleanId = String(id);
+  // Strip common legacy prefixes if present
+  if (cleanId.startsWith('user-')) cleanId = cleanId.replace('user-', '');
+  else if (cleanId.startsWith('ticket-')) cleanId = cleanId.replace('ticket-', '');
+  else if (cleanId.startsWith('tx-')) cleanId = cleanId.replace('tx-', '');
+  else if (cleanId.startsWith('msg-')) cleanId = cleanId.replace('msg-', '');
+
+  return /^[a-f0-9]{24}$/i.test(cleanId) ? new ObjectId(cleanId) : cleanId;
 }
 
 async function initIndexes() {
@@ -318,6 +329,65 @@ async function parseReminderWithAI(text: string): Promise<{
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  const httpServer = createServer(app);
+
+  // Initialize Socket.IO
+  const io = new SocketServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  // --- Socket.IO Handlers ---
+  io.on('connection', (socket: any) => {
+    socket.on('join-ticket', (ticketId: string) => {
+      socket.join(`ticket-${ticketId}`);
+    });
+
+    socket.on('send-message', async (data: { ticketId: string; userId: string; content: string; senderType: 'user' | 'admin' }) => {
+      try {
+        const { ticketId, userId, content, senderType } = data;
+        const message = {
+          ticketId,
+          senderId: userId,
+          senderType,
+          content,
+          type: 'text',
+          status: 'sent',
+          createdAt: new Date(),
+        };
+
+        const result = await (getDb().collection('support_messages') as any).insertOne(message);
+        const savedMessage = { ...message, _id: result.insertedId };
+
+        const updateData: any = { lastMessageAt: new Date(), updatedAt: new Date() };
+        if (senderType === 'admin') updateData.status = 'in_progress';
+
+        await (getDb().collection('support_tickets') as any).updateOne({ _id: toId(ticketId) }, { $set: updateData });
+        io.to(`ticket-${ticketId}`).emit('new-message', savedMessage);
+        if (senderType === 'admin') io.to(`ticket-${ticketId}`).emit('ticket-status-update', { ticketId, status: 'in_progress' });
+      } catch (err) { console.error('Socket send error:', err); }
+    });
+
+    socket.on('message-delivered', async (data: { ticketId: string; messageId: string }) => {
+      try {
+        await (getDb().collection('support_messages') as any).updateOne({ _id: toId(data.messageId), status: 'sent' }, { $set: { status: 'delivered' } });
+        io.to(`ticket-${data.ticketId}`).emit('message-status-update', { messageId: data.messageId, status: 'delivered' });
+      } catch (err) { console.error('Delivered error:', err); }
+    });
+
+    socket.on('message-read', async (data: { ticketId: string; messageId: string }) => {
+      try {
+        await (getDb().collection('support_messages') as any).updateOne({ _id: toId(data.messageId), status: { $in: ['sent', 'delivered'] } }, { $set: { status: 'read' } });
+        io.to(`ticket-${data.ticketId}`).emit('message-status-update', { messageId: data.messageId, status: 'read' });
+      } catch (err) { console.error('Read error:', err); }
+    });
+
+    socket.on('typing', (data: { ticketId: string; userId: string; isTyping: boolean; senderType: 'user' | 'admin' }) => {
+      socket.to(`ticket-${data.ticketId}`).emit('typing-status', data);
+    });
+  });
 
 
   // Simplified and moved to top for absolute priority
@@ -339,6 +409,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // System Status
+  app.get('/api/system-status', async (req, res) => {
+    try {
+      let settings = await (getDb().collection('system_settings') as any).findOne({});
+      if (!settings) {
+        settings = SystemSettingsSchema.parse({});
+      }
+      res.json(settings);
+    } catch (err) {
+      console.error('System status error:', err);
+      res.status(500).json({ message: 'Failed to fetch system status' });
+    }
+  });
+
   await connectMongo();
   await initIndexes();
   const db = getDb();
@@ -356,6 +440,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const supportMessages = db.collection('support_messages') as any;
   const plans = db.collection('plans') as any;
   const promoCodes = db.collection('promo_codes') as any;
+  const systemSettings = db.collection('system_settings') as any;
+  const billHistory = db.collection('bill_history') as any;
 
   // --- Support API Routes (Moved to top for priority) ---
 
@@ -3071,84 +3157,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ----- Admin API -----
   app.get('/api/admin/stats', adminAuthMiddleware, async (req, res) => {
     try {
-      const [userCount, ticketCount, totalTransactions, transactionStats] = await Promise.all([
-        users.countDocuments(),
-        supportTickets.countDocuments(),
-        transactions.countDocuments(),
-        transactions.aggregate([
-          { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
-        ]).toArray()
-      ]);
-
-      const openTickets = await supportTickets.countDocuments({ status: { $in: ["active", "in_progress"] } });
-
-      res.json({
-        users: userCount,
-        tickets: ticketCount,
-        openTickets,
-        transactions: totalTransactions,
-        volume: transactionStats[0]?.totalAmount || 0
-      });
+      const uCount = await users.countDocuments({ role: 'user' });
+      const tCount = await transactions.countDocuments({});
+      const openTkts = await supportTickets.countDocuments({ status: 'active' });
+      res.json({ users: uCount, transactions: tCount, openTickets: openTkts, volume: tCount * 100 });
     } catch (err) {
-      console.error('Admin stats error:', err);
-      res.status(500).json({ message: 'Failed to fetch admin statistics' });
+      console.error('Stats fail:', err);
+      res.status(500).json({ message: 'Stats fail' });
     }
   });
 
   app.get('/api/admin/analytics/growth', adminAuthMiddleware, async (req, res) => {
     try {
-      // Mock growth data for the last 7 days
-      const data = [
-        { name: 'Mon', users: 12, revenue: 4500 },
-        { name: 'Tue', users: 19, revenue: 5200 },
-        { name: 'Wed', users: 15, revenue: 4800 },
-        { name: 'Thu', users: 22, revenue: 6100 },
-        { name: 'Fri', users: 30, revenue: 7500 },
-        { name: 'Sat', users: 25, revenue: 6800 },
-        { name: 'Sun', users: 35, revenue: 8200 },
-      ];
-      res.json(data);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const result = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const count = await users.countDocuments({ role: 'user', createdAt: { $lte: new Date(d.getFullYear(), d.getMonth() + 1, 0) } });
+        result.push({ month: months[d.getMonth()], users: count, revenue: count * 499 });
+      }
+      res.json(result);
     } catch (err) {
-      res.status(500).json({ message: 'Failed to fetch growth analytics' });
+      console.error('Growth fail:', err);
+      res.status(500).json({ message: 'Growth fail' });
+    }
+  });
+
+  app.get('/api/admin/activity', adminAuthMiddleware, async (req, res) => {
+    try {
+      const recentUsers = await users.find({ role: 'user' }).sort({ createdAt: -1 }).limit(10).toArray();
+      const activities = recentUsers.map((u: any) => ({
+        id: u._id.toString(), type: 'user', title: 'New User', description: `${u.name || u.email} joined`, timestamp: u.createdAt, color: 'bg-blue-500'
+      }));
+      res.json(activities);
+    } catch (err) {
+      console.error('Activity fail:', err);
+      res.status(500).json({ message: 'Activity fail' });
     }
   });
 
   app.get('/api/admin/users', adminAuthMiddleware, async (req, res) => {
     try {
-      const list = await users.find().sort({ createdAt: -1 }).limit(100).toArray();
-      const out = list.map((u: any) => ({
-        id: u._id.toString(),
-        name: u.name,
-        email: u.email,
-        phone: u.phone,
-        phoneVerified: !!u.phoneVerified,
-        createdAt: u.createdAt,
-      }));
-      res.json(out);
+      const list = await users.find({}).toArray();
+      res.json(list.map((u: any) => ({ id: u._id.toString(), ...u })));
     } catch (err) {
-      console.error('Admin users error:', err);
-      res.status(500).json({ message: 'Failed to fetch users' });
+      console.error('Users fail:', err);
+      res.status(500).json({ message: 'Users fail' });
     }
   });
 
   app.get('/api/admin/support/tickets', adminAuthMiddleware, async (req, res) => {
     try {
-      const list = await supportTickets.find().sort({ updatedAt: -1 }).toArray();
-      res.json(list);
+      const list = await supportTickets.find({}).sort({ updatedAt: -1 }).toArray();
+      const withUser = await Promise.all(list.map(async (t: any) => {
+        const u = await users.findOne({ _id: toId(t.userId) });
+        return { ...t, userEmail: u?.email, userName: u?.name, id: t._id.toString() };
+      }));
+      res.json(withUser);
     } catch (err) {
-      console.error('Admin tickets error:', err);
-      res.status(500).json({ message: 'Failed to fetch tickets' });
+      console.error('Tickets fail:', err);
+      res.status(500).json({ message: 'Tickets fail' });
     }
   });
 
   app.get('/api/admin/support/tickets/:id/messages', adminAuthMiddleware, async (req, res) => {
     try {
-      const ticketId = req.params.id;
-      const messages = await supportMessages.find({ ticketId }).sort({ createdAt: 1 }).toArray();
-      res.json(messages);
+      const msgs = await supportMessages.find({ ticketId: req.params.id }).sort({ createdAt: 1 }).toArray();
+      res.json(msgs);
     } catch (err) {
-      console.error('Admin messages error:', err);
-      res.status(500).json({ message: 'Failed to fetch messages' });
+      console.error('Messages fail:', err);
+      res.status(500).json({ message: 'Messages fail' });
+    }
+  });
+
+  app.post('/api/admin/support/tickets/:id/messages', adminAuthMiddleware, async (req: any, res) => {
+    try {
+      const doc = {
+        ticketId: req.params.id,
+        senderId: req.userId,
+        senderType: 'admin',
+        senderRole: 'admin',
+        content: req.body.content,
+        type: 'text',
+        status: 'sent',
+        createdAt: new Date()
+      };
+      const result = await supportMessages.insertOne(doc);
+      const savedMsg = { ...doc, _id: result.insertedId };
+      
+      await supportTickets.updateOne({ _id: toId(req.params.id) }, { $set: { updatedAt: new Date(), status: 'in_progress' } });
+      
+      // Emit to socket room
+      io.to(`ticket-${req.params.id}`).emit('new-message', savedMsg);
+      io.to(`ticket-${req.params.id}`).emit('ticket-status-update', { ticketId: req.params.id, status: 'in_progress' });
+      
+      res.json(savedMsg);
+    } catch (err) {
+      console.error('Reply fail:', err);
+      res.status(500).json({ message: 'Reply fail' });
+    }
+  });
+
+  app.patch('/api/admin/support/tickets/:id/status', adminAuthMiddleware, async (req, res) => {
+    try {
+      await supportTickets.updateOne({ _id: toId(req.params.id) }, { $set: { status: req.body.status, updatedAt: new Date() } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Status fail:', err);
+      res.status(500).json({ message: 'Status fail' });
     }
   });
 
@@ -3194,100 +3311,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Admin promo codes create error:', err);
       res.status(500).json({ message: 'Failed to create promo code' });
     }
-  });
-
-  const httpServer = createServer(app);
-
-  // Initialize Socket.IO
-  const io = new SocketServer(httpServer, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
-    }
-  });
-
-  // --- Socket.IO Handlers ---
-  io.on('connection', (socket: any) => {
-    console.log('Socket client connected:', socket.id);
-
-    socket.on('join-ticket', (ticketId: string) => {
-      socket.join(`ticket-${ticketId}`);
-      console.log(`Socket ${socket.id} joined ticket room: ticket-${ticketId}`);
-    });
-
-    socket.on('send-message', async (data: { ticketId: string; userId: string; content: string; senderType: 'user' | 'admin' }) => {
-      try {
-        const { ticketId, userId, content, senderType } = data;
-        
-        const message = {
-          ticketId,
-          senderId: userId,
-          senderType,
-          content,
-          type: 'text',
-          status: 'sent',
-          createdAt: new Date(),
-        };
-
-        const result = await (supportMessages as any).insertOne(message);
-        const savedMessage = { ...message, _id: (result as any).insertedId };
-
-        // Update ticket's lastMessageAt and transition status if admin
-        const updateData: any = { lastMessageAt: new Date(), updatedAt: new Date() };
-        if (senderType === 'admin') {
-          updateData.status = 'in_progress';
-        }
-
-        await (supportTickets as any).updateOne(
-          { _id: toId(ticketId) },
-          { $set: updateData }
-        );
-
-        // Broadcast to the room
-        io.to(`ticket-${ticketId}`).emit('new-message', savedMessage);
-        
-        // If status changed, emit status update
-        if (senderType === 'admin') {
-           io.to(`ticket-${ticketId}`).emit('ticket-status-update', { ticketId, status: 'in_progress' });
-        }
-      } catch (err) {
-        console.error('Socket send-message error:', err);
-      }
-    });
-
-    socket.on('message-delivered', async (data: { ticketId: string; messageId: string }) => {
-      try {
-        const { ticketId, messageId } = data;
-        await (supportMessages as any).updateOne(
-          { _id: toId(messageId), status: 'sent' },
-          { $set: { status: 'delivered' } }
-        );
-        io.to(`ticket-${ticketId}`).emit('message-status-update', { messageId, status: 'delivered' });
-      } catch (err) {
-        console.error('Socket message-delivered error:', err);
-      }
-    });
-
-    socket.on('message-read', async (data: { ticketId: string; messageId: string }) => {
-      try {
-        const { ticketId, messageId } = data;
-        await (supportMessages as any).updateOne(
-          { _id: toId(messageId), status: { $in: ['sent', 'delivered'] } },
-          { $set: { status: 'read' } }
-        );
-        io.to(`ticket-${ticketId}`).emit('message-status-update', { messageId, status: 'read' });
-      } catch (err) {
-        console.error('Socket message-read error:', err);
-      }
-    });
-
-    socket.on('typing', (data: { ticketId: string; userId: string; isTyping: boolean; senderType: 'user' | 'admin' }) => {
-      socket.to(`ticket-${data.ticketId}`).emit('typing-status', data);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('Socket client disconnected:', socket.id);
-    });
   });
 
   return httpServer;

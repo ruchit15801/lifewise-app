@@ -10,14 +10,28 @@ import { getApiUrl } from './query-client';
 const SMS_SYNC_TASK = 'SMS_SYNC_TASK';
 const LAST_SYNC_TIMESTAMP_KEY = 'last_sms_sync_timestamp';
 
+export type SmsSyncPhase = 'idle' | 'fetching' | 'parsing' | 'uploading' | 'completed' | 'error';
+
+export interface SmsSyncProgress {
+  phase: SmsSyncPhase;
+  current?: number;
+  total?: number;
+  synced?: number;
+  skipped?: number;
+}
+
 /**
  * Core logic for syncing SMS. 
  * Can be called from foreground (ExpenseContext) or background (TaskManager).
  */
-export async function performSmsSync(token: string) {
+export async function performSmsSync(
+  token: string, 
+  onProgress?: (progress: SmsSyncProgress) => void
+) {
   if (Platform.OS !== 'android' || !token) return { success: false, synced: 0 };
 
   try {
+    onProgress?.({ phase: 'fetching' });
     const lastSyncStr = await AsyncStorage.getItem(LAST_SYNC_TIMESTAMP_KEY);
     const lastSyncTime = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
     
@@ -31,11 +45,19 @@ export async function performSmsSync(token: string) {
       return d > lastSyncTime;
     });
 
-    if (newSms.length === 0) return { success: true, synced: 0 };
+    if (newSms.length === 0) {
+      onProgress?.({ phase: 'completed', synced: 0, skipped: 0 });
+      return { success: true, synced: 0 };
+    }
 
+    onProgress?.({ phase: 'parsing', total: newSms.length });
     const parsed = parseSmsToTransactions(newSms);
-    if (parsed.length === 0) return { success: true, synced: 0 };
+    if (parsed.length === 0) {
+      onProgress?.({ phase: 'completed', synced: 0, skipped: 0 });
+      return { success: true, synced: 0 };
+    }
 
+    onProgress?.({ phase: 'uploading', current: parsed.length, total: parsed.length });
     // Send to backend
     const API_URL = getApiUrl();
     const res = await fetch(`${API_URL}/api/transactions/sync-from-sms`, {
@@ -51,12 +73,15 @@ export async function performSmsSync(token: string) {
       const latestSmsTime = Math.max(...newSms.map(s => typeof s.date === 'number' ? s.date : (s.date ? new Date(s.date).getTime() : 0)));
       await AsyncStorage.setItem(LAST_SYNC_TIMESTAMP_KEY, String(latestSmsTime));
       const json = await res.json();
+      onProgress?.({ phase: 'completed', synced: json.synced, skipped: json.skipped });
       return { success: true, synced: json.synced, skipped: json.skipped };
     }
     
+    onProgress?.({ phase: 'error' });
     return { success: false, synced: 0 };
   } catch (err) {
     console.error('[BackgroundSync] Error:', err);
+    onProgress?.({ phase: 'error' });
     return { success: false, synced: 0 };
   }
 }

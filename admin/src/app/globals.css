@@ -2,29 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 31, 41, 55;
-  --background-start-rgb: 249, 250, 251;
-  --background-end-rgb: 255, 255, 255;
-}
+@layer base {
+  :root {
+    --primary-main: 37, 99, 235; /* #2563eb */
+    --primary-light: 239, 246, 255;
+    
+    --foreground-rgb: 15, 23, 42;
+    --background-start-rgb: 248, 250, 252;
+    --background-end-rgb: 255, 255, 255;
+  }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-  min-height: 100vh;
+  body {
+    color: rgb(var(--foreground-rgb));
+    background: linear-gradient(
+        to bottom,
+        transparent,
+        rgb(var(--background-end-rgb))
+      )
+      rgb(var(--background-start-rgb));
+    @apply antialiased selection:bg-blue-100 selection:text-blue-900;
+  }
 }
 
 @layer components {
   .glass-card {
-    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl rounded-2xl;
+    @apply bg-white border border-gray-100 shadow-sm rounded-3xl transition-all duration-300;
   }
   
-  .glass-button {
-    @apply bg-primary-600/90 hover:bg-primary-600 backdrop-blur-sm text-white px-6 py-2 rounded-xl transition-all active:scale-95 shadow-lg shadow-primary-600/20;
+  .glass-card-hover {
+    @apply hover:shadow-xl hover:shadow-gray-200/50 hover:translate-y-[-4px];
   }
+
+  .premium-input {
+    @apply w-full bg-gray-50/50 border border-gray-100 rounded-xl px-4 py-3 text-sm font-semibold 
+           text-gray-900 placeholder:text-gray-400 outline-none transition-all 
+           focus:bg-white focus:border-primary-600 focus:ring-4 focus:ring-primary-600/5;
+  }
+
+  .premium-button {
+    @apply bg-primary-600 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest
+           transition-all duration-200 hover:bg-primary-700 hover:shadow-xl hover:shadow-primary-600/30
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .premium-button-ghost {
+    @apply bg-white border border-gray-100 text-gray-500 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest
+           transition-all duration-200 hover:bg-gray-50 hover:text-gray-900 shadow-sm active:scale-95;
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  @apply w-1.5;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-200 rounded-full hover:bg-gray-300 transition-colors;
 }

@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
+import MainLayout from "@/components/MainLayout";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { 
   Search, 
   Filter, 
@@ -16,6 +18,7 @@ import {
   ExternalLink,
   Trash2
 } from "lucide-react";
+import { getApiUrl } from "@/lib/api-config";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -25,7 +28,7 @@ export default function UsersPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const res = await fetch("/api/admin/users", {
+        const res = await fetch(getApiUrl("/api/admin/users"), {
           headers: {
             "Authorization": `Bearer ${localStorage.getItem("admin_token")}`
           }
@@ -45,7 +48,7 @@ export default function UsersPage() {
   const handleStatusUpdate = async (userId: string, newStatus: string) => {
     if (!confirm(`Are you sure you want to change this user's status to ${newStatus}?`)) return;
     try {
-      const res = await fetch(`/api/admin/users/${userId}/status`, {
+      const res = await fetch(getApiUrl(`/api/admin/users/${userId}/status`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -64,7 +67,7 @@ export default function UsersPage() {
   const handleDelete = async (userId: string) => {
     if (!confirm("CRITICAL: Are you sure you want to PERMANENTLY delete this user? This action cannot be undone.")) return;
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
+      const res = await fetch(getApiUrl(`/api/admin/users/${userId}`), {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${localStorage.getItem("admin_token")}`
@@ -84,10 +87,8 @@ export default function UsersPage() {
   );
 
   return (
-    <div className="flex min-h-screen bg-[#F9FAFB]">
-      <Sidebar />
-      
-      <main className="flex-1 ml-72 p-10">
+    <MainLayout>
+      <main className="p-10">
         <header className="flex items-center justify-between mb-10">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 tracking-tight">User Management</h1>
@@ -145,7 +146,7 @@ export default function UsersPage() {
                 ) : (
                   filteredUsers.map((user, idx) => (
                     <motion.tr 
-                      key={user.id}
+                      key={user._id || user.id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: idx * 0.05 }}
@@ -158,7 +159,7 @@ export default function UsersPage() {
                           </div>
                           <div>
                             <p className="font-bold text-gray-900">{user.name || "Anonymous User"}</p>
-                            <p className="text-xs text-gray-400 mt-0.5 font-mono">ID: {user.id.slice(0, 8)}...</p>
+                            <p className="text-xs text-gray-400 mt-0.5 font-mono">ID: {(user.id || user._id || "").slice(0, 8)}...</p>
                           </div>
                         </div>
                       </td>
@@ -201,22 +202,26 @@ export default function UsersPage() {
                       <td className="px-6 py-5 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
-                            onClick={() => handleStatusUpdate(user.id, user.status === 'blocked' ? 'active' : 'blocked')}
+                            onClick={() => handleStatusUpdate((user.id || user._id), user.status === 'blocked' ? 'active' : 'blocked')}
                             className={`p-2 rounded-lg border border-transparent transition-all ${user.status === 'blocked' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-600 hover:bg-amber-50'}`}
                             title={user.status === 'blocked' ? 'Unblock Participant' : 'Block Participant'}
                           >
                             <XCircle className="w-4 h-4" />
                           </button>
                           <button 
-                            onClick={() => handleDelete(user.id)}
+                            onClick={() => handleDelete((user.id || user._id))}
                             className="p-2 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
                             title="Permanent Deletion"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                          <button className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 text-gray-400 hover:text-primary-600 transition-all">
+                          <Link 
+                            href={`/users/${user.id || user._id}`}
+                            className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 text-gray-400 hover:text-primary-600 transition-all"
+                            title="Deep Insights"
+                          >
                             <ExternalLink className="w-4 h-4" />
-                          </button>
+                          </Link>
                         </div>
                       </td>
                     </motion.tr>
@@ -235,6 +240,6 @@ export default function UsersPage() {
           </div>
         </section>
       </main>
-    </div>
+    </MainLayout>
   );
 }
