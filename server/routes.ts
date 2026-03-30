@@ -3203,53 +3203,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ----- Admin API -----
   app.get('/api/admin/stats', adminAuthMiddleware, async (req, res) => {
     try {
-      const uCount = await users.countDocuments({ role: 'user' });
-      const tCount = await transactions.countDocuments({});
-      const openTkts = await supportTickets.countDocuments({ status: 'active' });
-      res.json({ users: uCount, transactions: tCount, openTickets: openTkts, volume: tCount * 100 });
+      const usersCount = await users.countDocuments();
+      const openTicketsCount = await supportTickets.countDocuments();
+      const txCount = await transactions.countDocuments();
+      
+      const volumeData = await transactions.aggregate([
+        { $match: { isDebit: false } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]).toArray();
+      const volume = volumeData[0]?.total || 0;
+
+      res.json({ users: usersCount, openTickets: openTicketsCount, transactions: txCount, volume });
     } catch (err) {
-      console.error('Stats fail:', err);
-      res.status(500).json({ message: 'Stats fail' });
+      console.error('Stats error:', err);
+      res.status(500).json({ message: 'Failed to fetch stats' });
     }
   });
 
   app.get('/api/admin/analytics/growth', adminAuthMiddleware, async (req, res) => {
     try {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const result = [];
       const now = new Date();
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const count = await users.countDocuments({ role: 'user', createdAt: { $lte: new Date(d.getFullYear(), d.getMonth() + 1, 0) } });
-        result.push({ month: months[d.getMonth()], users: count, revenue: count * 499 });
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const startOfDay = new Date(d);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(d);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        const uCount = await users.countDocuments({ createdAt: { $lte: endOfDay } });
+        
+        const txs = await transactions.aggregate([
+          { $match: { isDebit: false, date: { $gte: startOfDay.toISOString(), $lte: endOfDay.toISOString() } } },
+          { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]).toArray();
+        const revenue = txs[0]?.total || 0;
+        
+        result.push({
+          name: d.toLocaleDateString('en-US', { weekday: 'short' }),
+          users: uCount,
+          revenue: revenue
+        });
       }
       res.json(result);
     } catch (err) {
-      console.error('Growth fail:', err);
-      res.status(500).json({ message: 'Growth fail' });
+      console.error('Growth error:', err);
+      res.status(500).json({ message: 'Failed to fetch growth' });
     }
   });
 
   app.get('/api/admin/activity', adminAuthMiddleware, async (req, res) => {
     try {
-      const recentUsers = await users.find({ role: 'user' }).sort({ createdAt: -1 }).limit(10).toArray();
-      const activities = recentUsers.map((u: any) => ({
-        id: u._id.toString(), type: 'user', title: 'New User', description: `${u.name || u.email} joined`, timestamp: u.createdAt, color: 'bg-blue-500'
-      }));
-      res.json(activities);
+      const latestUsers = await users.find().sort({ createdAt: -1 }).limit(5).toArray();
+      const latestTickets = await supportTickets.find().sort({ createdAt: -1 }).limit(5).toArray();
+      
+      const activities: any[] = [
+        ...latestUsers.map((u: any) => ({
+          id: `usr_${u._id}`,
+          title: 'New User Registration',
+          description: `${u.name || u.email} joined`,
+          color: 'bg-blue-500',
+          timestamp: u.createdAt || new Date()
+        })),
+        ...latestTickets.map((t: any) => ({
+          id: `tkt_${t._id}`,
+          title: 'New Ticket Created',
+          description: t.subject || 'Support Request',
+          color: 'bg-rose-500',
+          timestamp: t.createdAt || new Date()
+        }))
+      ];
+      
+      activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      res.json(activities.slice(0, 8));
     } catch (err) {
-      console.error('Activity fail:', err);
-      res.status(500).json({ message: 'Activity fail' });
+      res.status(500).json({ message: 'Failed to fetch activity' });
     }
   });
 
   app.get('/api/admin/users', adminAuthMiddleware, async (req, res) => {
     try {
-      const list = await users.find({}).toArray();
+      const list = await users.find({}).sort({ createdAt: -1 }).toArray();
       res.json(list.map((u: any) => ({ id: u._id.toString(), ...u })));
     } catch (err) {
-      console.error('Users fail:', err);
-      res.status(500).json({ message: 'Users fail' });
+      console.error('Admin users error:', err);
+      res.status(500).json({ message: 'Failed to fetch users' });
+    }
+  });
+
+  app.get('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
+    try {
+      const user = await users.findOne({ _id: toId(req.params.id) });
+      res.json(user);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to fetch user' });
+    }
+  });
+
+  app.put('/api/admin/users/:id/status', adminAuthMiddleware, async (req, res) => {
+    try {
+      const { status } = req.body;
+      await users.updateOne({ _id: toId(req.params.id) }, { $set: { status, updatedAt: new Date() } });
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to update user status' });
+    }
+  });
+
+  app.delete('/api/admin/users/:id', adminAuthMiddleware, async (req, res) => {
+    try {
+      await users.deleteOne({ _id: toId(req.params.id) });
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to delete user' });
+    }
+  });
+
+  app.get('/api/admin/users/:id/activity', adminAuthMiddleware, async (req, res) => {
+    try {
+      const txs = await transactions.find({ userId: req.params.id }).limit(10).toArray();
+      res.json(txs);
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to fetch user activity' });
     }
   });
 
@@ -3294,7 +3370,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       await supportTickets.updateOne({ _id: toId(req.params.id) }, { $set: { updatedAt: new Date(), status: 'in_progress' } });
       
-      // Emit to socket room
       io.to(`ticket-${req.params.id}`).emit('new-message', savedMsg);
       io.to(`ticket-${req.params.id}`).emit('ticket-status-update', { ticketId: req.params.id, status: 'in_progress' });
       
@@ -3315,7 +3390,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ----- Plans API -----
   app.get('/api/admin/plans', adminAuthMiddleware, async (req, res) => {
     try {
       const list = await plans.find().sort({ price: 1 }).toArray();
@@ -3337,7 +3411,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ----- Promo Codes API -----
   app.get('/api/admin/promo-codes', adminAuthMiddleware, async (req, res) => {
     try {
       const list = await promoCodes.find().sort({ createdAt: -1 }).toArray();
@@ -3356,6 +3429,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error('Admin promo codes create error:', err);
       res.status(500).json({ message: 'Failed to create promo code' });
+    }
+  });
+
+  app.get('/api/admin/system-settings', adminAuthMiddleware, async (req, res) => {
+    try {
+      let settings = await systemSettings.findOne({});
+      res.json(settings || {});
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to fetch settings' });
+    }
+  });
+
+  app.post('/api/admin/system-settings', adminAuthMiddleware, async (req, res) => {
+    try {
+      await systemSettings.updateOne({}, { $set: req.body }, { upsert: true });
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to update settings' });
     }
   });
 

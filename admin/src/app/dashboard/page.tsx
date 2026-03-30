@@ -45,14 +45,14 @@ export default function Dashboard() {
         ]);
 
         const [statsData, growthData, activityData] = await Promise.all([
-          statsRes.json(),
-          growthRes.json(),
-          activityRes.json()
+          statsRes.json().catch(() => ({})),
+          growthRes.json().catch(() => []),
+          activityRes.json().catch(() => [])
         ]);
 
-        setStats(statsData);
-        setGrowth(growthData);
-        setActivities(activityData);
+        setStats(statsData?.message ? null : statsData);
+        setGrowth(Array.isArray(growthData) ? growthData : []);
+        setActivities(Array.isArray(activityData) ? activityData : []);
       } catch (err) {
         console.error("Failed to fetch dashboard data", err);
       } finally {
