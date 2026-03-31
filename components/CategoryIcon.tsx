@@ -23,12 +23,12 @@ interface CategoryIconProps {
 
 const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
 
-export default function CategoryIcon({ 
+const CategoryIcon = React.memo(({ 
   category, 
   size = 24, 
   color, 
   animate = true 
-}: CategoryIconProps): React.ReactElement {
+}: CategoryIconProps): React.ReactElement => {
   const safeCategory = (category || 'others').toLowerCase() as CategoryType;
   const catData = CATEGORIES[safeCategory] || CATEGORIES.others;
   const iconName = catData.icon;
@@ -219,7 +219,9 @@ export default function CategoryIcon({
       />
     </Animated.View>
   );
-}
+});
+
+export default CategoryIcon;
 
 const styles = StyleSheet.create({
   container: {

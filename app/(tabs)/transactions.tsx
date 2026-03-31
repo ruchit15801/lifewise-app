@@ -45,7 +45,7 @@ const FILTER_OPTIONS: { key: string; label: string; icon?: string }[] = [
   { key: 'others', label: 'Others', icon: 'ellipsis-horizontal' },
 ];
 
-function TransactionItem({ item, colors, isDark, formatAmount, isSeniorMode }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
+const TransactionItem = React.memo(({ item, colors, isDark, formatAmount, isSeniorMode }: { item: Transaction; colors: ThemeColors; isDark: boolean; formatAmount: (n: number) => string; isSeniorMode: boolean }) => {
   const safeCat = (item.category || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
@@ -80,7 +80,7 @@ function TransactionItem({ item, colors, isDark, formatAmount, isSeniorMode }: {
       </View>
     </View>
   );
-}
+});
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();

@@ -95,9 +95,9 @@ const ringStyles = StyleSheet.create({
   scoreLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 8, letterSpacing: 1.5 },
 });
 
-function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors, isSeniorMode }: {
+const InsightCard = React.memo(({ icon, iconColor, bgColor, title, value, subtitle, colors, isSeniorMode }: {
   icon: string; iconColor: string; bgColor: string; title: string; value: string; subtitle: string; colors: any; isSeniorMode: boolean;
-}) {
+}) => {
   return (
     <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }, isSeniorMode && { padding: 20, minHeight: 140 }]}>
       <View style={[styles.insightIconWrap, { backgroundColor: bgColor }, isSeniorMode && { width: 44, height: 44, borderRadius: 16 }]}>
@@ -108,9 +108,9 @@ function InsightCard({ icon, iconColor, bgColor, title, value, subtitle, colors,
       <Text style={[styles.insightSubtitle, { color: colors.textTertiary }, isSeniorMode && { fontSize: 12 }]}>{subtitle}</Text>
     </View>
   );
-}
+});
 
-function CategoryPill({ category, total, index, colors, formatAmount, isSeniorMode }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
+const CategoryPill = React.memo(({ category, total, index, colors, formatAmount, isSeniorMode }: { category: CategoryType; total: number; index: number; colors: any; formatAmount: (n: number) => string; isSeniorMode: boolean }) => {
   const safeCat = (category || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
@@ -126,9 +126,9 @@ function CategoryPill({ category, total, index, colors, formatAmount, isSeniorMo
       </View>
     </Animated.View>
   );
-}
+});
 
-function TransactionRow({ merchant, amount, category, date, colors, formatAmount, isSeniorMode }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string; isSeniorMode: boolean }) {
+const TransactionRow = React.memo(({ merchant, amount, category, date, colors, formatAmount, isSeniorMode }: { merchant: string; amount: number; category: CategoryType; date: string; colors: any; formatAmount: (n: number) => string; isSeniorMode: boolean }) => {
   const safeCat = (category || 'others').toLowerCase() as CategoryType;
   const cat = CATEGORIES[safeCat] || CATEGORIES.others;
   return (
@@ -143,7 +143,7 @@ function TransactionRow({ merchant, amount, category, date, colors, formatAmount
       <Text style={[styles.txAmount, { color: colors.text }, isSeniorMode && { fontSize: 16 }]}>- {formatAmount(amount)}</Text>
     </View>
   );
-}
+});
 
 import { SmsSyncPhase } from '@/lib/sms-sync-task';
 
@@ -630,21 +630,18 @@ export default function HomeScreen() {
     }
   }, [refreshData, syncSmsFromDevice, isSyncingSms]);
 
-  useEffect(() => {
-    const run = async () => {
-      try {
-        const res = await apiRequest('GET', '/api/notifications', undefined, token);
-        const json = (await res.json()) as { id: string; read: boolean }[];
-        const count = json.filter((n) => !n.read).length;
-        setUnreadCount(count);
-      } catch {
-        // ignore
-      }
-    };
-    if (token) {
-      run();
-    }
+  const fetchUnreadCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await apiRequest('GET', '/api/notifications', undefined, token);
+      const json = (await res.json()) as { id: string; read: boolean }[];
+      setUnreadCount(json.filter((n) => !n.read).length);
+    } catch { /* ignore */ }
   }, [token]);
+
+  useEffect(() => {
+    fetchUnreadCount();
+  }, [fetchUnreadCount]);
 
   // Removed local seniorMode effect (using global context)
 
@@ -728,13 +725,13 @@ export default function HomeScreen() {
     })
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
-  const showComingSoon = () => {
+  const showComingSoon = useCallback(() => {
     showAlert({
       title: 'Coming Soon',
       message: 'This feature will be available in a future update.',
       type: 'info',
     });
-  };
+  }, [showAlert]);
 
   if (isSeniorMode) {
     return (
