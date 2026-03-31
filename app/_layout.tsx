@@ -161,7 +161,7 @@ function AuthGate() {
     let sub: { remove: () => void } | null = null;
     (async () => {
       const nextSub = await addPushTokenListener((newToken) => {
-        if (__DEV__) console.log("[Push] Token refreshed:", newToken);
+        // if (__DEV__) console.log("[Push] Token refreshed:", newToken);
         registerForPushNotifications(token);
       });
       sub = nextSub;

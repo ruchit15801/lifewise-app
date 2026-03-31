@@ -654,45 +654,67 @@ export default function HomeScreen() {
 
   // Never show a full-screen sync animation; we use a compact top banner instead.
 
-  const todaySpend = getTodaySpending(transactions);
-  const monthlySpend = getMonthlySpending(transactions);
-  const budgetUsed = monthlyBudget > 0 ? (monthlySpend / monthlyBudget) * 100 : 0;
-  const budgetBarWidth = Math.min(budgetUsed, 100);
+  const { monthlySpend, todaySpend, categoryTotals, budgetUsed, budgetBarWidth, budgetHealthScore } = useMemo(() => {
+    const monthly = getMonthlySpending(transactions);
+    const today = getTodaySpending(transactions);
+    const used = monthlyBudget > 0 ? (monthly / monthlyBudget) * 100 : 0;
+    const barWidth = Math.min(used, 100);
 
-  const categoryTotals: Partial<Record<CategoryType, number>> = {};
-  transactions.forEach(tx => {
-    if (tx.isDebit) {
-      const cat = (tx.category || 'others').toLowerCase() as CategoryType;
-      const safeCat = CATEGORIES[cat] ? cat : 'others';
-      categoryTotals[safeCat] = (categoryTotals[safeCat] || 0) + tx.amount;
-    }
-  });
-  const sortedCategories = Object.entries(categoryTotals)
-    .sort(([, a], [, b]) => (b as number) - (a as number))
-    .slice(0, 6);
+    const catTotals: Partial<Record<CategoryType, number>> = {};
+    const now = new Date();
+    const currM = now.getMonth();
+    const currY = now.getFullYear();
 
-  const recentTxs = transactions.slice(0, 5);
-  const unpaidBills = bills.filter(b => b.status !== 'paid' && !b.isPaid).length;
-  const totalLeakAmount = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
+    transactions.forEach(tx => {
+      if (tx.isDebit) {
+        const d = new Date(tx.date);
+        // Only include this month's transactions in category breakdown for Home page
+        if (d.getMonth() === currM && d.getFullYear() === currY) {
+          const cat = (tx.category || 'others').toLowerCase() as CategoryType;
+          const safeCat = CATEGORIES[cat] ? cat : 'others';
+          catTotals[safeCat] = (catTotals[safeCat] || 0) + tx.amount;
+        }
+      }
+    });
+
+    const billsPaidRatioValue = bills.length > 0 ? bills.filter(b => b.status === 'paid' || b.isPaid).length / bills.length : 0;
+    const totalLeakAmt = leaks.reduce((s, l) => s + l.monthlyEstimate, 0);
+    const hasAct = transactions.length > 0 || bills.length > 0 || leaks.length > 0;
+
+    let healthScore = hasAct ? Math.round(
+      Math.max(0, Math.min(100, 100 - used)) * 0.5 +
+      (bills.length > 0 ? billsPaidRatioValue * 100 : 100) * 0.3 +
+      (leaks.length > 0 ? (totalLeakAmt < 1000 ? 100 : totalLeakAmt < 3000 ? 50 : 0) : 100) * 0.2
+    ) : 0;
+
+    return {
+      monthlySpend: monthly,
+      todaySpend: today,
+      categoryTotals: catTotals,
+      budgetUsed: used,
+      budgetBarWidth: barWidth,
+      budgetHealthScore: healthScore
+    };
+  }, [transactions, monthlyBudget, bills, leaks]);
+
+  const sortedCategories = useMemo(() => 
+    Object.entries(categoryTotals)
+      .sort(([, a], [, b]) => (b as number) - (a as number))
+      .slice(0, 6),
+    [categoryTotals]
+  );
+
+  const recentTxs = useMemo(() => transactions.slice(0, 5), [transactions]);
+  const unpaidBills = useMemo(() => bills.filter(b => b.status !== 'paid' && !b.isPaid).length, [bills]);
+  const totalLeakAmount = useMemo(() => leaks.reduce((s, l) => s + l.monthlyEstimate, 0), [leaks]);
   const userName = user?.name?.split(' ')[0] || 'User';
 
   const billsPaidRatio = useMemo(() => bills.length > 0 ? bills.filter(b => b.status === 'paid' || b.isPaid).length / bills.length : 0, [bills]);
   const hasActivity = useMemo(() => transactions.length > 0 || bills.length > 0 || leaks.length > 0, [transactions, bills, leaks]);
 
-  let budgetHealthScore = useMemo(() => hasActivity ? Math.round(
-    Math.max(0, Math.min(100, 100 - budgetUsed)) * 0.5 +
-    (bills.length > 0 ? billsPaidRatio * 100 : 100) * 0.3 +
-    (leaks.length > 0 ? (totalLeakAmount < 1000 ? 100 : totalLeakAmount < 3000 ? 50 : 0) : 100) * 0.2
-  ) : 0, [hasActivity, budgetUsed, bills.length, billsPaidRatio, leaks.length, totalLeakAmount]);
-
   // Life Score from backend (high precision)
   const officialLifeScore = lifeScore?.score ?? 85;
   const displayScore = lifeScore != null ? lifeScore.score : budgetHealthScore;
-
-  // Clean up displayScore for initial state
-  if (!hasActivity && lifeScore == null) {
-    budgetHealthScore = 0;
-  }
 
   const nowDay = new Date();
   nowDay.setHours(0, 0, 0, 0);

@@ -15,6 +15,7 @@
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "android": "expo run:android",
+    "android:bundle": "npx expo export:embed --platform android --dev false --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/assets",
     "ios": "expo run:ios"
   },
   "dependencies": {

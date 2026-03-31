@@ -108,12 +108,12 @@ export default function TransactionsScreen() {
     return Object.entries(grouped).map(([title, data]) => ({
       title,
       data,
-      total: data.reduce((s, tx) => s + tx.amount, 0),
+      total: data.filter(tx => tx.isDebit).reduce((s, tx) => s + tx.amount, 0),
     }));
   }, [filtered]);
 
-  const totalFiltered = filtered.reduce((s, tx) => s + tx.amount, 0);
-  const txCount = filtered.length;
+  const totalFiltered = filtered.filter(tx => tx.isDebit).reduce((s, tx) => s + tx.amount, 0);
+  const txCount = filtered.filter(tx => tx.isDebit).length;
 
   if (isLoading) {
     return (

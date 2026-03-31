@@ -110,7 +110,10 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         fetchWithAuth(token, '/api/settings'),
       ]);
 
-      if (txRes.ok) setTransactions(await txRes.json());
+      if (txRes.ok) {
+        const data = await txRes.json();
+        setTransactions(data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      }
       else setTransactions([]);
       if (billsRes.ok) setBills(await billsRes.json());
       else setBills([]);

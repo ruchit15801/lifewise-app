@@ -8,6 +8,7 @@ function isExpoGo() {
 }
 
 let handlerConfigured = false;
+let lastRegisteredToken: string | null = null;
 
 async function getNotificationsModule() {
   // Expo Go (especially Android, SDK 53+) no longer supports expo-notifications
@@ -71,9 +72,14 @@ export async function registerForPushNotifications(token: string | null) {
   }
 
   const expoToken = (await Notifications.getExpoPushTokenAsync()).data;
-  console.log("FCM Token:", expoToken);
+  // console.log("FCM Token:", expoToken);
 
   if (!token) {
+    return expoToken;
+  }
+
+  // If we've already registered this exact token in this session, skip the network request
+  if (lastRegisteredToken === expoToken) {
     return expoToken;
   }
 
@@ -81,7 +87,7 @@ export async function registerForPushNotifications(token: string | null) {
     const baseUrl = getApiUrl();
     const url = new URL('/api/push-token', baseUrl).toString();
 
-    await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -92,6 +98,10 @@ export async function registerForPushNotifications(token: string | null) {
         platform: Platform.OS === 'android' ? 'android' : Platform.OS === 'ios' ? 'ios' : 'web',
       }),
     });
+
+    if (response.ok) {
+      lastRegisteredToken = expoToken;
+    }
   } catch (e) {
     console.log('[Push] Failed to register push token', e);
   }

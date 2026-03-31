@@ -8,19 +8,33 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * On physical device use your computer's IP e.g. 192.168.1.5:5001
  */
 export function getApiUrl(): string {
-  let host =
+  const host =
     process.env.EXPO_PUBLIC_DOMAIN ||
     process.env.EXPO_PUBLIC_API_URL ||
-    "127.0.0.1:5001";
+    "api.lifewiseee.com"; // Default to production domain
 
-  host = host.replace(/^https?:\/\//, "").split("/")[0];
-  const isLocal =
-    host.includes("localhost") ||
-    host.includes("127.0.0.1") ||
-    host.includes("10.0.2.2") ||
-    /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(host);
-  const url = new URL(isLocal ? `http://${host}` : `https://${host}`);
-  return url.href.replace(/\/$/, "");
+  try {
+    // 1. Clean the host of any protocol or trailing paths
+    const cleanedHost = host.replace(/^https?:\/\//, "").split("/")[0];
+    
+    if (!cleanedHost) {
+      return "https://api.lifewiseee.com";
+    }
+
+    // 2. Identify if it's a local address
+    const isLocal =
+      cleanedHost.includes("localhost") ||
+      cleanedHost.includes("127.0.0.1") ||
+      cleanedHost.includes("10.0.2.2") ||
+      /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(cleanedHost);
+
+    // 3. Construct the final URL securely
+    const url = new URL(isLocal ? `http://${cleanedHost}` : `https://${cleanedHost}`);
+    return url.href.replace(/\/$/, "");
+  } catch (error) {
+    console.error("[getApiUrl] Failed to parse API URL, using fallback:", error);
+    return "https://api.lifewiseee.com";
+  }
 }
 
 async function throwIfResNotOk(res: Response) {

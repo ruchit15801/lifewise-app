@@ -234,11 +234,47 @@ function setupErrorHandler(app: express.Application) {
   setupBodyParsing(app);
   setupRequestLogging(app);
 
+  app.post('/api/notifications/mark-read-all', (req, res, next) => {
+    // We need MongoDB for this, so we rely on the connection.
+    // However, this route will be defined here for priority.
+    next();
+  });
+
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
 
   setupErrorHandler(app);
+
+  app.post('/api/notifications/mark-read-all', async (req, res) => {
+    try {
+      const auth = req.headers.authorization;
+      if (!auth || !auth.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      const { getDb } = require('./db/mongodb');
+      const jwt = require('jsonwebtoken');
+      const JWT_SECRET = process.env.JWT_SECRET || 'lifewise-secret-change-in-production';
+      
+      const token = auth.slice(7);
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const userId = decoded.userId;
+      
+      const db = getDb();
+      if (!db) return res.status(500).json({ message: 'DB not connected' });
+      
+      const result = await db.collection('notifications').updateMany(
+        { userId, read: false },
+        { $set: { read: true } }
+      );
+      
+      return res.json({ updated: result.modifiedCount || 0 });
+    } catch (err) {
+      console.error('Mark all read error:', err);
+      return res.status(500).json({ message: 'Internal error' });
+    }
+  });
 
   const port = parseInt(process.env.SERVER_PORT || process.env.PORT || "5001", 10);
   const tryHost = process.env.HOST || "0.0.0.0";
