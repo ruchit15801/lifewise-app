@@ -701,7 +701,16 @@ export default function HomeScreen() {
     [categoryTotals]
   );
 
-  const recentTxs = useMemo(() => transactions.slice(0, 5), [transactions]);
+    const currM = new Date().getMonth();
+    const currY = new Date().getFullYear();
+    const recentTxs = useMemo(() => {
+      return transactions
+        .filter(tx => {
+          const d = new Date(tx.date);
+          return d.getMonth() === currM && d.getFullYear() === currY;
+        })
+        .slice(0, 5);
+    }, [transactions, currM, currY]);
   const unpaidBills = useMemo(() => bills.filter(b => b.status !== 'paid' && !b.isPaid).length, [bills]);
   const totalLeakAmount = useMemo(() => leaks.reduce((s, l) => s + l.monthlyEstimate, 0), [leaks]);
   const userName = user?.name?.split(' ')[0] || 'User';
@@ -1581,9 +1590,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
   },
   primaryCircleInnerWhiteBorder: {
     position: 'absolute',
@@ -1794,10 +1800,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 12,
     overflow: 'hidden',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   mustMinimalContent: {
     height: 48,

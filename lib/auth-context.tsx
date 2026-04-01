@@ -48,18 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   WebBrowser.maybeCompleteAuthSession();
 
-  const [googleRequest, googleResponse, googlePromptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: '152932967230-k3cofknaqa0iompfilk3q69novnpg169.apps.googleusercontent.com',
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri: 'https://auth.expo.io/@sdfsdf12/lifewise',
-      responseType: AuthSession.ResponseType.IdToken,
-    },
-    {
-      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-      tokenEndpoint: 'https://oauth2.googleapis.com/token',
-    }
-  );
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    androidClientId: '152932967230-0v78v9m0i8r4o0v9r7v9r7v9.apps.googleusercontent.com', // Placeholder for Android
+    iosClientId: '152932967230-0v78v9m0i8r4o0v9r7v9r7v9.apps.googleusercontent.com', // Placeholder for iOS
+    clientId: '152932967230-k3cofknaqa0iompfilk3q69novnpg169.apps.googleusercontent.com',
+    scopes: ['openid', 'profile', 'email'],
+    responseType: AuthSession.ResponseType.IdToken,
+  });
 
   useEffect(() => {
     if (googleRequest) {

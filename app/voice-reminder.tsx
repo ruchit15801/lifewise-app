@@ -669,12 +669,7 @@ export default function VoiceReminderScreen() {
     : null;
 
   return (
-    <LinearGradient
-      colors={["#F5F3FF", "#E0F2FE", "#FDF2F8"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <View style={[styles.container, { backgroundColor: '#F9FAFB' }]}>
       <View style={[styles.header, { paddingTop: headerTop }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} disabled={!canInteract}>
           <Text style={[styles.headerCancel]}>Cancel</Text>
@@ -690,13 +685,8 @@ export default function VoiceReminderScreen() {
             hitSlop={20}
             disabled={!canInteract}
           >
-            <Animated.View style={[styles.micOuterShadow, ringStyle]}>
-              <LinearGradient
-                colors={["#A855F7", "#60A5FA"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.micOuterGradient}
-              >
+            <View style={[styles.micOuterShadow, { backgroundColor: '#EEF2FF', borderWidth: 1, borderColor: '#E0E7FF' }]}>
+              <View style={[styles.micOuterGradient, { backgroundColor: '#4F46E5' }]}>
                 <Animated.View style={[styles.micInner, micStyle]}>
                   {state === 'transcribing' ? (
                     <PremiumLoader size={40} />
@@ -704,12 +694,12 @@ export default function VoiceReminderScreen() {
                     <Ionicons
                       name={state === 'recording' ? 'stop' : 'mic'}
                       size={40}
-                      color="#0F172A"
+                      color="#FFFFFF"
                     />
                   )}
                 </Animated.View>
-              </LinearGradient>
-            </Animated.View>
+              </View>
+            </View>
           </Pressable>
 
           <Text style={styles.stageTitle}>{titleLine}</Text>
@@ -851,18 +841,15 @@ export default function VoiceReminderScreen() {
           <Pressable
             disabled={!effectiveParsed || !canInteract || state !== 'review'}
             onPress={handleConfirm}
-            style={[styles.primaryBtn, (!effectiveParsed || !canInteract) && { opacity: 0.5 }]}
+            style={[
+              styles.primaryBtn, 
+              { backgroundColor: '#4F46E5' },
+              (!effectiveParsed || !canInteract) && { opacity: 0.5 }
+            ]}
           >
-            <LinearGradient
-              colors={["#A855F7", "#60A5FA"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.primaryBtnGradient}
-            >
-              <Text style={styles.primaryBtnText}>
-                {state === 'confirming' ? 'Saving…' : 'Save reminder'}
-              </Text>
-            </LinearGradient>
+            <Text style={styles.primaryBtnText}>
+              {state === 'confirming' ? 'Saving…' : 'Save reminder'}
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -963,7 +950,7 @@ export default function VoiceReminderScreen() {
           </Pressable>
         </View>
       </CustomModal>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -1271,14 +1258,9 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
-  },
-  primaryBtnGradient: {
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
   },
   primaryBtnText: {
     fontFamily: 'Inter_800ExtraBold',

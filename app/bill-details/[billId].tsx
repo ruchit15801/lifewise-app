@@ -268,12 +268,7 @@ export default function BillDetailsScreen() {
       <View style={[styles.container, { backgroundColor: '#F8FAFC' }]}>
       {/* Premium Header */}
       <View style={styles.headerOuter}>
-        <LinearGradient
-          colors={['#4F46E5', '#7C3AED', '#C026D3']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.headerGradient, { paddingTop: headerTop }]}
-        >
+        <View style={[styles.headerGradient, { paddingTop: headerTop, backgroundColor: '#4F46E5' }]}>
           {/* Abstract pattern decoration */}
           <View style={styles.headerDecoration1} />
           <View style={styles.headerDecoration2} />
@@ -303,7 +298,7 @@ export default function BillDetailsScreen() {
               <Text style={[styles.heroStatusText, { color: '#FFFFFF' }]}>{statusLabel}</Text>
             </View>
           </View>
-        </LinearGradient>
+        </View>
       </View>
 
       <ScrollView
@@ -386,11 +381,8 @@ export default function BillDetailsScreen() {
               <Text style={styles.aiBadgeText}>AI</Text>
             </View>
           </View>
-          <View style={styles.insightCard}>
-            <LinearGradient
-              colors={['#F5F3FF', '#FFFFFF']}
-              style={styles.insightGradient}
-            >
+          <View style={[styles.insightCard, { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#DDD6FE' }]}>
+            <View style={styles.insightGradient}>
               <View style={styles.insightIconWrap}>
                 <Ionicons name="trending-up-outline" size={24} color="#7C3AED" />
               </View>
@@ -400,8 +392,8 @@ export default function BillDetailsScreen() {
                   Paying this {repeatLabel.toLowerCase()} reduces late fees by approx. ₹150 yearly.
                 </Text>
               </View>
-            </LinearGradient>
-          </View>
+              </View>
+            </View>
         </View>
 
         {/* Payment History Section */}
@@ -454,13 +446,10 @@ export default function BillDetailsScreen() {
           {bill.imageUrl ? (
             <Pressable onPress={() => setShowBillImageModal(true)} style={styles.billImageContainer}>
               <Image source={{ uri: bill.imageUrl }} style={styles.billImage} resizeMode="cover" />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.6)']}
-                style={styles.billImageOverlay}
-              >
+              <View style={[styles.billImageOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
                 <Ionicons name="expand-outline" size={24} color="#FFFFFF" />
                 <Text style={styles.billImageOverlayText}>View Full Bill</Text>
-              </LinearGradient>
+              </View>
             </Pressable>
           ) : (
             <View style={styles.emptyBillCard}>
@@ -469,7 +458,10 @@ export default function BillDetailsScreen() {
               </View>
               <Text style={styles.emptyBillTitle}>Digital Summary Available</Text>
               <Text style={styles.emptyBillDesc}>No physical scan attached. AI has summarized the intent as {intent}.</Text>
-              <Pressable style={styles.addScanBtn}>
+              <Pressable 
+                style={styles.addScanBtn} 
+                onPress={() => router.push({ pathname: '/scan-bill', params: { billId: bill.id } })}
+              >
                 <Ionicons name="camera" size={18} color="#4F46E5" />
                 <Text style={styles.addScanBtnText}>Attach Scan</Text>
               </Pressable>
@@ -675,11 +667,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
     overflow: 'hidden',
-    elevation: 10,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   headerGradient: {
     paddingHorizontal: 20,
@@ -753,9 +742,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_900Black',
     fontSize: 48,
     color: '#FFFFFF',
-    textShadowColor: 'rgba(0,0,0,0.1)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   heroName: {
     fontFamily: 'Inter_700Bold',
@@ -795,11 +781,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 28,
     padding: 24,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
     gap: 20,
   },
   infoRow: {
@@ -875,8 +858,9 @@ const styles = StyleSheet.create({
   insightCard: {
     borderRadius: 24,
     overflow: 'hidden',
-    elevation: 3,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   insightGradient: {
     padding: 20,
@@ -891,11 +875,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   insightContent: {
     flex: 1,

@@ -97,6 +97,88 @@ function extractDate(body: string, smsDate?: number | string): Date {
   return now;
 }
 
+const MERCHANT_CATEGORIES: Record<string, string> = {
+  // Food & Dining
+  swiggy: 'food',
+  zomato: 'food',
+  'sweetish house': 'food',
+  starbucks: 'food',
+  'mcdonald\'s': 'food',
+  'burger king': 'food',
+  'kfc': 'food',
+  'domino\'s': 'food',
+  'pizza hut': 'food',
+  'chai point': 'food',
+  'chaayos': 'food',
+  'faasos': 'food',
+  'behrouz': 'food',
+  'eatfit': 'food',
+  
+  // Shopping & E-commerce
+  amazon: 'shopping',
+  flipkart: 'shopping',
+  myntra: 'shopping',
+  ajio: 'shopping',
+  nykaa: 'shopping',
+  'reliance digital': 'shopping',
+  'croma': 'shopping',
+  'bigbasket': 'shopping',
+  'blinkit': 'shopping',
+  'zepto': 'shopping',
+  'dunzo': 'shopping',
+  'jiomart': 'shopping',
+  
+  // Transport & Travel
+  uber: 'transport',
+  ola: 'transport',
+  rapido: 'transport',
+  blusmart: 'transport',
+  indigo: 'travel',
+  'air india': 'travel',
+  spicejet: 'travel',
+  irctc: 'travel',
+  makemytrip: 'travel',
+  goibibo: 'travel',
+  
+  // Bills & Utilities
+  airtel: 'bills',
+  jio: 'bills',
+  vodafone: 'bills',
+  idea: 'bills',
+  'tata play': 'bills',
+  'torrent power': 'bills',
+  'adani electricity': 'bills',
+  'mgl': 'bills', // Mahanagar Gas
+  'bescom': 'bills',
+  
+  // Entertainment & Subscriptions
+  netflix: 'entertainment',
+  spotify: 'entertainment',
+  'disney+': 'entertainment',
+  hotstar: 'entertainment',
+  'bookmyshow': 'entertainment',
+  inox: 'entertainment',
+  pvr: 'entertainment',
+};
+
+function categorizeMerchant(merchant: string): string {
+  if (!merchant) return 'others';
+  const m = merchant.toLowerCase();
+  for (const [kw, cat] of Object.entries(MERCHANT_CATEGORIES)) {
+    if (m.includes(kw)) return cat;
+  }
+  return 'others';
+}
+
+function cleanMerchantName(name: string): string {
+  if (!name) return '';
+  return name
+    .replace(/(?:UPI-|VPA\s+|to\s+|towards\s+|sent\s+to\s+)/i, '')
+    .split('@')[0] // remove upi handle
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function parseSmsToTransactions(
   smsList: { body: string; date?: string | number; address?: string; _id?: string }[]
 ): ParsedSmsTransaction[] {
@@ -110,9 +192,8 @@ export function parseSmsToTransactions(
     const isDebit = DEBIT_KEYWORDS.test(body) && !CREDIT_KEYWORDS.test(body);
     const isCredit = CREDIT_KEYWORDS.test(body) && !DEBIT_KEYWORDS.test(body);
     if (!isDebit && !isCredit) {
-      // Fallback for tricky bank notices like "Your a/c x123 has been charged..."
-      if (/charged|billed/i.test(body)) {
-        // assume debit unless credit keywords found
+      if (/charged|billed/i.test(body) && !/credited/i.test(body)) {
+        // assume debit
       } else {
         continue;
       }
@@ -122,8 +203,10 @@ export function parseSmsToTransactions(
     if (amount == null || amount <= 0) continue;
 
     const date = extractDate(body, sms.date);
-    const merchant = extractMerchant(body, isDebit);
-    // Use a unique SMS ID if available, otherwise fallback to hash
+    const rawMerchant = extractMerchant(body, isDebit);
+    const merchant = cleanMerchantName(rawMerchant);
+    
+    // Unique key: id or hash
     const key = sms._id ? `id-${sms._id}` : `${date.getTime()}-${merchant}-${amount}-${isDebit}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -135,7 +218,7 @@ export function parseSmsToTransactions(
       isDebit,
       description: body.slice(0, 200),
       upiId: sms.address || undefined,
-      category: 'others',
+      category: categorizeMerchant(merchant),
     });
   }
 

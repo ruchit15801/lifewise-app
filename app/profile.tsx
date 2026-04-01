@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadAvatar } from '@/lib/upload-avatar';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -20,6 +21,10 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>((user as any)?.avatarUrl || null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dobDate, setDobDate] = useState<Date>(
+    (user as any)?.dateOfBirth ? new Date((user as any).dateOfBirth) : new Date(2000, 0, 1)
+  );
 
   useEffect(() => {
     setName(user?.name || '');
@@ -70,9 +75,10 @@ export default function ProfileScreen() {
       setAvatarUrl(url);
       await updateProfile({ avatarUrl: url });
       setSaving(false);
-    } catch (e) {
+    } catch (e: any) {
       setSaving(false);
-      setError('Failed to upload avatar');
+      console.error('[Avatar] Upload Error:', e);
+      setError(e.message || 'Failed to upload avatar');
     }
   };
 
@@ -157,16 +163,31 @@ export default function ProfileScreen() {
             </View>
 
             <Text style={[styles.label, { color: colors.textSecondary, marginTop: 14 }]}>Date of Birth</Text>
-            <View style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}>
+            <Pressable 
+              onPress={() => setShowDatePicker(true)}
+              style={[styles.inputRow, { borderColor: colors.inputBorder, backgroundColor: colors.inputBg }]}
+            >
               <Ionicons name="calendar-outline" size={18} color={colors.textTertiary} />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                value={dateOfBirth}
-                onChangeText={setDateOfBirth}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textTertiary}
+              <Text style={[styles.input, { color: dateOfBirth ? colors.text : colors.textTertiary, paddingVertical: 12 }]}>
+                {dateOfBirth || "Select Date of Birth"}
+              </Text>
+            </Pressable>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={dobDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(event, date) => {
+                  setShowDatePicker(false);
+                  if (date) {
+                    setDobDate(date);
+                    setDateOfBirth(date.toISOString().split('T')[0]);
+                  }
+                }}
               />
-            </View>
+            )}
 
             {!!error && (
               <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>

@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -37,6 +38,8 @@ export default function ScanBillScreen() {
   const { refreshData } = useExpenses();
   const { formatAmount } = useCurrency();
   const { showAlert } = useAlert();
+  const insets = useSafeAreaInsets();
+  const topInset = Platform.OS === 'web' ? 20 : insets.top;
 
   const [step, setStep] = useState<ScanStep>('guide');
   const [flashOn, setFlashOn] = useState(false);
@@ -294,9 +297,9 @@ export default function ScanBillScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: '#FFFFFF', paddingBottom: 40 }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={colors.textSecondary} />
+      <View style={[styles.header, { paddingTop: topInset + 12 }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Scan Bill</Text>
         <View style={styles.headerSpacer} />
@@ -325,27 +328,27 @@ export default function ScanBillScreen() {
                   {/* <View style={styles.frameGuide} /> */}
 
                   <View style={styles.cameraBottom}>
-                    <View style={styles.flashRow}>
-                      <Text style={styles.flashLabel}>Flash</Text>
-                      <Switch value={flashOn} onValueChange={setFlashOn} />
-                    </View>
-
                     <View style={styles.cameraControlsRow}>
+                      <Pressable 
+                        onPress={openGallery} 
+                        style={[styles.smallActionBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                      >
+                        <Ionicons name="images" size={24} color="#FFFFFF" />
+                      </Pressable>
+
                       <Pressable
                         onPress={takePictureFromCamera}
                         style={styles.captureButton}
                         hitSlop={12}
                       >
-                        <View style={styles.captureButtonInner}>
-                          <Ionicons name="camera" size={24} color="#ffffff" />
-                        </View>
+                        <View style={styles.captureButtonInner} />
                       </Pressable>
 
-                      <Pressable
-                        onPress={openGallery}
-                        style={styles.uploadActionBtn}
+                      <Pressable 
+                        onPress={() => setFlashOn(!flashOn)} 
+                        style={[styles.smallActionBtn, { backgroundColor: flashOn ? '#F59E0B' : 'rgba(255,255,255,0.2)' }]}
                       >
-                        <Text style={styles.uploadActionBtnText}>Upload from gallery</Text>
+                        <Ionicons name={flashOn ? "flash" : "flash-off"} size={24} color="#FFFFFF" />
                       </Pressable>
                     </View>
                   </View>
@@ -618,9 +621,18 @@ const styles = StyleSheet.create({
   },
   headerSpacer: { width: 20 },
   headerTitle: {
-    textAlign: 'center',
     fontFamily: 'Inter_700Bold',
-    fontSize: 18,
+    fontSize: 20,
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 40,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   body: {
     flex: 1,
@@ -700,17 +712,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   cameraBottom: {
-    gap: 12,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
   },
-  flashRow: {
-    flexDirection: 'row',
+  smallActionBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-  },
-  flashLabel: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter_600SemiBold',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   cameraControlsRow: {
     flexDirection: 'row',
@@ -719,20 +731,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   captureButton: {
-    backgroundColor: '#FFFFFF',
-    width: 70,
-    height: 70,
-    borderRadius: 38,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
   },
   captureButtonInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4F46E5',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFFFFF',
   },
   uploadActionBtn: {
     backgroundColor: '#4F46E5',

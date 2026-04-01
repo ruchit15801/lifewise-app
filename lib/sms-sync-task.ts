@@ -79,6 +79,21 @@ export async function performSmsSync(
       const latestSmsTime = Math.max(...newSms.map(s => typeof s.date === 'number' ? s.date : (s.date ? new Date(s.date).getTime() : 0)));
       await AsyncStorage.setItem(LAST_SYNC_TIMESTAMP_KEY, String(latestSmsTime));
       const json = await res.json();
+      
+      // NEW: Trigger AI categorization for any 'others' that were just synced
+      onProgress?.({ phase: 'uploading', detail: 'Improving accuracy with AI...' });
+      try {
+        await fetch(`${API_URL}/api/transactions/categorize-others`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      } catch (err) {
+        console.error('[Sync] AI categorization failed:', err);
+      }
+
       onProgress?.({ phase: 'completed', synced: json.synced, skipped: json.skipped });
       return { success: true, synced: json.synced, skipped: json.skipped };
     }

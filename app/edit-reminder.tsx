@@ -120,10 +120,7 @@ export default function EditReminderScreen() {
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
           {/* Header */}
-          <LinearGradient
-            colors={colors.heroGradient as any}
-            style={[styles.header, { height: headerHeight, paddingTop: insets.top }]}
-          >
+          <View style={[styles.header, { height: headerHeight, paddingTop: insets.top, backgroundColor: colors.accent }]}>
             <View style={styles.headerTop}>
               <Pressable onPress={() => router.back()} style={styles.backBtn}>
                 <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -136,16 +133,18 @@ export default function EditReminderScreen() {
 
             <View style={styles.headerNameBlock}>
               <TextInput
-                style={[styles.nameInput, { color: colors.text }]}
+                style={[styles.nameInput, { color: colors.text, maxHeight: 120 }]}
                 value={name}
                 onChangeText={setName}
                 placeholder="Name of Reminder"
                 placeholderTextColor={colors.textTertiary}
                 autoFocus={!existingBill}
+                textAlign="left"
+                multiline={true}
               />
               <View style={[styles.nameUnderline, { backgroundColor: colors.accent }]} />
             </View>
-          </LinearGradient>
+            </View>
 
           {/* Form Content */}
           <View style={styles.form}>
@@ -222,7 +221,12 @@ export default function EditReminderScreen() {
               {REPEAT_OPTIONS.map(opt => (
                 <Pressable
                   key={opt.key}
-                  onPress={() => setRepeatType(opt.key)}
+                  onPress={() => {
+                    setRepeatType(opt.key);
+                    if (opt.key === 'weekly' || opt.key === 'monthly') {
+                      setShowDatePicker(true);
+                    }
+                  }}
                   style={[
                     styles.chip, 
                     { backgroundColor: colors.card, borderColor: colors.border },
@@ -268,16 +272,11 @@ export default function EditReminderScreen() {
 
         {/* Floating Save Button */}
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <Pressable onPress={handleSave} style={styles.saveBtn}>
-            <LinearGradient
-              colors={colors.buttonGradient as any}
-              style={styles.saveGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
+          <Pressable onPress={handleSave} style={[styles.saveBtn, { backgroundColor: colors.accent }]}>
+            <View style={styles.saveGradient}>
               <Ionicons name="checkmark-circle" size={24} color="#FFF" />
               <Text style={styles.saveBtnText}>Save Reminder</Text>
-            </LinearGradient>
+            </View>
           </Pressable>
         </View>
 
@@ -349,6 +348,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 28,
     paddingVertical: 10,
+    textAlign: 'left',
   },
   nameUnderline: {
     height: 3,
@@ -372,16 +372,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   card: {
-    borderRadius: 24,
     borderWidth: 1,
     padding: 16,
     paddingHorizontal: 20,
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
   },
   fieldRow: {
     flexDirection: 'row',
@@ -510,11 +504,6 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 20,
     overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 15,
   },
   saveGradient: {
     flex: 1,
