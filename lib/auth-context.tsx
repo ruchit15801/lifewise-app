@@ -49,9 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   WebBrowser.maybeCompleteAuthSession();
 
   const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
-    androidClientId: '152932967230-0v78v9m0i8r4o0v9r7v9r7v9.apps.googleusercontent.com', // Placeholder for Android
-    iosClientId: '152932967230-0v78v9m0i8r4o0v9r7v9r7v9.apps.googleusercontent.com', // Placeholder for iOS
-    clientId: '152932967230-k3cofknaqa0iompfilk3q69novnpg169.apps.googleusercontent.com',
+    androidClientId: process.env.EXPO_PUBLIC_ANDROID_GOOGLE_CLIENT_ID || '152932967230-0v78v9m0i8r4o0v9r7v9r7v9.apps.googleusercontent.com',
+    iosClientId: process.env.EXPO_PUBLIC_IOS_GOOGLE_CLIENT_ID || '152932967230-0v78v9m0i8r4o0v9r7v9r7v9.apps.googleusercontent.com',
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '152932967230-k3cofknaqa0iompfilk3q69novnpg169.apps.googleusercontent.com',
     scopes: ['openid', 'profile', 'email'],
     responseType: AuthSession.ResponseType.IdToken,
   });

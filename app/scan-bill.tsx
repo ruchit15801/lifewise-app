@@ -11,14 +11,17 @@ import {
   Text,
   TextInput,
   View,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Animated, { FadeInDown, FadeIn, SlideInUp } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/lib/theme-context';
 import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
@@ -33,12 +36,16 @@ type ScanStep = 'guide' | 'preview' | 'processing';
 
 export default function ScanBillScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { billId } = useLocalSearchParams<{ billId?: string }>();
+  const { colors, isDark } = useTheme();
   const { token } = useAuth();
-  const { refreshData } = useExpenses();
+  const { bills, refreshData } = useExpenses();
   const { formatAmount } = useCurrency();
   const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
+  const existingBill = useMemo(() => 
+    billId ? bills.find(b => b.id === billId) : null
+  , [billId, bills]);
   const topInset = Platform.OS === 'web' ? 20 : insets.top;
 
   const [step, setStep] = useState<ScanStep>('guide');
@@ -51,24 +58,7 @@ export default function ScanBillScreen() {
     mimeType?: string;
   } | null>(null);
 
-  type BillPreview = {
-    name: string;
-    amount: number;
-    dueDate: string;
-    imageKey: string;
-    imageUrl: string;
-    vendorName?: string;
-    billDate?: string;
-    billNumber?: string;
-    accountNumber?: string;
-    lateFee?: number;
-    taxAmount?: number;
-    phoneNumber?: string;
-  };
-
-  const [previewData, setPreviewData] = useState<BillPreview | null>(null);
   const [processingMsgIdx, setProcessingMsgIdx] = useState(0);
-  const [failMessage, setFailMessage] = useState('Not a bill photo.');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [editingData, setEditingData] = useState<any>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -127,7 +117,6 @@ export default function ScanBillScreen() {
         return;
       }
 
-      setPreviewData(null);
       setStep('preview');
       setPhoto({
         uri: pic.uri,
@@ -153,7 +142,6 @@ export default function ScanBillScreen() {
     const asset = result.assets[0];
     if (!asset.uri) return;
 
-    setPreviewData(null);
     setStep('preview');
     setPhoto({
       uri: asset.uri,
@@ -186,9 +174,7 @@ export default function ScanBillScreen() {
     }
 
     setStep('processing');
-    setIsEditing(false); // Reset editing state
-    setPreviewData(null);
-    const startedAt = Date.now();
+    setIsEditing(false);
     startRotation();
     try {
       const baseUrl = getApiUrl();
@@ -208,9 +194,8 @@ export default function ScanBillScreen() {
       });
 
       if (!res.ok) {
-        const json = (await res.json().catch(() => null)) as { message?: string } | null;
+        const json = await res.json().catch(() => null);
         const msg = json?.message ?? 'This does not look like a bill photo.';
-        setFailMessage(msg);
         showAlert({
           title: 'Invalid Scan',
           message: msg,
@@ -228,13 +213,11 @@ export default function ScanBillScreen() {
         setStep('preview');
         return;
       }
-      if (res.ok) {
-        const resJson = await res.json();
-        setPreviewData(resJson.preview);
-        setEditingData(resJson.preview);
-        setConfidence(resJson.metadata?.confidence || null);
-        setShowSuccessModal(true);
-      }
+      
+      const resJson = await res.json();
+      setEditingData(resJson.preview);
+      setConfidence(resJson.metadata?.confidence || null);
+      setShowSuccessModal(true);
     } catch {
       showAlert({
         title: 'Error',
@@ -247,63 +230,78 @@ export default function ScanBillScreen() {
     }
   }, [photo, token, startRotation, stopRotation]);
 
-  const commitReminder = useCallback(
-    async () => {
-      if (!previewData || !token) return;
+  const commitReminder = useCallback(async () => {
+    if (!editingData || !token) return;
 
+    try {
       const baseUrl = getApiUrl();
-      const url = new URL('/api/bills/scan/commit', baseUrl).toString();
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          preview: editingData,
-        }),
-      });
-
-      if (!res.ok) {
-        showAlert({
-          title: 'Save failed',
-          message: 'Could not save reminder. Please try again.',
-          type: 'error',
+      if (billId && existingBill) {
+        const url = new URL(`/api/bills/${billId}`, baseUrl).toString();
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...editingData,
+            status: existingBill.status,
+            isPaid: existingBill.isPaid
+          }),
         });
-        return;
-      }
 
-      const created = (await res.json()) as { id: string; dueDate?: string; name?: string; amount?: number };
+        if (!res.ok) throw new Error('Update failed');
+      } else {
+        const url = new URL('/api/bills/scan/commit', baseUrl).toString();
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ preview: editingData }),
+        });
 
-      if (created?.dueDate) {
-        await scheduleLocalNotification({
-          title: `${created.name || 'Bill'} Due Soon`,
-          body: `₹${created.amount ?? 0} due on ${new Date(created.dueDate).toLocaleDateString('en-IN')}`,
-          data: { type: 'reminder', billId: created.id },
-          triggerAt: new Date(created.dueDate),
-        }).catch(() => {});
+        if (!res.ok) throw new Error('Save failed');
+        const created = await res.json();
+        
+        if (created?.dueDate) {
+          await scheduleLocalNotification({
+            title: `${created.name || 'Bill'} Due Soon`,
+            body: `₹${created.amount ?? 0} due on ${new Date(created.dueDate).toLocaleDateString('en-IN')}`,
+            data: { type: 'reminder', billId: created.id },
+            triggerAt: new Date(created.dueDate),
+          }).catch(() => {});
+        }
+        
+        router.replace(`/bill-details/${created.id}`);
       }
 
       await refreshData();
       setShowSuccessModal(false);
       setStep('guide');
       setPhoto(null);
-
-      router.replace(`/bill-details/${created.id}`);
-    },
-    [previewData, token, refreshData, router],
-  );
+    } catch (e) {
+      showAlert({
+        title: 'Error',
+        message: 'Could not save bill. Please try again.',
+        type: 'error',
+      });
+    }
+  }, [editingData, token, billId, existingBill, refreshData, router]);
 
   return (
-    <View style={[styles.container, { backgroundColor: '#FFFFFF', paddingBottom: 40 }]}>
-      <View style={[styles.header, { paddingTop: topInset + 12 }]}>
+    <View style={[styles.container, { backgroundColor: colors.bg, paddingBottom: 40 }]}>
+      <Animated.View 
+        entering={Platform.OS !== 'web' ? FadeInDown.duration(400) : undefined}
+        style={[styles.header, { paddingTop: topInset + 12 }]}
+      >
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Scan Bill</Text>
         <View style={styles.headerSpacer} />
-      </View>
+      </Animated.View>
 
       <View style={styles.body}>
         {step === 'guide' && (
@@ -316,279 +314,206 @@ export default function ScanBillScreen() {
                 flash={flashOn ? 'on' : 'off'}
               >
                 <View style={styles.cameraOverlay}>
-                  <View style={styles.cameraTopText}>
-                    <Text style={styles.guideTitle}>
-                      Place the bill inside the frame
-                    </Text>
-                    <Text style={styles.guideSubtitle}>
-                      Make sure the bill text and due date are clearly visible.
-                    </Text>
+                  <View style={styles.cameraTop}>
+                    <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={styles.topInfoBlur}>
+                      <Text style={[styles.guideTitle, { color: '#FFFFFF' }]}>
+                        {billId ? 'Updating bill' : 'Scan Your Bill'}
+                      </Text>
+                      <Text style={[styles.guideSubtitle, { color: 'rgba(255,255,255,0.7)' }]}>
+                        Keep bill flat & within corner marks
+                      </Text>
+                    </BlurView>
                   </View>
 
-                  {/* <View style={styles.frameGuide} /> */}
-
-                  <View style={styles.cameraBottom}>
-                    <View style={styles.cameraControlsRow}>
-                      <Pressable 
-                        onPress={openGallery} 
-                        style={[styles.smallActionBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                      >
-                        <Ionicons name="images" size={24} color="#FFFFFF" />
-                      </Pressable>
-
-                      <Pressable
-                        onPress={takePictureFromCamera}
-                        style={styles.captureButton}
-                        hitSlop={12}
-                      >
-                        <View style={styles.captureButtonInner} />
-                      </Pressable>
-
-                      <Pressable 
-                        onPress={() => setFlashOn(!flashOn)} 
-                        style={[styles.smallActionBtn, { backgroundColor: flashOn ? '#F59E0B' : 'rgba(255,255,255,0.2)' }]}
-                      >
-                        <Ionicons name={flashOn ? "flash" : "flash-off"} size={24} color="#FFFFFF" />
-                      </Pressable>
-                    </View>
+                  <View style={styles.cameraFrameCenter}>
+                    <View style={styles.frameCornerTL} />
+                    <View style={styles.frameCornerTR} />
+                    <View style={styles.frameCornerBL} />
+                    <View style={styles.frameCornerBR} />
+                    <View style={styles.frameScanLine} />
                   </View>
 
+                  <View style={styles.cameraBottomBar}>
+                    <Pressable onPress={openGallery} style={styles.sideActionBtn}>
+                      <Ionicons name="images" size={24} color="#FFFFFF" />
+                      <Text style={styles.sideActionText}>Gallery</Text>
+                    </Pressable>
+
+                    <Pressable onPress={takePictureFromCamera} style={styles.mainCaptureBtn}>
+                      <View style={styles.captureInner} />
+                    </Pressable>
+
+                    <Pressable 
+                      onPress={() => setFlashOn(!flashOn)} 
+                      style={[styles.sideActionBtn, flashOn && { backgroundColor: 'rgba(245,158,11,0.3)' }]}
+                    >
+                      <Ionicons name={flashOn ? "flash" : "flash-off"} size={24} color={flashOn ? "#F59E0B" : "#FFFFFF"} />
+                      <Text style={[styles.sideActionText, flashOn && { color: "#F59E0B" }]}>Flash</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </CameraView>
             ) : (
-              <View style={styles.center}>
-                <View style={styles.frameGuide} />
-                <Text style={[styles.fallbackTitle, { color: colors.textSecondary }]}>
-                  Place the bill inside the frame
-                </Text>
-                <Text style={[styles.fallbackSubtitle, { color: colors.textTertiary }]}>
-                  Make sure the bill text and due date are clearly visible.
-                </Text>
+              <Animated.View 
+                entering={Platform.OS !== 'web' ? FadeInDown.delay(100).duration(500) : undefined}
+                style={styles.center}
+              >
+                <View style={[styles.fallbackFrame, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                  <View style={[styles.fallbackIconWrap, { backgroundColor: colors.accentMintDim }]}>
+                    <Ionicons name="camera" size={32} color={colors.accentMint} />
+                  </View>
+                  <Text style={[styles.fallbackTitle, { color: colors.text }]}>Camera Access Required</Text>
+                  <Text style={[styles.fallbackSubtitle, { color: colors.textSecondary }]}>
+                    Scan your physical bills to automatically extract details like amount, date, and items with AI.
+                  </Text>
+                  
+                  <View style={styles.fallbackActions}>
+                    <Pressable
+                      style={[styles.primaryActionBtn, { backgroundColor: colors.accent }]}
+                      onPress={() => Platform.OS === 'web' ? openGallery() : requestCameraPermission()}
+                    >
+                      <Ionicons name={Platform.OS === 'web' ? "images" : "camera"} size={20} color="#FFFFFF" />
+                      <Text style={styles.primaryActionBtnText}>
+                        {Platform.OS === 'web' ? 'Choose from Gallery' : 'Allow Camera'}
+                      </Text>
+                    </Pressable>
 
-                <View style={styles.fallbackEnableWrap}>
-                  <Pressable
-                    style={[styles.actionBtn, { backgroundColor: colors.inputBg }]}
-                    onPress={() => {
-                      if (Platform.OS === 'web') return;
-                      requestCameraPermission();
-                    }}
-                  >
-                    <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>
-                      Enable Camera
-                    </Text>
-                  </Pressable>
+                    <Pressable 
+                      onPress={openGallery} 
+                      style={[styles.galleryActionBtn, { backgroundColor: colors.accentMintDim }]}
+                    >
+                      <Ionicons name="images-outline" size={20} color={colors.accentMint} />
+                      <Text style={[styles.galleryActionBtnText, { color: colors.accentMint }]}>Upload from Gallery</Text>
+                    </Pressable>
+                  </View>
                 </View>
-
-                <View style={styles.actionsRow}>
-                  <Pressable style={[styles.actionBtn, { backgroundColor: '#4F46E5' }]} onPress={openGallery}>
-                    <Text style={styles.actionBtnText}>Upload</Text>
-                  </Pressable>
-                </View>
-              </View>
+              </Animated.View>
             )}
           </View>
         )}
 
         {step === 'preview' && photo && (
-          <>
+          <View style={styles.guideStepWrap}>
             <Image source={{ uri: photo.uri }} style={styles.previewImage} resizeMode="contain" />
-
-
             <View style={styles.actionsRow}>
               <Pressable
                 style={[styles.actionBtn, { backgroundColor: colors.inputBg }]}
-                onPress={() => {
-                  setPhoto(null);
-                  setStep('guide');
-                }}
+                onPress={() => { setPhoto(null); setStep('guide'); }}
               >
                 <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Retake</Text>
               </Pressable>
 
               <Pressable
-                style={[styles.actionBtn, { backgroundColor: '#4F46E5' }]}
+                style={[styles.actionBtn, { backgroundColor: colors.accent }]}
                 onPress={scanPreview}
               >
-                <Text style={styles.actionBtnText}>Scan</Text>
+                <Text style={styles.actionBtnText}>Scan Bill</Text>
               </Pressable>
             </View>
-          </>
+          </View>
         )}
 
         {step === 'processing' && (
           <View style={styles.center}>
             <PremiumLoader size={100} text={PROCESS_MESSAGES[processingMsgIdx]} />
-            <Text style={[styles.processingTitle, { color: colors.textSecondary }]}>
-              {PROCESS_MESSAGES[processingMsgIdx]}
-            </Text>
-            <Text style={[styles.processingSubtitle, { color: colors.textTertiary }]}>
-              This should take a few seconds.
-            </Text>
+            <Text style={[styles.processingTitle, { color: colors.textSecondary }]}>{PROCESS_MESSAGES[processingMsgIdx]}</Text>
+            <Text style={[styles.processingSubtitle, { color: colors.textTertiary }]}>Extracting details with AI magic...</Text>
           </View>
         )}
       </View>
 
-
       <CustomModal visible={showSuccessModal} onClose={() => setShowSuccessModal(false)}>
         <View style={styles.modalHeader}>
-          <Text style={[styles.modalTitle, { color: colors.text }]}>
-            {isEditing ? 'Editing Details' : 'Bill Summary'}
-          </Text>
+          <View style={styles.modalHeaderTop}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{isEditing ? 'Edit Details' : 'Extraction Success'}</Text>
+            <Pressable onPress={() => setShowSuccessModal(false)} style={styles.modalCloseBtn}>
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
+            </Pressable>
+          </View>
           <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-            {isEditing 
-              ? "Correct any details we missed." 
-              : "We've accurately extracted these details."}
+            {isEditing ? "Verify and correct details." : "AI successfully read your bill!"}
           </Text>
         </View>
 
         {!isEditing ? (
           <View style={styles.summaryContainer}>
-            <View style={[styles.summaryCard, { backgroundColor: colors.inputBg }]}>
-              <View style={styles.summaryHeader}>
-                <View style={[styles.iconBox, { backgroundColor: '#4F46E5' }]}>
-                  <Ionicons 
-                    name={(editingData?.icon as any) || 'receipt'} 
-                    size={24} 
-                    color="#ffffff" 
-                  />
+            <View style={[styles.modernSummaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.modernSummaryTop}>
+                <View style={[styles.brandIconWrap, { backgroundColor: colors.accentDim }]}>
+                  <Ionicons name={editingData?.icon || 'receipt'} size={28} color={colors.accent} />
                 </View>
-                <View style={styles.summaryMeta}>
-                  <Text style={[styles.summaryVendor, { color: colors.text }]}>
-                    {editingData?.name || 'Unknown Vendor'}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={[styles.summaryCategory, { color: colors.textTertiary }]}>
-                      {(editingData?.category || 'bills').toUpperCase()}
-                    </Text>
-                    {confidence !== null && (
-                      <View style={[styles.confidenceBadge, { backgroundColor: confidence >= 90 ? '#DEF7ED' : '#FEF3C7' }]}>
-                        <Text style={[styles.confidenceText, { color: confidence >= 90 ? '#065F46' : '#92400E' }]}>
-                          {confidence}% Match
-                        </Text>
-                      </View>
-                    )}
+                <View style={styles.brandInfo}>
+                  <Text style={[styles.brandName, { color: colors.text }]} numberOfLines={1}>{editingData?.name || 'Bill Detected'}</Text>
+                  <Text style={[styles.brandCategory, { color: colors.textTertiary }]}>{(editingData?.category || 'Utility').toUpperCase()}</Text>
+                </View>
+                {confidence !== null && (
+                  <View style={[styles.statusTag, { backgroundColor: confidence >= 90 ? '#10B98115' : '#F59E0B15' }]}>
+                    <Text style={[styles.statusTagText, { color: confidence >= 90 ? '#10B981' : '#F59E0B' }]}>{confidence}% Score</Text>
                   </View>
-                </View>
+                )}
               </View>
-
-              <View style={styles.summaryDivider} />
-
-              <View style={styles.summaryRow}>
-                <View>
-                  <Text style={styles.summaryLabel}>Amount Due</Text>
-                  <Text style={[styles.summaryValue, { color: colors.accent }]}>
-                    {formatAmount(editingData?.amount || 0)}
-                  </Text>
+              <View style={[styles.modernDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.modernSummaryGrid}>
+                <View style={styles.modernGridItem}>
+                  <Text style={styles.modernGridLabel}>AMOUNT DUE</Text>
+                  <Text style={[styles.modernGridValue, { color: colors.text }]}>{formatAmount(editingData?.amount || 0)}</Text>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.summaryLabel}>Due Date</Text>
-                  <Text style={[styles.summaryValue, { color: colors.textSecondary }]}>
-                    {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric'
-                    }) : 'N/A'}
+                <View style={[styles.modernGridItem, { alignItems: 'flex-end' }]}>
+                  <Text style={styles.modernGridLabel}>DUE DATE</Text>
+                  <Text style={[styles.modernGridValue, { color: colors.textSecondary }]}>
+                    {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN') : 'N/A'}
                   </Text>
                 </View>
               </View>
             </View>
-
-            <Pressable 
-              style={styles.editToggleBtn}
-              onPress={() => setIsEditing(true)}
-            >
-              <Ionicons name="create-outline" size={18} color="#4F46E5" />
-              <Text style={styles.editToggleText}>Edit details</Text>
+            <Pressable style={[styles.modernEditBtn, { borderColor: colors.border }]} onPress={() => setIsEditing(true)}>
+              <Ionicons name="create-outline" size={18} color={colors.accent} />
+              <Text style={[styles.modernEditBtnText, { color: colors.accent }]}>Modify Details</Text>
             </Pressable>
           </View>
         ) : (
-          <ScrollView style={styles.editScroll} showsVerticalScrollIndicator={false}>
-            <View style={styles.editGrid}>
-              {/* General Info */}
-              <View style={styles.editCard}>
-                <Text style={styles.editCardTitle}>General</Text>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Bill Name</Text>
+          <ScrollView style={styles.editScroll}>
+            <View style={styles.editingForm}>
+              <View style={styles.formSection}>
+                <Text style={[styles.formSectionTitle, { color: colors.textTertiary }]}>PRIMARY DETAILS</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                  value={editingData?.name}
+                  placeholder="Bill Name"
+                  onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, name: t }))}
+                />
+                <View style={styles.formRow}>
                   <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                    value={editingData?.name}
-                    onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, name: t }))}
-                  />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Amount (₹)</Text>
-                  <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                    style={[styles.formInput, { flex: 1, color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
                     value={editingData?.amount?.toString()}
                     keyboardType="numeric"
                     onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, amount: parseFloat(t) || 0 }))}
                   />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Due Date</Text>
                   <Pressable
-                    style={[styles.input, { borderColor: colors.border, justifyContent: 'center' }]}
+                    style={[styles.formInput, { flex: 1.2, borderColor: colors.border, backgroundColor: colors.card, justifyContent: 'center' }]}
                     onPress={() => setShowDatePicker(true)}
                   >
-                    <Text style={{ color: colors.text }}>
-                      {editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN') : 'Select Date'}
-                    </Text>
+                    <Text style={{ color: colors.text }}>{editingData?.dueDate ? new Date(editingData.dueDate).toLocaleDateString('en-IN') : 'Date'}</Text>
                   </Pressable>
                 </View>
               </View>
-
-              {/* Metadata */}
-              <View style={styles.editCard}>
-                <Text style={styles.editCardTitle}>Scanned Metadata</Text>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Vendor / Merchant</Text>
-                  <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                    value={editingData?.vendorName}
-                    placeholder="e.g. Jio Fiber"
-                    onChangeText={(t) => setEditingData((prev: any) => ({ ...prev, vendorName: t }))}
-                  />
-                </View>
-              </View>
             </View>
-            
-            <Pressable 
-              style={[styles.editToggleBtn, { marginTop: 16 }]}
-              onPress={() => setIsEditing(false)}
-            >
-              <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
-              <Text style={[styles.editToggleText, { color: '#10B981' }]}>Finish editing</Text>
+            <Pressable style={[styles.doneEditingBtn, { backgroundColor: colors.accentDim }]} onPress={() => setIsEditing(false)}>
+              <Text style={[styles.doneEditingText, { color: colors.accent }]}>Apply Changes</Text>
             </Pressable>
           </ScrollView>
         )}
 
-        <View style={styles.modalActions}>
-          <Pressable
-            style={[styles.modalBtn, { backgroundColor: colors.inputBg }]}
-            onPress={() => {
-              setShowSuccessModal(false);
-              setStep('guide');
-              setPhoto(null);
-              setPreviewData(null);
-              setEditingData(null);
-            }}
-          >
-            <Text style={[styles.modalBtnLabel, { color: colors.textSecondary }]}>Discard</Text>
+        <View style={styles.modalFooter}>
+          <Pressable style={[styles.cancelBtn, { borderColor: colors.border }]} onPress={() => setShowSuccessModal(false)}>
+            <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Discard</Text>
           </Pressable>
-          <Pressable
-            onPress={commitReminder}
-            style={({ pressed }) => [
-              styles.saveBtnFull,
-              { opacity: pressed ? 0.8 : 1 }
-            ]}
-          >
+          <Pressable onPress={commitReminder} style={styles.confirmBtn}>
             <LinearGradient
-              colors={['#4F46E5', '#7C3AED']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.saveGradient}
+              colors={colors.buttonGradient ? colors.buttonGradient as unknown as [string, string] : ['#4F46E5', '#7C3AED']}
+              style={styles.confirmGradient}
             >
-              <Text style={styles.saveBtnText}>Save Bill</Text>
+              <Text style={styles.confirmBtnText}>{billId ? 'Update' : 'Save Bill'}</Text>
             </LinearGradient>
           </Pressable>
         </View>
@@ -597,7 +522,6 @@ export default function ScanBillScreen() {
           <DateTimePicker
             value={editingData?.dueDate ? new Date(editingData.dueDate) : new Date()}
             mode="date"
-            display="default"
             onChange={(_, date) => {
               setShowDatePicker(false);
               if (date) setEditingData((prev: any) => ({ ...prev, dueDate: date.toISOString() }));
@@ -612,20 +536,18 @@ export default function ScanBillScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    paddingTop: 60,
     paddingBottom: 10,
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  headerSpacer: { width: 20 },
+  headerSpacer: { width: 40 },
   headerTitle: {
     fontFamily: 'Inter_700Bold',
     fontSize: 20,
     flex: 1,
     textAlign: 'center',
-    marginRight: 40,
   },
   backBtn: {
     width: 40,
@@ -643,341 +565,390 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
   },
   previewImage: {
     width: '100%',
-    height: '90%',
-    marginTop: 10,
-    borderRadius: 18,
+    height: '75%',
+    borderRadius: 24,
     backgroundColor: '#F8FAFC',
   },
   actionsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 16,
+    marginTop: 20,
   },
   actionBtn: {
     flex: 1,
     borderRadius: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnText: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
     color: '#FFFFFF',
-    textAlign: 'center',
-    lineHeight: 18,
-    includeFontPadding: false,
-  },
-  frameGuide: {
-    width: '100%',
-    height: 320,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(79,70,229,0.45)',
-    backgroundColor: 'rgba(79,70,229,0.05)',
-  },
-  guideWrap: {
-    flex: 1,
   },
   guideStepWrap: {
     flex: 1,
   },
   camera: {
     flex: 1,
-    borderRadius: 18,
+    borderRadius: 24,
     overflow: 'hidden',
   },
   cameraOverlay: {
     flex: 1,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
     justifyContent: 'space-between',
   },
-  cameraTopText: {
+  cameraTop: {
     alignItems: 'center',
+    marginTop: 10,
+  },
+  topInfoBlur: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   guideTitle: {
-    color: '#C1C1C1',
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+    letterSpacing: 0.5,
   },
   guideSubtitle: {
-    marginTop: 3,
-    color: '#8F8F8F',
-    textAlign: 'center',
-    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 2,
+    opacity: 0.8,
   },
-  cameraBottom: {
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-  },
-  smallActionBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
+  cameraFrameCenter: {
+    width: '100%',
+    aspectRatio: 3 / 4,
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    position: 'relative',
   },
-  cameraControlsRow: {
+  frameCornerTL: { position: 'absolute', top: 0, left: 0, width: 40, height: 40, borderTopWidth: 4, borderLeftWidth: 4, borderColor: '#FFFFFF', borderTopLeftRadius: 20 },
+  frameCornerTR: { position: 'absolute', top: 0, right: 0, width: 40, height: 40, borderTopWidth: 4, borderRightWidth: 4, borderColor: '#FFFFFF', borderTopRightRadius: 20 },
+  frameCornerBL: { position: 'absolute', bottom: 0, left: 0, width: 40, height: 40, borderBottomWidth: 4, borderLeftWidth: 4, borderColor: '#FFFFFF', borderBottomLeftRadius: 20 },
+  frameCornerBR: { position: 'absolute', bottom: 0, right: 0, width: 40, height: 40, borderBottomWidth: 4, borderRightWidth: 4, borderColor: '#FFFFFF', borderBottomRightRadius: 20 },
+  frameScanLine: {
+    width: '90%',
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    position: 'absolute',
+    top: '50%',
+  },
+  cameraBottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    paddingBottom: 20,
   },
-  captureButton: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
+  mainCaptureBtn: {
     width: 80,
     height: 80,
     borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,
     borderColor: '#FFFFFF',
   },
-  captureButtonInner: {
+  captureInner: {
     width: 64,
     height: 64,
     borderRadius: 32,
     backgroundColor: '#FFFFFF',
   },
-  uploadActionBtn: {
-    backgroundColor: '#4F46E5',
-    maxWidth: 200,
-    flex: 1,
-    borderRadius: 16,
-    paddingVertical: 14,
+  sideActionBtn: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: 60,
+    gap: 4,
   },
-  uploadActionBtnText: {
+  sideActionText: {
     color: '#FFFFFF',
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 18,
-    includeFontPadding: false,
+    fontSize: 10,
+    textTransform: 'uppercase',
+  },
+  fallbackFrame: {
+    width: '100%',
+    padding: 32,
+    borderRadius: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    maxWidth: 400,
+  },
+  fallbackIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   fallbackTitle: {
-    marginTop: 14,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+    marginTop: 16,
+    textAlign: 'center',
   },
   fallbackSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
     marginTop: 8,
     textAlign: 'center',
-    paddingHorizontal: 10,
+    lineHeight: 22,
   },
-  fallbackEnableWrap: {
-    marginTop: 18,
-  },
-  processingTitle: {
-    marginTop: 10,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  processingSubtitle: {
-    marginTop: 8,
-    textAlign: 'center',
-    paddingHorizontal: 10,
-  },
-  successInfoWrap: {
-    marginTop: 12,
-    gap: 6,
-  },
-  successCancelBtn: {
-    marginTop: 10,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.65)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 30,
-  },
-  modalCard: {
+  fallbackActions: {
     width: '100%',
-    maxHeight: '90%',
-    borderRadius: 28,
-    padding: 20,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
+    gap: 12,
+    marginTop: 32,
   },
-  modalHeader: {
-    marginBottom: 20,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 20,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  summaryContainer: {
-    width: '100%',
-    paddingBottom: 20,
-  },
-  summaryCard: {
-    borderRadius: 16,
-    padding: 20,
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  summaryHeader: {
+  galleryActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+    width: '100%',
     justifyContent: 'center',
+  },
+  galleryActionBtnText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+  },
+  primaryActionBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 16,
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+    marginTop: 24,
+    width: '100%',
+    justifyContent: 'center',
   },
-  summaryMeta: {
-    flex: 1,
+  primaryActionBtnText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
   },
-  summaryVendor: {
+  secondaryActionBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 16,
+  },
+  secondaryActionBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
+  processingTitle: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
+    marginTop: 24,
+    textAlign: 'center',
   },
-  summaryCategory: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
+  processingSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    opacity: 0.6,
   },
-  summaryDivider: {
-    height: 1,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    marginVertical: 16,
+  modalHeader: {
+    paddingBottom: 20,
   },
-  summaryRow: {
+  modalHeaderTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#6B7280',
     marginBottom: 4,
-    fontWeight: '500',
   },
-  summaryValue: {
+  modalTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    lineHeight: 18,
+    opacity: 0.6,
+  },
+  summaryContainer: {
+    gap: 16,
+  },
+  modernSummaryCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+  },
+  modernSummaryTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  brandIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  brandName: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 16,
-    fontWeight: '700',
   },
-  editToggleBtn: {
+  brandCategory: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  statusTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusTagText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+  },
+  modernDivider: {
+    height: 1,
+    marginVertical: 16,
+  },
+  modernSummaryGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modernGridItem: {
+    gap: 4,
+  },
+  modernGridLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 9,
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+  },
+  modernGridValue: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 18,
+  },
+  modernEditBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    paddingVertical: 10,
+    gap: 6,
+    marginTop: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    borderStyle: 'dashed',
   },
-  editToggleText: {
-    marginLeft: 8,
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#4F46E5',
+  modernEditBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
   },
   editScroll: {
     maxHeight: 400,
-    flexGrow: 0,
-    marginBottom: 10,
   },
-  editGrid: {
-    gap: 20,
+  editingForm: {
+    gap: 16,
   },
-  editCard: {
+  formSection: {
     gap: 12,
   },
-  editCardTitle: {
+  formSectionTitle: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    color: '#64748B',
-    textTransform: 'uppercase',
+    fontSize: 11,
     letterSpacing: 1,
-    marginBottom: 4,
   },
-  inputGroup: {
+  formGroup: {
     gap: 6,
   },
-  inputLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: '#94A3B8',
-    marginLeft: 4,
-  },
-  input: {
-    height: 48,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    backgroundColor: '#F8FAFC',
-  },
-  modalActions: {
+  formRow: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 20,
   },
-  modalBtn: {
+  formLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+  },
+  formInput: {
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  doneEditingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 24,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  doneEditingText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  cancelBtn: {
     flex: 1,
-    height: 52,
+    height: 54,
     borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalBtnLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 14,
+  cancelBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
   },
-  saveBtnFull: {
+  confirmBtn: {
     flex: 1.5,
-    height: 52,
+    height: 54,
     borderRadius: 16,
     overflow: 'hidden',
   },
-  saveGradient: {
+  confirmGradient: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  saveBtnText: {
+  confirmBtnText: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 15,
   },
-  confidenceBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  confidenceText: {
-    fontSize: 10,
-    fontFamily: 'Inter_700Bold',
-  },
 });
-

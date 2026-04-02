@@ -90,11 +90,6 @@ const splashStyles = StyleSheet.create({
     borderRadius: 40,
     padding: 8,
     backgroundColor: "#ffffff",
-    shadowColor: "#000000",
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 16,
     marginBottom: 20,
   },
   logo: {

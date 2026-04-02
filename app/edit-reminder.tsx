@@ -120,12 +120,12 @@ export default function EditReminderScreen() {
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
           {/* Header */}
-          <View style={[styles.header, { height: headerHeight, paddingTop: insets.top, backgroundColor: colors.accent }]}>
+          <View style={[styles.header, { height: headerHeight, paddingTop: insets.top, backgroundColor: '#1E1B4B' }]}>
             <View style={styles.headerTop}>
               <Pressable onPress={() => router.back()} style={styles.backBtn}>
-                <Ionicons name="chevron-back" size={24} color={colors.text} />
+                <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
               </Pressable>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>
+              <Text style={[styles.headerTitle, { color: '#FFFFFF' }]}>
                 {existingBill ? 'Edit Reminder' : 'New Reminder'}
               </Text>
               <View style={{ width: 40 }} />
@@ -133,18 +133,21 @@ export default function EditReminderScreen() {
 
             <View style={styles.headerNameBlock}>
               <TextInput
-                style={[styles.nameInput, { color: colors.text, maxHeight: 120 }]}
+                style={[styles.nameInput, { color: '#FFFFFF' }]}
                 value={name}
                 onChangeText={setName}
                 placeholder="Name of Reminder"
-                placeholderTextColor={colors.textTertiary}
+                placeholderTextColor="rgba(255,255,255,0.4)"
                 autoFocus={!existingBill}
                 textAlign="left"
-                multiline={true}
+                multiline={false}
+                numberOfLines={1}
+                scrollEnabled={true}
+                returnKeyType="done"
               />
-              <View style={[styles.nameUnderline, { backgroundColor: colors.accent }]} />
+              <View style={[styles.nameUnderline, { backgroundColor: '#FFFFFF', opacity: 0.3 }]} />
             </View>
-            </View>
+          </View>
 
           {/* Form Content */}
           <View style={styles.form}>
@@ -223,7 +226,7 @@ export default function EditReminderScreen() {
                   key={opt.key}
                   onPress={() => {
                     setRepeatType(opt.key);
-                    if (opt.key === 'weekly' || opt.key === 'monthly') {
+                    if (opt.key !== 'none') {
                       setShowDatePicker(true);
                     }
                   }}
@@ -346,9 +349,11 @@ const styles = StyleSheet.create({
   },
   nameInput: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 28,
+    fontSize: 24,
     paddingVertical: 10,
     textAlign: 'left',
+    width: '100%',
+    minWidth: 200,
   },
   nameUnderline: {
     height: 3,

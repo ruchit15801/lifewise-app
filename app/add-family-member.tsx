@@ -8,7 +8,9 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  Switch,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,6 +46,16 @@ export default function AddFamilyMemberScreen() {
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // New features
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dobDate, setDobDate] = useState(new Date(2000, 0, 1));
+  const [selectedFeatures, setSelectedFeatures] = useState({
+    medicines: true,
+    reminders: true,
+    reports: false,
+  });
+
   const handleSave = async () => {
     if (!name.trim()) {
       setError('Please enter a name');
@@ -56,7 +68,13 @@ export default function AddFamilyMemberScreen() {
       const res = await apiRequest(
         'POST',
         '/api/family',
-        { name: name.trim(), relationship, avatarUrl },
+        { 
+          name: name.trim(), 
+          relationship, 
+          avatarUrl,
+          dateOfBirth,
+          features: selectedFeatures
+        },
         token
       );
       if (res.ok) {
@@ -192,46 +210,77 @@ export default function AddFamilyMemberScreen() {
               </Animated.View>
             ) : null}
 
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>RELATIONSHIP</Text>
-            <View style={styles.relGrid}>
-              {RELATIONSHIPS.map(rel => {
-                const isSelected = relationship === rel.key;
-                return (
-                  <Pressable
-                    key={rel.key}
-                    onPress={() => setRelationship(rel.key)}
-                    style={[
-                      styles.relCard,
-                      { backgroundColor: colors.card, borderColor: colors.border },
-                      isSelected && { borderColor: colors.accent, backgroundColor: colors.accentDim }
-                    ]}
-                  >
-                    <Ionicons 
-                      name={rel.icon as any} 
-                      size={28} 
-                      color={isSelected ? colors.accent : colors.textTertiary} 
-                    />
-                    <Text style={[
-                      styles.relLabel, 
-                      { color: colors.textSecondary },
-                      isSelected && { color: colors.accent, fontFamily: 'Inter_600SemiBold' }
-                    ]}>
-                      {rel.label}
-                    </Text>
-                    {isSelected && (
-                      <View style={styles.checkWrap}>
-                        <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>DATE OF BIRTH</Text>
+            <Pressable 
+              onPress={() => setShowDatePicker(true)}
+              style={[styles.inputRow, { borderColor: colors.border, backgroundColor: colors.card, marginBottom: 24 }]}
+            >
+              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+              <Text style={{ flex: 1, color: dateOfBirth ? colors.text : colors.textTertiary, fontFamily: 'Inter_500Medium' }}>
+                {dateOfBirth || "Select Birthday"}
+              </Text>
+            </Pressable>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={dobDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                themeVariant={isDark ? 'dark' : 'light'}
+                onChange={(event, date) => {
+                  setShowDatePicker(false);
+                  if (date) {
+                    setDobDate(date);
+                    setDateOfBirth(date.toISOString().split('T')[0]);
+                  }
+                }}
+              />
+            )}
+
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>MANAGED FEATURES</Text>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.featureRow}>
+                <View style={styles.featureInfo}>
+                  <Ionicons name="medkit" size={20} color={colors.accent} />
+                  <Text style={[styles.featureLabel, { color: colors.text }]}>Medicine Tracking</Text>
+                </View>
+                <Switch 
+                  value={selectedFeatures.medicines} 
+                  onValueChange={(v) => setSelectedFeatures(prev => ({ ...prev, medicines: v }))}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                />
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <View style={styles.featureRow}>
+                <View style={styles.featureInfo}>
+                  <Ionicons name="notifications" size={20} color={colors.accent} />
+                  <Text style={[styles.featureLabel, { color: colors.text }]}>Bill Reminders</Text>
+                </View>
+                <Switch 
+                  value={selectedFeatures.reminders} 
+                  onValueChange={(v) => setSelectedFeatures(prev => ({ ...prev, reminders: v }))}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                />
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <View style={styles.featureRow}>
+                <View style={styles.featureInfo}>
+                  <Ionicons name="document-text" size={20} color={colors.accent} />
+                  <Text style={[styles.featureLabel, { color: colors.text }]}>Health Reports</Text>
+                </View>
+                <Switch 
+                  value={selectedFeatures.reports} 
+                  onValueChange={(v) => setSelectedFeatures(prev => ({ ...prev, reports: v }))}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                />
+              </View>
             </View>
 
             <View style={[styles.infoCard, { backgroundColor: colors.accentDim + '30', borderColor: colors.accent + '30' }]}>
                <Ionicons name="information-circle-outline" size={20} color={colors.accent} />
                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                 Adding family members helps you track their health, medicines, and reminders in one place.
+                 Enable features to personalize the dashboard and notifications for this family member.
                </Text>
             </View>
           </View>
@@ -322,11 +371,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#FFF',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
   uploadOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -436,11 +480,6 @@ const styles = StyleSheet.create({
     height: 62,
     borderRadius: 20,
     overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
   },
   saveGradient: {
     flex: 1,
@@ -453,5 +492,39 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontFamily: 'Inter_700Bold',
     fontSize: 17,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  card: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 8,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  featureInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  featureLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+  },
+  divider: {
+    height: 1,
+    marginHorizontal: 12,
+    opacity: 0.3,
   },
 });

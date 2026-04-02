@@ -616,6 +616,25 @@ export default function HomeScreen() {
   const [isSnoozeModalVisible, setIsSnoozeModalVisible] = useState(false);
   const [isCancelModalVisible, setIsCancelModalVisible] = useState(false);
   const [activeReminderId, setActiveReminderId] = useState<string | null>(null);
+  const [dismissedReminderIds, setDismissedReminderIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadDismissed = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@lifewise_dismissed_alerts');
+        if (stored) setDismissedReminderIds(JSON.parse(stored));
+      } catch (e) { console.error('Load dismissed alerts error:', e); }
+    };
+    loadDismissed();
+  }, []);
+
+  const dismissAlert = useCallback(async (id: string) => {
+    const updated = [...dismissedReminderIds, id];
+    setDismissedReminderIds(updated);
+    try {
+      await AsyncStorage.setItem('@lifewise_dismissed_alerts', JSON.stringify(updated));
+    } catch (e) { console.error('Save dismissed alerts error:', e); }
+  }, [dismissedReminderIds]);
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const onRefresh = useCallback(async () => {
@@ -651,25 +670,67 @@ export default function HomeScreen() {
 
   // Never show a full-screen sync animation; we use a compact top banner instead.
 
-  const { monthlySpend, todaySpend, categoryTotals, budgetUsed, budgetBarWidth, budgetHealthScore } = useMemo(() => {
-    const monthly = getMonthlySpending(transactions);
-    const today = getTodaySpending(transactions);
-    const used = monthlyBudget > 0 ? (monthly / monthlyBudget) * 100 : 0;
-    const barWidth = Math.min(used, 100);
-
-    const catTotals: Partial<Record<CategoryType, number>> = {};
+  const { 
+    displaySpend, 
+    isLastMonthFallback, 
+    todaySpend, 
+    dailyAvg,
+    categoryTotals, 
+    budgetUsed, 
+    budgetBarWidth, 
+    budgetHealthScore, 
+    thisMonthTxsCount 
+  } = useMemo(() => {
     const now = new Date();
     const currM = now.getMonth();
     const currY = now.getFullYear();
+    
+    // Last Month
+    let lastM = currM - 1;
+    let lastY = currY;
+    if (lastM < 0) {
+      lastM = 11;
+      lastY = currY - 1;
+    }
+
+    const currentMonthly = getMonthlySpending(transactions, currM, currY);
+    const lastMonthly = getMonthlySpending(transactions, lastM, lastY);
+    
+    const isFallback = currentMonthly === 0 && lastMonthly > 0;
+    const displayValue = isFallback ? lastMonthly : currentMonthly;
+    
+    const today = isFallback ? 0 : getTodaySpending(transactions);
+    
+    // Daily Average
+    let avg = 0;
+    if (isFallback) {
+      // Last month total days
+      const daysInLastM = new Date(lastY, lastM + 1, 0).getDate();
+      avg = lastMonthly / daysInLastM;
+    } else {
+      const daysPassed = now.getDate();
+      avg = daysPassed > 0 ? currentMonthly / daysPassed : 0;
+    }
+
+    const used = monthlyBudget > 0 ? (currentMonthly / monthlyBudget) * 100 : 0;
+    const barWidth = Math.min(used, 100);
+
+    const catTotals: Partial<Record<CategoryType, number>> = {};
+    let thisMonthCount = 0;
 
     transactions.forEach(tx => {
       if (tx.isDebit) {
         const d = new Date(tx.date);
-        // Only include this month's transactions in category breakdown for Home page
-        if (d.getMonth() === currM && d.getFullYear() === currY) {
+        // If fallback, we show last month's categories? 
+        // User said "all details fetch properly", usually means the breakdown should match the shown total.
+        const targetM = isFallback ? lastM : currM;
+        const targetY = isFallback ? lastY : currY;
+        
+        if (d.getMonth() === targetM && d.getFullYear() === targetY) {
           const cat = (tx.category || 'others').toLowerCase() as CategoryType;
           const safeCat = CATEGORIES[cat] ? cat : 'others';
           catTotals[safeCat] = (catTotals[safeCat] || 0) + tx.amount;
+          if (!isFallback) thisMonthCount++;
         }
       }
     });
@@ -685,12 +746,15 @@ export default function HomeScreen() {
     ) : 0;
 
     return {
-      monthlySpend: monthly,
+      displaySpend: displayValue,
+      isLastMonthFallback: isFallback,
       todaySpend: today,
+      dailyAvg: avg,
       categoryTotals: catTotals,
       budgetUsed: used,
       budgetBarWidth: barWidth,
-      budgetHealthScore: healthScore
+      budgetHealthScore: healthScore,
+      thisMonthTxsCount: thisMonthCount
     };
   }, [transactions, monthlyBudget, bills, leaks]);
 
@@ -726,6 +790,7 @@ export default function HomeScreen() {
   nowDay.setHours(0, 0, 0, 0);
   const upcomingBills = bills
     .filter((b) => !b.isPaid && !['paid', 'snoozed', 'cancelled'].includes(b.status))
+    .filter((b) => !dismissedReminderIds.includes(b.id)) // Persistent dismissal
     .filter((b) => {
       const due = new Date(b.dueDate);
       due.setHours(0, 0, 0, 0);
@@ -766,6 +831,7 @@ export default function HomeScreen() {
               setIsSnoozeModalVisible(true);
             }}
             onCancel={(id) => {
+              dismissAlert(id); // Dismiss locally and persistently
               setActiveReminderId(id);
               setIsCancelModalVisible(true);
             }}
@@ -809,8 +875,12 @@ export default function HomeScreen() {
           </View>
 
           <View style={[styles.seniorHeroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>Balance Left</Text>
-            <Text style={[styles.seniorHeroAmount, { color: colors.text }]}>{formatAmount(Math.max(0, monthlyBudget - monthlySpend))}</Text>
+            <Text style={[styles.seniorHeroLabel, { color: colors.textSecondary }]}>
+              {isLastMonthFallback ? 'Last Month' : 'Balance Left'}
+            </Text>
+            <Text style={[styles.seniorHeroAmount, { color: colors.text }]}>
+              {formatAmount(Math.max(0, monthlyBudget - displaySpend))}
+            </Text>
           </View>
 
           {upcomingBills.length > 0 && (
@@ -980,8 +1050,10 @@ export default function HomeScreen() {
           >
             <View style={styles.heroTop}>
               <View style={styles.heroLeft}>
-                <Text style={[styles.heroLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(15,23,42,0.45)' }]}>This Month</Text>
-                <Text style={[styles.heroAmount, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{formatAmount(monthlySpend)}</Text>
+                <Text style={[styles.heroLabel, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(15,23,42,0.45)' }]}>
+                  {isLastMonthFallback ? 'Last Month' : 'This Month'}
+                </Text>
+                <Text style={[styles.heroAmount, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{formatAmount(displaySpend)}</Text>
                 <View style={styles.budgetSection}>
                   <View style={[styles.budgetTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }]}>
                     <LinearGradient
@@ -992,7 +1064,7 @@ export default function HomeScreen() {
                     />
                   </View>
                   <Text style={[styles.budgetText, { color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(15,23,42,0.35)' }]}>
-                    {Math.round(budgetUsed)}% of {formatAmount(monthlyBudget)}
+                    {isLastMonthFallback ? 'Based on last month' : `${Math.round(budgetUsed)}% of ${formatAmount(monthlyBudget)}`}
                   </Text>
                 </View>
               </View>
@@ -1008,14 +1080,14 @@ export default function HomeScreen() {
               <View style={styles.heroStat}>
                 <Text style={[styles.heroStatLabel, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }]}>Daily Avg</Text>
                 <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
-                  {formatAmount(Math.round(monthlySpend / Math.max(new Date().getDate(), 1)))}
+                  {formatAmount(Math.round(dailyAvg))}
                 </Text>
               </View>
               <View style={[styles.heroStatDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' }]} />
               <View style={styles.heroStat}>
                 <Text style={[styles.heroStatLabel, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }]}>Remaining</Text>
-                <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }, monthlyBudget - monthlySpend < 0 ? { color: colors.danger } : {}]}>
-                  {formatAmount(Math.max(0, monthlyBudget - monthlySpend))}
+                <Text style={[styles.heroStatValue, { color: isDark ? '#F1F5F9' : '#0F172A' }, monthlyBudget - displaySpend < 0 ? { color: colors.danger } : {}]}>
+                  {formatAmount(Math.max(0, monthlyBudget - displaySpend))}
                 </Text>
               </View>
             </View>
@@ -1106,7 +1178,7 @@ export default function HomeScreen() {
                 iconColor={colors.accentBlue}
                 bgColor={colors.accentBlueDim}
                 title="Total"
-                value={String(transactions.length)}
+                value={String(thisMonthTxsCount)}
                 subtitle="this month"
                 colors={colors}
                 isSeniorMode={isSeniorMode}

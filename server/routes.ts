@@ -65,11 +65,11 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM || 'LifeWise <no-reply@lifewise.app>';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://lifewise.app';
 const APP_OPEN_URL = process.env.APP_OPEN_URL || APP_BASE_URL;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const OPENAI_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || 'asst_WmTjqjLyo3ki1MFHtqDtal6R';
 const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const S3_BUCKET = process.env.AWS_S3_BUCKET;
-const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
+const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
 
 const reminderTemplatePath = path.resolve(process.cwd(), 'server', 'templates', 'reminder-email.html');
 const REMINDER_EMAIL_TEMPLATE = fs.existsSync(reminderTemplatePath)
@@ -277,7 +277,8 @@ async function parseReminderWithAI(text: string): Promise<{
     '- If text mentions bill/payment, set reminderType=bill. If subscription, reminderType=subscription. Else custom.\n' +
     'Return ONLY strict JSON with keys: title, isoDate, hour, minute, repeatType, reminderType.\n' +
     'Input: ' +
-    JSON.stringify(text);
+    JSON.stringify(text) +
+    '\nOutput in JSON:';
 
   try {
     const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -497,12 +498,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/family', authMiddleware, async (req, res) => {
     console.log('[DEBUG] POST /api/family hit');
     try {
-      const { name, relationship, avatarUrl } = req.body;
+      const { name, relationship, avatarUrl, dateOfBirth, features } = req.body;
       const doc = {
         userId: (req as any).userId,
         name: String(name || 'New Member').trim(),
-        relationship: String(relationship || 'self'),
+        relationship: String(relationship || 'other'),
         avatarUrl: avatarUrl || null,
+        dateOfBirth: dateOfBirth || null,
+        features: features || { medicines: true, reminders: true, reports: false },
         medicines: [],
         createdAt: new Date(),
       };
@@ -517,11 +520,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[DEBUG] PUT /api/family/:id hit:', req.params.id);
     try {
       const { id } = req.params;
-      const { name, relationship, avatarUrl } = req.body;
+      const { name, relationship, avatarUrl, dateOfBirth, features } = req.body;
       const update: any = { updatedAt: new Date() };
       if (name !== undefined) update.name = String(name).trim();
       if (relationship !== undefined) update.relationship = String(relationship);
       if (avatarUrl !== undefined) update.avatarUrl = avatarUrl;
+      if (dateOfBirth !== undefined) update.dateOfBirth = dateOfBirth;
+      if (features !== undefined) update.features = features;
       const result = await family.updateOne({ _id: toId(id), userId: (req as any).userId }, { $set: update });
       if (result.matchedCount === 0) return res.status(404).json({ message: 'Not found' });
       const updated = await family.findOne({ _id: toId(id) });
@@ -1258,7 +1263,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             Key: key,
             Body: file.buffer,
             ContentType: file.mimetype || 'image/jpeg',
-            ACL: 'public-read',
           } as any),
         );
 
@@ -2025,8 +2029,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: 'audio file is required' });
         }
   
-        // Prefer env-configured transcription model, then safe default.
-        const MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
+        // Prefer env-configured transcription model, then whisper-1.
+        const MODEL = OPENAI_TRANSCRIBE_MODEL;
   
         // Create form data
         const form = new FormData();
@@ -2040,15 +2044,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         form.append(
           'prompt',
           [
-            'The speaker may use Gujarati, Hindi, or English.',
+            'The speaker may use English, Hindi, or Gujarati.',
             'CRITICAL RULES:',
+            '- Support mixed languages (Hinglish/Gujlish).',
             '- Detect the spoken language accurately.',
-            '- If Gujarati is spoken, you MUST output ONLY in Gujarati script (ગુજરાતી લિપિ).',
-            '- NEVER convert Gujarati into Hindi (Devanagari).',
-            '- If Hindi is spoken, use Devanagari.',
+            '- If Gujarati is spoken, output in Gujarati script.',
+            '- If Hindi is spoken, output in Devanagari script.',
             '- If English is spoken, use Latin script.',
-            '- Do not translate.',
-            '- Preserve original spoken words exactly.'
+            '- Preserve original spoken words exactly without translation.'
           ].join(' ')
         );
   
@@ -2257,7 +2260,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req as any).userId;
       const [txList, billList] = await Promise.all([
-        transactions.find({ userId, isDebit: true }).sort({ date: -1 }).toArray(),
+        transactions.find({ 
+          userId, 
+          isDebit: true,
+          category: { $nin: ['investment', 'tax', 'rent', 'savings'] } 
+        }).sort({ date: -1 }).toArray(),
         bills.find({ userId }).toArray()
       ]);
 

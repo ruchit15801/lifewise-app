@@ -131,7 +131,22 @@ export default function LeaksScreen() {
           entering={Platform.OS !== 'web' ? FadeInDown.delay(150).duration(500) : undefined}
           style={styles.sectionHeader}
         >
-          <View style={[styles.sectionBadge, { backgroundColor: colors.warningDim }]}>
+          <View style={[styles.howItWorks, { backgroundColor: colors.surfaceGlow, borderColor: colors.border }]}>
+            <View style={styles.howItWorksHeader}>
+              <Ionicons name="help-circle-outline" size={18} color={colors.accent} />
+              <Text style={[styles.howItWorksTitle, { color: colors.text }]}>How it works?</Text>
+            </View>
+            <Text style={[styles.howItWorksText, { color: colors.textSecondary }]}>
+              Our AI analyzes your transaction frequency and identifies patterns. Leaks are detected when:
+            </Text>
+            <View style={styles.howItWorksList}>
+              <Text style={[styles.howItWorksItem, { color: colors.textTertiary }]}>• High frequency of non-essential buys</Text>
+              <Text style={[styles.howItWorksItem, { color: colors.textTertiary }]}>• Unexpected bill price hikes</Text>
+              <Text style={[styles.howItWorksItem, { color: colors.textTertiary }]}>• Inactive legacy subscriptions</Text>
+            </View>
+          </View>
+
+          <View style={[styles.sectionBadge, { backgroundColor: colors.warningDim, marginTop: 24 }]}>
             <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
             <Text style={[styles.sectionTitle, { color: colors.warning }]}>
               {leaks.length} leak{leaks.length !== 1 ? 's' : ''} detected
@@ -370,5 +385,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  howItWorks: {
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  howItWorksHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  howItWorksTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+  },
+  howItWorksText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  howItWorksList: {
+    gap: 4,
+  },
+  howItWorksItem: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
   },
 });

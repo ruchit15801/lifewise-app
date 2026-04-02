@@ -12,7 +12,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, token, updateProfile } = useAuth();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
 
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
@@ -78,7 +78,7 @@ export default function ProfileScreen() {
     } catch (e: any) {
       setSaving(false);
       console.error('[Avatar] Upload Error:', e);
-      setError(e.message || 'Failed to upload avatar');
+      setError(`Upload Failed: ${e.message || 'Unknown error'}`);
     }
   };
 
@@ -179,8 +179,9 @@ export default function ProfileScreen() {
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 maximumDate={new Date()}
+                themeVariant={isDark ? 'dark' : 'light'}
                 onChange={(event, date) => {
-                  setShowDatePicker(false);
+                  if (Platform.OS === 'android') setShowDatePicker(false);
                   if (date) {
                     setDobDate(date);
                     setDateOfBirth(date.toISOString().split('T')[0]);

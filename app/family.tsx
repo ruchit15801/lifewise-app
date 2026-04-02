@@ -58,6 +58,12 @@ interface FamilyMember {
   name: string;
   relationship: string;
   avatarUrl?: string | null;
+  dateOfBirth?: string;
+  features?: {
+    medicines?: boolean;
+    bills?: boolean;
+    reports?: boolean;
+  };
   medicines: Medicine[];
 }
 
@@ -223,76 +229,75 @@ export default function FamilyScreen() {
                   </View>
                 </View>
 
-                {member.medicines.length === 0 ? (
-                  <View style={styles.noMedsBox}>
-                    <Ionicons name="medical-outline" size={20} color={colors.textTertiary} />
-                    <Text style={[styles.noMedsText, { color: colors.textTertiary }]}>No medicines tracked yet</Text>
-                  </View>
-                ) : (
-                  <View style={styles.medList}>
-                    {member.medicines.map((med, mIdx) => {
-                      const pillColor = med.color || '#10B981';
-                      const slots = med.slots || {};
-                      const parts: string[] = [];
-                      if (slots.morning) parts.push(`Morn ${slots.morning}`);
-                      if (slots.noon) parts.push(`Noon ${slots.noon}`);
-                      if (slots.evening) parts.push(`Eve ${slots.evening}`);
-                      const scheduleText = parts.length > 0 ? parts.join(' • ') : 'No schedule';
-
-                      return (
-                        <View 
-                          key={med.id} 
-                          style={[styles.medCard, { backgroundColor: isDark ? colors.bg : colors.bg + '50', borderColor: colors.border }]}
-                        >
-                          <View style={styles.medMain}>
-                            <View style={[styles.medIconBox, { backgroundColor: pillColor + '15' }]}>
-                              <Ionicons name="medkit" size={18} color={pillColor} />
-                            </View>
-                            <View style={styles.medDetails}>
-                              <Text style={[styles.medName, { color: colors.text }]}>
-                                {med.name}
-                                {med.dosage ? <Text style={styles.medDosage}> ({med.dosage})</Text> : ''}
-                              </Text>
-                              <Text style={[styles.medSchedule, { color: colors.textTertiary }]} numberOfLines={1}>
-                                {scheduleText}
-                              </Text>
-                            </View>
-                            {med.taken ? (
-                              <View style={[styles.tag, { backgroundColor: '#10B98120' }]}>
-                                <Text style={[styles.tagText, { color: '#10B981' }]}>Done</Text>
-                              </View>
-                            ) : med.snoozed ? (
-                                <View style={[styles.tag, { backgroundColor: colors.warningDim }]}>
-                                  <Text style={[styles.tagText, { color: colors.warning }]}>Later</Text>
-                                </View>
-                            ) : null}
-                          </View>
-
-                          <View style={styles.medFooter}>
-                             <Pressable 
-                               onPress={() => markMedicine(member.id, med.id, 'taken')}
-                               style={[styles.medActionBtn, { backgroundColor: '#10B98115' }]}
-                             >
-                               <Ionicons name="checkmark" size={18} color="#10B981" />
-                             </Pressable>
-                             <Pressable 
-                               onPress={() => markMedicine(member.id, med.id, 'snooze')}
-                               style={[styles.medActionBtn, { backgroundColor: colors.warningDim }]}
-                             >
-                               <Ionicons name="time-outline" size={18} color={colors.warning} />
-                             </Pressable>
-                             <Pressable 
-                               onPress={() => markMedicine(member.id, med.id, 'skip')}
-                               style={[styles.medActionBtn, { backgroundColor: colors.dangerDim }]}
-                             >
-                               <Ionicons name="close" size={18} color={colors.danger} />
-                             </Pressable>
-                          </View>
+                {/* Dynamic Features Dashboard */}
+                <View style={styles.featuresDashboard}>
+                  {(!member.features || member.features.medicines) && (
+                    <View style={styles.featureSection}>
+                      <View style={styles.featureHeader}>
+                        <Ionicons name="medical" size={18} color={colors.accent} />
+                        <Text style={[styles.featureTitle, { color: colors.text }]}>Medicines</Text>
+                      </View>
+                      
+                      {member.medicines.length === 0 ? (
+                        <View style={[styles.noMedsBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]}>
+                          <Text style={[styles.noItemsText, { color: colors.textTertiary }]}>No active medications</Text>
                         </View>
-                      )
-                    })}
-                  </View>
-                )}
+                      ) : (
+                        <View style={styles.medList}>
+                          {member.medicines.map((med) => {
+                            const pillColor = med.color || colors.accent;
+                            return (
+                              <View key={med.id} style={[styles.miniMedCard, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                                <View style={[styles.miniMedIcon, { backgroundColor: pillColor + '20' }]}>
+                                  <Ionicons name="medkit" size={12} color={pillColor} />
+                                </View>
+                                <Text style={[styles.miniMedName, { color: colors.text }]} numberOfLines={1}>{med.name}</Text>
+                                <Pressable 
+                                  onPress={() => markMedicine(member.id, med.id, 'taken')}
+                                  style={[styles.miniCheck, med.taken && { backgroundColor: '#10B981' }]}
+                                >
+                                  <Ionicons name="checkmark" size={12} color={med.taken ? '#FFF' : colors.textTertiary} />
+                                </Pressable>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {member.features?.bills && (
+                    <Pressable 
+                      onPress={() => router.push({ pathname: '/reminders', params: { memberId: member.id } })}
+                      style={[styles.featureCard, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    >
+                      <View style={[styles.featureIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                        <Ionicons name="receipt" size={18} color="#F59E0B" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.featureTitle, { color: colors.text }]}>Bills & Utilities</Text>
+                        <Text style={[styles.featureSubtitle, { color: colors.textTertiary }]}>Manage personal bills</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                    </Pressable>
+                  )}
+
+                  {member.features?.reports && (
+                    <Pressable 
+                      onPress={() => router.push({ pathname: '/reports', params: { memberId: member.id } })}
+                      style={[styles.featureCard, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    >
+                      <View style={[styles.featureIconWrap, { backgroundColor: '#8B5CF620' }]}>
+                        <Ionicons name="bar-chart" size={18} color="#8B5CF6" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.featureTitle, { color: colors.text }]}>Health Reports</Text>
+                        <Text style={[styles.featureSubtitle, { color: colors.textTertiary }]}>View activity summaries</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                    </Pressable>
+                  )}
+                </View>
               </Animated.View>
             ))
           )}
@@ -309,11 +314,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderBottomLeftRadius: 36,
     borderBottomRightRadius: 36,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
   },
   headerTop: {
     flexDirection: 'row',
@@ -401,11 +401,6 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     marginBottom: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
   },
   memberHeader: {
     flexDirection: 'row',
@@ -447,81 +442,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  featuresDashboard: {
+    gap: 12,
+  },
+  featureSection: {
+    marginBottom: 4,
+  },
+  featureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    paddingLeft: 4,
+  },
+  featureTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+  },
+  featureSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    marginTop: 1,
+  },
   noMedsBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.02)',
+    padding: 14,
     borderRadius: 16,
     borderStyle: 'dashed',
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
+    borderColor: 'rgba(0,0,0,0.08)',
   },
-  noMedsText: {
+  noItemsText: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+    fontSize: 12,
+    textAlign: 'center',
   },
   medList: {
-    gap: 12,
+    gap: 10,
   },
-  medCard: {
-    borderRadius: 20,
-    padding: 12,
-    borderWidth: 1,
-  },
-  medMain: {
+  miniMedCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  medIconBox: {
-    width: 40,
-    height: 40,
+    padding: 10,
     borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+  miniMedIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  medDetails: {
+  miniMedName: {
     flex: 1,
-  },
-  medName: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 15,
-  },
-  medDosage: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    opacity: 0.7,
   },
-  medSchedule: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    marginTop: 2,
+  miniCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  tagText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    textTransform: 'uppercase',
-  },
-  medFooter: {
+  featureCard: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 12,
   },
-  medActionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  featureIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -224,6 +224,20 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         setLastSmsSyncCount(syncResult.synced);
         setSmsSyncPhase('completed');
         setSmsSyncStatus(`Sync complete. ${syncResult.synced} transactions synced.`);
+        
+        // Trigger AI Categorization for 'others' if something was synced
+        if (syncResult.synced > 0) {
+          try {
+            setSmsSyncStatus('Polishing categories with AI...');
+            await fetchWithAuth(token, '/api/transactions/categorize-others', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+          } catch (e) {
+            console.error('[AI] categorization trigger error:', e);
+          }
+        }
+
         await loadData();
         // Reset phase after delay if synced something, or keep idle
         setTimeout(() => setSmsSyncPhase('idle'), 5000);

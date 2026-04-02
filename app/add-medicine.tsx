@@ -590,11 +590,6 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 20,
     overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
   },
   saveGradient: {
     flex: 1,

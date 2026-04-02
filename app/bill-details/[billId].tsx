@@ -268,7 +268,7 @@ export default function BillDetailsScreen() {
       <View style={[styles.container, { backgroundColor: '#F8FAFC' }]}>
       {/* Premium Header */}
       <View style={styles.headerOuter}>
-        <View style={[styles.headerGradient, { paddingTop: headerTop, backgroundColor: '#4F46E5' }]}>
+        <View style={[styles.headerGradient, { paddingTop: headerTop, backgroundColor: '#1E1B4B' }]}>
           {/* Abstract pattern decoration */}
           <View style={styles.headerDecoration1} />
           <View style={styles.headerDecoration2} />
@@ -459,11 +459,18 @@ export default function BillDetailsScreen() {
               <Text style={styles.emptyBillTitle}>Digital Summary Available</Text>
               <Text style={styles.emptyBillDesc}>No physical scan attached. AI has summarized the intent as {intent}.</Text>
               <Pressable 
-                style={styles.addScanBtn} 
-                onPress={() => router.push({ pathname: '/scan-bill', params: { billId: bill.id } })}
+                style={styles.addScanBtnPremium} 
+                onPress={() => router.push(`/scan-bill?billId=${bill.id}`)}
               >
-                <Ionicons name="camera" size={18} color="#4F46E5" />
-                <Text style={styles.addScanBtnText}>Attach Scan</Text>
+                <LinearGradient
+                  colors={['#4F46E5', '#6366F1']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.addScanGradient}
+                >
+                  <Ionicons name="camera" size={18} color="#FFFFFF" />
+                  <Text style={styles.addScanBtnTextPremium}>Attach Official Bill Scan</Text>
+                </LinearGradient>
               </Pressable>
             </View>
           )}
@@ -663,12 +670,12 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   headerOuter: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#1E1B4B',
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
     overflow: 'hidden',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   headerGradient: {
     paddingHorizontal: 20,
@@ -979,21 +986,28 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 20,
   },
-  addScanBtn: {
+  addScanBtnPremium: {
+    marginTop: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  addScanGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    paddingVertical: 14,
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
+    gap: 10,
   },
-  addScanBtnText: {
+  addScanBtnTextPremium: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-    color: '#4F46E5',
+    fontSize: 15,
+    color: '#FFFFFF',
   },
   metaCard: {
     backgroundColor: '#FFFFFF',
@@ -1022,7 +1036,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     height: 200,
-    elevation: 3,
     backgroundColor: '#000',
   },
   billImage: {
@@ -1057,11 +1070,6 @@ const styles = StyleSheet.create({
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    elevation: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
   },
   bottomBtn: {
     flex: 1,
@@ -1080,11 +1088,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    elevation: 4,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
   },
   secondaryActionsRow: {
     flexDirection: 'row',
@@ -1171,11 +1174,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
   },
   saveBtnTextAction: {
     fontFamily: 'Inter_800ExtraBold',

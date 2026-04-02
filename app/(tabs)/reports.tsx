@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import Colors, { ThemeColors } from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
@@ -641,6 +643,128 @@ export default function ReportsScreen() {
     }
   };
 
+  const handleExportPDF = async () => {
+    try {
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+            <style>
+              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 20px; color: #1f2937; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #4f46e5; padding-bottom: 20px; }
+              .header h1 { margin: 0; color: #4f46e5; font-size: 28px; }
+              .header p { margin: 5px 0 0; color: #6b7280; font-size: 14px; }
+              .score-box { background: #f3f4f6; padding: 20px; border-radius: 15px; margin-bottom: 30px; text-align: center; }
+              .score-value { font-size: 48px; font-weight: bold; color: #4f46e5; margin: 10px 0; }
+              .section { margin-bottom: 30px; }
+              .section-title { font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 15px; border-left: 4px solid #4f46e5; padding-left: 10px; }
+              .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+              .stat-card { padding: 15px; border-radius: 12px; border: 1px solid #e5e7eb; }
+              .stat-label { font-size: 12px; color: #6b7280; margin-bottom: 5px; }
+              .stat-value { font-size: 18px; font-weight: bold; color: #111827; }
+              .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+              .table th { text-align: left; padding: 12px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+              .table td { padding: 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+              .category-dot { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 8px; }
+              .footer { text-align: center; margin-top: 50px; font-size: 12px; color: #9ca3af; border-top: 1px solid #f3f4f6; padding-top: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>LifeWise Financial Report</h1>
+              <p>${rangeInfo.label} • Generated on ${new Date().toLocaleDateString('en-IN')}</p>
+            </div>
+
+            <div class="score-box">
+              <div class="stat-label">Estimated Life Score</div>
+              <div class="score-value">${lifeScoreDisplay}</div>
+              <div class="stat-label">Higher scores indicate better financial health</div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Financial Summary</div>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <div class="stat-label">Total Spent</div>
+                  <div class="stat-value">${formatAmount(totalSpent)}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Total Income</div>
+                  <div class="stat-value">${formatAmount(totalIncome)}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Bills Paid</div>
+                  <div class="stat-value">${paidBills.length} / ${reportBills.length}</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Habits Consistency</div>
+                  <div class="stat-value">${Math.round(habitsConsistency * 100)}%</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Spending by Category</div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Transactions</th>
+                    <th>Total</th>
+                    <th>%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${breakdown.map(cat => `
+                    <tr>
+                      <td>${cat.category.charAt(0).toUpperCase() + cat.category.slice(1)}</td>
+                      <td>${reportTxs.filter(t => t.category === cat.category).length}</td>
+                      <td>${formatAmount(cat.total)}</td>
+                      <td>${Math.round(cat.percentage)}%</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Top Merchants</div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Merchant</th>
+                    <th>Category</th>
+                    <th>Visits</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${merchantTotals.map(([name, data]) => `
+                    <tr>
+                      <td>${name}</td>
+                      <td>${data.category}</td>
+                      <td>${data.count}</td>
+                      <td>${formatAmount(data.total)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="footer">
+              <p>© ${new Date().getFullYear()} LifeWise App • Professional Financial Intelligence</p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (e) {
+      console.error('PDF Export Error:', e);
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
@@ -666,6 +790,23 @@ export default function ReportsScreen() {
                 {rangeInfo.label} • Compare vs {rangeInfo.prevLabel}
               </Text>
             </View>
+            <Pressable 
+              onPress={handleExportPDF}
+              style={({ pressed }) => [
+                styles.exportBtnWrap,
+                pressed && { transform: [{ scale: 0.96 }] }
+              ]}
+            >
+              <LinearGradient
+                colors={isDark ? ['#6366F1', '#8B5CF6'] : ['#4F46E5', '#7C3AED']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.exportBtnGradient}
+              >
+                <Ionicons name="sparkles" size={16} color="#FFF" />
+                <Text style={styles.exportBtnText}>Pro Report</Text>
+              </LinearGradient>
+            </Pressable>
           </View>
 
           <View style={styles.filterChipsRow}>
@@ -1625,6 +1766,27 @@ const styles = StyleSheet.create({
   filterChipsScroll: {
     gap: 10,
     paddingVertical: 4,
+  },
+  exportBtnWrap: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  exportBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  exportBtnText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    color: '#FFF',
   },
   filterChip: {
     flexDirection: 'row',
