@@ -81,7 +81,7 @@ export const CATEGORIES: Record<CategoryType, { label: string; color: string; ic
   food: { label: 'Food', color: '#F97316', icon: 'fast-food' },
   shopping: { label: 'Shopping', color: '#EC4899', icon: 'cart' },
   transport: { label: 'Transport', color: '#3B82F6', icon: 'car' },
-  entertainment: { label: 'Fun', color: '#8B5CF6', icon: 'film' },
+  entertainment: { label: 'Fun', color: '#6366F1', icon: 'film' },
   education: { label: 'Education', color: '#6366F1', icon: 'book' },
   investment: { label: 'Investment', color: '#10B981', icon: 'trending-up' },
   others: { label: 'Others', color: '#6B7280', icon: 'apps' },

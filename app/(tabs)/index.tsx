@@ -950,11 +950,17 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Family</Text>
             </Pressable>
-            <Pressable onPress={() => router.push('/(tabs)/bills')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Pressable onPress={() => router.push('/(tabs)/bills')} style={[styles.seniorGridItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[styles.seniorBtnIcon, { backgroundColor: '#F59E0B' + '12' }]}>
                 <Ionicons name="notifications" size={32} color="#F59E0B" />
               </View>
               <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Reminders</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/voice-reminder')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.seniorBtnIcon, { backgroundColor: '#6366F1' + '12' }]}>
+                <Ionicons name="mic" size={32} color="#6366F1" />
+              </View>
+              <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Voice Reminder</Text>
             </Pressable>
           </View>
         </ScrollView>

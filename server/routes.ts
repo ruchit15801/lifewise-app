@@ -907,7 +907,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
-  // ----- Auth -----
+  // --- AUTH ROUTES ---
+  app.post('/api/auth/oauth/google', async (req, res) => {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ message: 'idToken is required' });
+      }
+
+      // Verify Google Token via Google API
+      const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`;
+      const verifyRes = await fetch(verifyUrl);
+      if (!verifyRes.ok) {
+        return res.status(401).json({ message: 'Invalid Google token' });
+      }
+
+      const googleUser = await verifyRes.json();
+      const { email, name, picture, sub: googleId } = googleUser;
+
+      if (!email) {
+        return res.status(400).json({ message: 'Email not provided by Google' });
+      }
+
+      const db = getDb();
+      if (!db) return res.status(500).json({ message: 'Database connection error' });
+
+      let user = await db.collection('users').findOne({ email }) as any;
+
+      if (!user) {
+        // Create new user if doesn't exist
+        const result = await db.collection('users').insertOne({
+          email,
+          name: name || email.split('@')[0],
+          avatarUrl: picture || null,
+          googleId,
+          createdAt: new Date().toISOString(),
+          onboarded: false,
+        });
+        user = { _id: result.insertedId, email, name, avatarUrl: picture };
+      }
+
+      const token = jwt.sign(
+        { userId: (user as any)._id.toString(), email: user.email },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRY }
+      );
+
+      return res.json({
+        token,
+        user: {
+          id: (user as any)._id.toString(),
+          email: user.email,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+        }
+      });
+    } catch (err) {
+      console.error('Google OAuth error:', err);
+      return res.status(500).json({ message: 'Internal server error during Google login' });
+    }
+  });
+
   app.post('/api/auth/register', async (req, res) => {
     try {
       const { name, email, password } = req.body;
@@ -2029,52 +2089,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: 'audio file is required' });
         }
   
-        // Prefer env-configured transcription model, then whisper-1.
         const MODEL = OPENAI_TRANSCRIBE_MODEL;
-  
-        // Create form data
-        const form = new FormData();
-        const blob = new Blob([file.buffer], { type: file.mimetype || 'audio/m4a' });
-  
-        form.append('file', blob, file.originalname || 'voice.m4a');
-        form.append('model', MODEL);
-        form.append('response_format', 'json');
-  
-        // 🔥 Strong language control prompt
-        form.append(
-          'prompt',
-          [
-            'The speaker may use English, Hindi, or Gujarati.',
-            'CRITICAL RULES:',
-            '- Support mixed languages (Hinglish/Gujlish).',
-            '- Detect the spoken language accurately.',
-            '- If Gujarati is spoken, output in Gujarati script.',
-            '- If Hindi is spoken, output in Devanagari script.',
-            '- If English is spoken, use Latin script.',
-            '- Preserve original spoken words exactly without translation.'
-          ].join(' ')
-        );
+        const PROMPT = [
+          'The speaker may use English, Hindi, or Gujarati.',
+          'CRITICAL RULES:',
+          '- Support mixed languages (Hinglish/Gujlish).',
+          '- Detect the spoken language accurately.',
+          '- If Gujarati is spoken, output in Gujarati script.',
+          '- If Hindi is spoken, output in Devanagari script.',
+          '- If English is spoken, use Latin script.',
+          '- Preserve original spoken words exactly without translation.'
+        ].join(' ');
+
+        // Manual Multipart Construction for Node.js (OpenAI requirement)
+        const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+        const parts: any[] = [];
+        
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.originalname || 'voice.m4a'}"\r\nContent-Type: ${file.mimetype || 'audio/m4a'}\r\n\r\n`));
+        parts.push(file.buffer);
+        parts.push(Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${MODEL}\r\n`));
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\n${PROMPT}\r\n`));
+        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n`));
+        parts.push(Buffer.from(`--${boundary}--\r\n`));
+        
+        const body = Buffer.concat(parts);
   
         const tRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${openAIKey}` },
-          body: form as any,
+          headers: { 
+            Authorization: `Bearer ${openAIKey}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`
+          },
+          body: body as any,
         });
   
         if (!tRes.ok) {
-          const errText = await tRes.text().catch(() => '');
-          console.error('OpenAI transcribe error:', errText);
-          return res.status(500).json({ message: 'Could not transcribe audio. Please try again.' });
+          const errText = await tRes.text();
+          console.error('[Voice] Transcription failed:', tRes.status, errText);
+          return res.status(500).json({ message: 'Transcription failed.' });
         }
   
         const tJson = (await tRes.json()) as { text?: string; language?: string | null };
         let text = String(tJson.text || '').trim();
-  
+        console.log('[Voice] Raw transcript:', text, 'Detected Lang:', tJson.language);
+        
         if (!text) {
-          return res.status(400).json({ message: 'No speech detected. Please try again.' });
+          return res.status(400).json({ message: 'Could not transcribe any speech. Please try again.' });
         }
   
-        // Normalize script so Gujarati speech is stored/displayed in Gujarati script.
+        // Normalize script (e.g. convert Hindi-script-Gujarati to Gujarati script)
         const normalized = await normalizeTranscriptScript({
           text,
           languageHint: tJson.language || null,
@@ -2082,24 +2145,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         text = normalized.text;
   
-        // ============================
-        // 🔥 PARSE REMINDER
-        // ============================
-  
+        // Extract structured reminder data using AI
         const parsed = await parseReminderWithAI(text);
   
+        // Return exactly what the frontend (voice-reminder.tsx) expects
         return res.json({
           text,
-          language: normalized.language,
-          parsed,
+          language: normalized.language || tJson.language || 'en',
+          parsed: parsed
         });
-  
       } catch (err) {
-        console.error('Voice parse error:', err);
-        return res.status(500).json({ message: 'Server error.' });
+        console.error('[Voice] E2E Voice Parse error:', err);
+        return res.status(500).json({ message: 'Server error processing voice reminder.' });
       }
     }
   );
+
   
   
   // ============================

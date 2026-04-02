@@ -124,11 +124,11 @@ function ReminderCard({
       case 'tasks':
         return { label: 'Tasks', color: '#F59E0B' };
       case 'finance':
-        return { label: 'Finance', color: '#8B5CF6' };
+        return { label: 'Finance', color: '#4F46E5' };
       case 'travel':
         return { label: 'Travel', color: '#60A5FA' };
       case 'events':
-        return { label: 'Events', color: '#A855F7' };
+        return { label: 'Events', color: '#6366F1' };
       case 'custom':
       default:
         return { label: 'Custom', color: '#4F46E5' };

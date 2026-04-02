@@ -694,7 +694,7 @@ export default function VoiceReminderScreen() {
                     <Ionicons
                       name={state === 'recording' ? 'stop' : 'mic'}
                       size={40}
-                      color="#FFFFFF"
+                      color="#4F46E5"
                     />
                   )}
                 </Animated.View>

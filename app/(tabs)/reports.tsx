@@ -646,113 +646,184 @@ export default function ReportsScreen() {
   const handleExportPDF = async () => {
     try {
       const html = `
+        <!DOCTYPE html>
         <html>
           <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
             <style>
-              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 20px; color: #1f2937; }
-              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #4f46e5; padding-bottom: 20px; }
-              .header h1 { margin: 0; color: #4f46e5; font-size: 28px; }
-              .header p { margin: 5px 0 0; color: #6b7280; font-size: 14px; }
-              .score-box { background: #f3f4f6; padding: 20px; border-radius: 15px; margin-bottom: 30px; text-align: center; }
-              .score-value { font-size: 48px; font-weight: bold; color: #4f46e5; margin: 10px 0; }
-              .section { margin-bottom: 30px; }
-              .section-title { font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 15px; border-left: 4px solid #4f46e5; padding-left: 10px; }
-              .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
-              .stat-card { padding: 15px; border-radius: 12px; border: 1px solid #e5e7eb; }
-              .stat-label { font-size: 12px; color: #6b7280; margin-bottom: 5px; }
-              .stat-value { font-size: 18px; font-weight: bold; color: #111827; }
-              .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-              .table th { text-align: left; padding: 12px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-              .table td { padding: 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
-              .category-dot { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 8px; }
-              .footer { text-align: center; margin-top: 50px; font-size: 12px; color: #9ca3af; border-top: 1px solid #f3f4f6; padding-top: 20px; }
+              :root {
+                --primary: #6366F1;
+                --primary-light: #EEF2FF;
+                --text-main: #1E293B;
+                --text-muted: #64748B;
+                --bg: #F8FAFC;
+                --card-bg: #FFFFFF;
+                --border: #E2E8F0;
+              }
+              body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background-color: var(--bg);
+                color: var(--text-main);
+                margin: 0;
+                padding: 40px 20px;
+                line-height: 1.5;
+              }
+              .container { max-width: 800px; margin: 0 auto; }
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                margin-bottom: 40px;
+                padding-bottom: 20px;
+                border-bottom: 1px solid var(--border);
+              }
+              .header-left h1 { margin: 0; font-size: 28px; font-weight: 800; color: var(--primary); letter-spacing: -0.5px; }
+              .header-left p { margin: 4px 0 0; color: var(--text-muted); font-size: 14px; }
+              .header-right { text-align: right; color: var(--text-muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
+
+              .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+              
+              .score-card {
+                grid-column: span 2;
+                background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+                border-radius: 24px;
+                padding: 30px;
+                text-align: center;
+                color: white;
+                box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.2);
+              }
+              .score-label { font-size: 14px; font-weight: 600; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
+              .score-value { font-size: 64px; font-weight: 800; margin: 10px 0; }
+              .score-desc { font-size: 14px; opacity: 0.8; max-width: 400px; margin: 0 auto; }
+
+              .stat-card {
+                background: var(--card-bg);
+                padding: 24px;
+                border-radius: 20px;
+                border: 1px solid var(--border);
+              }
+              .stat-label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+              .stat-value { font-size: 24px; font-weight: 700; color: var(--text-main); }
+              .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+              .section { margin-top: 40px; }
+              .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+              .section-title { font-size: 18px; font-weight: 700; color: var(--text-main); }
+              .section-line { flex: 1; height: 1px; background: var(--border); }
+
+              .chart-container { background: var(--card-bg); padding: 24px; border-radius: 20px; border: 1px solid var(--border); }
+              .chart-row { display: flex; align-items: center; margin-bottom: 16px; gap: 16px; }
+              .chart-label { width: 120px; font-size: 13px; font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+              .chart-bar-wrap { flex: 1; height: 12px; background: var(--primary-light); border-radius: 6px; overflow: hidden; }
+              .chart-bar-fill { height: 100%; border-radius: 6px; background: var(--primary); }
+              .chart-value { width: 100px; text-align: right; font-size: 13px; font-weight: 700; color: var(--text-main); }
+
+              table { width: 100%; border-collapse: separate; border-spacing: 0; }
+              th { text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+              td { padding: 16px; font-size: 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+              .tr-merchant { font-weight: 600; color: var(--text-main); }
+              .tr-category { font-size: 12px; color: var(--text-muted); background: var(--primary-light); padding: 4px 8px; border-radius: 6px; }
+
+              .footer { text-align: center; margin-top: 60px; padding-top: 30px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
             </style>
           </head>
           <body>
-            <div class="header">
-              <h1>LifeWise Financial Report</h1>
-              <p>${rangeInfo.label} • Generated on ${new Date().toLocaleDateString('en-IN')}</p>
-            </div>
-
-            <div class="score-box">
-              <div class="stat-label">Estimated Life Score</div>
-              <div class="score-value">${lifeScoreDisplay}</div>
-              <div class="stat-label">Higher scores indicate better financial health</div>
-            </div>
-
-            <div class="section">
-              <div class="section-title">Financial Summary</div>
-              <div class="stats-grid">
-                <div class="stat-card">
-                  <div class="stat-label">Total Spent</div>
-                  <div class="stat-value">${formatAmount(totalSpent)}</div>
+            <div class="container">
+              <div class="header">
+                <div class="header-left">
+                  <h1>LifeWise Intelligence</h1>
+                  <p>Financial Experience Report • ${rangeInfo.label}</p>
                 </div>
-                <div class="stat-card">
-                  <div class="stat-label">Total Income</div>
-                  <div class="stat-value">${formatAmount(totalIncome)}</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-label">Bills Paid</div>
-                  <div class="stat-value">${paidBills.length} / ${reportBills.length}</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-label">Habits Consistency</div>
-                  <div class="stat-value">${Math.round(habitsConsistency * 100)}%</div>
+                <div class="header-right">
+                  Generated ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                 </div>
               </div>
-            </div>
 
-            <div class="section">
-              <div class="section-title">Spending by Category</div>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>Transactions</th>
-                    <th>Total</th>
-                    <th>%</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <div class="grid">
+                <div class="score-card">
+                  <div class="score-label">Active Life Score</div>
+                  <div class="score-value">${lifeScoreDisplay}</div>
+                  <div class="score-desc">Based on spending patterns, bill compliance, and health habit consistency for the selected period.</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-label">Total Outflow</div>
+                  <div class="stat-value">${formatAmount(totalSpent)}</div>
+                  <div class="stat-sub">Across ${reportTxs.filter(t => t.isDebit).length} transactions</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-label">Total Inflow</div>
+                  <div class="stat-value">${formatAmount(totalIncome)}</div>
+                  <div class="stat-sub">From ${reportTxs.filter(t => !t.isDebit).length} sources</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-label">Bill Adherence</div>
+                  <div class="stat-value">${paidBills.length} / ${reportBills.length}</div>
+                  <div class="stat-sub">${reportBills.length > 0 ? Math.round((paidBills.length / reportBills.length) * 100) : 100}% compliance rate</div>
+                </div>
+
+                <div class="stat-card">
+                  <div class="stat-label">Habit Consistency</div>
+                  <div class="stat-value">${Math.round(habitsConsistency * 100)}%</div>
+                  <div class="stat-sub">${medicinesTaken} medicines logged</div>
+                </div>
+              </div>
+
+              <div class="section">
+                <div class="section-header">
+                  <div class="section-title">Spending Architecture</div>
+                  <div class="section-line"></div>
+                </div>
+                <div class="chart-container">
                   ${breakdown.map(cat => `
-                    <tr>
-                      <td>${cat.category.charAt(0).toUpperCase() + cat.category.slice(1)}</td>
-                      <td>${reportTxs.filter(t => t.category === cat.category).length}</td>
-                      <td>${formatAmount(cat.total)}</td>
-                      <td>${Math.round(cat.percentage)}%</td>
-                    </tr>
+                    <div class="chart-row">
+                      <div class="chart-label">${cat.category.charAt(0).toUpperCase() + cat.category.slice(1)}</div>
+                      <div class="chart-bar-wrap">
+                        <div class="chart-bar-fill" style="width: ${cat.percentage}%"></div>
+                      </div>
+                      <div class="chart-value">${formatAmount(cat.total)}</div>
+                    </div>
                   `).join('')}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </div>
 
-            <div class="section">
-              <div class="section-title">Top Merchants</div>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Merchant</th>
-                    <th>Category</th>
-                    <th>Visits</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${merchantTotals.map(([name, data]) => `
-                    <tr>
-                      <td>${name}</td>
-                      <td>${data.category}</td>
-                      <td>${data.count}</td>
-                      <td>${formatAmount(data.total)}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
+              <div class="section">
+                <div class="section-header">
+                  <div class="section-title">Velocity Analysis (Top Merchants)</div>
+                  <div class="section-line"></div>
+                </div>
+                <div class="stat-card" style="padding: 0; overflow: hidden;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Merchant / Service</th>
+                        <th>Category</th>
+                        <th style="text-align: center;">Frequency</th>
+                        <th style="text-align: right;">Volume</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${merchantTotals.map(([name, data]) => `
+                        <tr>
+                          <td class="tr-merchant">${name}</td>
+                          <td><span class="tr-category">${data.category}</span></td>
+                          <td style="text-align: center;">${data.count} tx</td>
+                          <td style="text-align: right; font-weight: 700;">${formatAmount(data.total)}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-            <div class="footer">
-              <p>© ${new Date().getFullYear()} LifeWise App • Professional Financial Intelligence</p>
+              <div class="footer">
+                <p>This is a system-generated financial intelligence report from LifeWise App.</p>
+                <p>© ${new Date().getFullYear()} LifeWise • Secure Financial Companion</p>
+              </div>
             </div>
           </body>
         </html>
@@ -793,18 +864,18 @@ export default function ReportsScreen() {
             <Pressable 
               onPress={handleExportPDF}
               style={({ pressed }) => [
-                styles.exportBtnWrap,
-                pressed && { transform: [{ scale: 0.96 }] }
+                styles.exportBtnHeader,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }
               ]}
             >
               <LinearGradient
-                colors={isDark ? ['#6366F1', '#8B5CF6'] : ['#4F46E5', '#7C3AED']}
+                colors={['#6366F1', '#4F46E5']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.exportBtnGradient}
               >
-                <Ionicons name="sparkles" size={16} color="#FFF" />
-                <Text style={styles.exportBtnText}>Pro Report</Text>
+                <Ionicons name="document-text" size={18} color="#FFF" />
+                <Text style={styles.exportBtnText}>PDF Report</Text>
               </LinearGradient>
             </Pressable>
           </View>
@@ -1767,24 +1838,25 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 4,
   },
-  exportBtnWrap: {
-    borderRadius: 14,
+  exportBtnHeader: {
+    borderRadius: 16,
     overflow: 'hidden',
-    elevation: 4,
     shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   exportBtnGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
     paddingVertical: 10,
+    paddingHorizontal: 16,
     gap: 8,
   },
   exportBtnText: {
-    fontFamily: 'Inter_700Bold',
     fontSize: 14,
     color: '#FFF',
   },
