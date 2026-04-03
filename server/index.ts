@@ -31,16 +31,17 @@ function setupCors(app: express.Application) {
 
     const origin = req.header("origin");
 
-    // Allow localhost and LAN IPs for Expo (web + device)
+    // Allow development and physical device requests
     const isLocalhost =
+      !origin || // Handle missing origin (common in mobile apps)
       origin?.startsWith("http://localhost:") ||
       origin?.startsWith("http://127.0.0.1:") ||
       origin?.startsWith("http://192.168.") ||
       origin?.startsWith("http://10.0.") ||
       /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.0\.\d+\.\d+)(:\d+)?$/.test(origin || "");
 
-    if (origin && (origins.has(origin) || isLocalhost)) {
-      res.header("Access-Control-Allow-Origin", origin);
+    if (!origin || origins.has(origin) || isLocalhost) {
+      res.header("Access-Control-Allow-Origin", origin || "*");
       res.header(
         "Access-Control-Allow-Methods",
         "GET, POST, PUT, PATCH, DELETE, OPTIONS",
@@ -82,20 +83,24 @@ function setupRequestLogging(app: express.Application) {
     };
 
     res.on("finish", () => {
+      const duration = Date.now() - start;
+      const logLine = `[${new Date().toISOString()}] ${req.method} ${path} ${res.statusCode} from ${req.ip} in ${duration}ms\n`;
+      
+      // Append to access.log
+      fs.appendFileSync("access.log", logLine);
+
       if (!path.startsWith("/api")) return;
 
-      const duration = Date.now() - start;
-
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      let briefLogLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        briefLogLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
+      if (briefLogLine.length > 80) {
+        briefLogLine = briefLogLine.slice(0, 79) + "…";
       }
 
-      log(logLine);
+      log(briefLogLine);
     });
 
     next();

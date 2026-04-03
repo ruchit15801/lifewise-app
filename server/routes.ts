@@ -263,19 +263,19 @@ async function parseReminderWithAI(text: string): Promise<{
   }
 
   const prompt =
-    'You are a reminder parser for a mobile app. Given a natural language reminder in ANY language (including Hindi and Gujarati), extract:\n' +
-    '- title (short)\n' +
+    'You are a multilingual reminder parser. Given a text in ANY language (English, Hindi, Gujarati), extract:\n' +
+    '- title (Summary ONLY - STRICTLY REMOVE all digits, numbers, and currency units like rs, rupees, rupaiya, ₹, रुपये, રૂપિયા)\n' +
+    '- amount (numerical value only, extract from any script - if none, use null)\n' +
     '- isoDate (YYYY-MM-DD)\n' +
     '- hour (0-23)\n' +
     '- minute (0-59)\n' +
     '- repeatType one of: none,daily,weekly,monthly,yearly\n' +
     '- reminderType one of: bill,subscription,custom\n' +
     'Rules:\n' +
-    '- If no date mentioned, assume tomorrow.\n' +
+    '- If no date mentioned, use ' + defaultIso + '.\n' +
     '- If no time mentioned, use 9:00.\n' +
-    '- If user says "every day"/"daily" etc, set repeatType accordingly.\n' +
-    '- If text mentions bill/payment, set reminderType=bill. If subscription, reminderType=subscription. Else custom.\n' +
-    'Return ONLY strict JSON with keys: title, isoDate, hour, minute, repeatType, reminderType.\n' +
+    '- If amount is present, default reminderType to "bill".\n' +
+    'Return ONLY strict JSON with keys: title, amount, isoDate, hour, minute, repeatType, reminderType.\n' +
     'Input: ' +
     JSON.stringify(text) +
     '\nOutput in JSON:';
@@ -2130,29 +2130,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
   
         const tJson = (await tRes.json()) as { text?: string; language?: string | null };
-        let text = String(tJson.text || '').trim();
-        console.log('[Voice] Raw transcript:', text, 'Detected Lang:', tJson.language);
+        let transcript = String(tJson.text || '').trim();
+        console.log('[Voice] Raw transcript:', transcript, 'Detected Lang:', tJson.language);
         
-        if (!text) {
+        if (!transcript) {
           return res.status(400).json({ message: 'Could not transcribe any speech. Please try again.' });
         }
   
-        // Normalize script (e.g. convert Hindi-script-Gujarati to Gujarati script)
-        const normalized = await normalizeTranscriptScript({
-          text,
-          languageHint: tJson.language || null,
-          apiKey: openAIKey,
-        });
-        text = normalized.text;
-  
-        // Extract structured reminder data using AI
-        const parsed = await parseReminderWithAI(text);
-  
-        // Return exactly what the frontend (voice-reminder.tsx) expects
+        // Optimized: One call for normalization + parsing
+        const parsed = await normalizeAndParseVoiceReminderWithAI(transcript, tJson.language || null);
+
         return res.json({
-          text,
-          language: normalized.language || tJson.language || 'en',
-          parsed: parsed
+          text: parsed.normalizedText,
+          language: parsed.detectedLanguage,
+          parsed: parsed.data
         });
       } catch (err) {
         console.error('[Voice] E2E Voice Parse error:', err);
@@ -2161,6 +2152,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
+  async function normalizeAndParseVoiceReminderWithAI(text: string, languageHint: string | null): Promise<{
+    normalizedText: string;
+    detectedLanguage: string;
+    data: any;
+  }> {
+    const openAIKey = getOpenAIKey();
+    if (!openAIKey) {
+      const basic = await parseReminderWithAI(text);
+      return { normalizedText: text, detectedLanguage: languageHint || 'en', data: basic };
+    }
+
+    const now = new Date();
+    const defaultIso = new Date(now.getTime() + 86400000).toISOString().slice(0, 10);
+
+    const prompt = `You are an expert multilingual assistant.
+The user provides a raw transcript (potentially with errors) in English, Hindi, or Gujarati (or mixed).
+Tasks:
+1. Normalize the text: Fix transcription errors, and if it's Gujarati speech written in Hindi script, convert it to Gujarati script.
+2. Extract reminder data in strict JSON.
+
+Rules for Extraction:
+- title: concise summary. **ABSOLUTE RULE**: The 'title' MUST NOT contain ANY digits, numbers, or currency words (like rupees, rupaiya, rs, ₹, $, રૂપિયા, रुपये). Strictly remove them.
+- isoDate: YYYY-MM-DD. If no date, use ${defaultIso}.
+- hour: 0-23. If no time, use 9.
+- minute: 0-59. If no time, use 0.
+- repeatType: one of [none, daily, weekly, monthly, yearly].
+- reminderType: one of [bill, subscription, custom]. 
+- amount: numerical value if mentioned (e.g. 500). Extract from any script (Gujarati, Hindi, English). If no amount, return null.
+
+*Heuristic*: If an amount is detected, prefer reminderType 'bill'. Ensure the 'title' is pure text describing the purpose only, with zero price info.
+
+Return ONLY strict JSON:
+{
+  "normalizedText": "...",
+  "detectedLanguage": "en" | "hi" | "gu",
+  "data": { 
+    "title": "...", 
+    "isoDate": "...", 
+    "hour": 0, 
+    "minute": 0, 
+    "repeatType": "...", 
+    "reminderType": "...",
+    "amount": 500 | null
+  }
+}
+
+Input Text: "${text}"
+Language Hint: ${languageHint || 'unknown'}
+
+JSON Output:`;
+
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0,
+          response_format: { type: 'json_object' }
+        })
+      });
+      const json = await res.json();
+      const content = JSON.parse(json.choices[0].message.content);
+      return {
+        normalizedText: content.normalizedText || text,
+        detectedLanguage: content.detectedLanguage || languageHint || 'en',
+        data: content.data
+      };
+    } catch (e) {
+      const fallback = await parseReminderWithAI(text);
+      return { normalizedText: text, detectedLanguage: languageHint || 'en', data: fallback };
+    }
+  }
   
   
   // ============================

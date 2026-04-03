@@ -289,9 +289,11 @@ export default function BillDetailsScreen() {
           </View>
 
           <View style={styles.headerHero}>
-            <View style={styles.heroAmountBadge}>
-              <Text style={styles.heroAmount}>{formatAmount(bill.amount)}</Text>
-            </View>
+            {bill.amount > 0 && (
+              <View style={styles.heroAmountBadge}>
+                <Text style={styles.heroAmount}>{formatAmount(bill.amount)}</Text>
+              </View>
+            )}
             <Text style={styles.heroName}>{bill.name}</Text>
             <View style={[styles.heroStatusBadge, { backgroundColor: isPaid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)' }]}>
               <View style={[styles.statusDot, { backgroundColor: isPaid ? '#10B981' : '#EF4444' }]} />
@@ -490,7 +492,10 @@ export default function BillDetailsScreen() {
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {isPaid ? 'Mark Unpaid' : 'Mark as Paid'}
+            {isPaid 
+              ? (bill.amount > 0 ? 'Mark Unpaid' : 'Mark Not Done') 
+              : (bill.amount > 0 ? 'Mark as Paid' : 'Mark as Done')
+            }
           </Text>
         </Pressable>
 

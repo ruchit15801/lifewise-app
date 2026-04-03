@@ -6,10 +6,10 @@ import {
   TextInput,
   Pressable,
   Platform,
-  ActivityIndicator,
   ScrollView,
   Image,
 } from 'react-native';
+import PremiumLoader from '@/components/PremiumLoader';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -144,7 +144,7 @@ export default function LoginScreen() {
                 style={styles.loginBtn}
               >
                 {isSubmitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <PremiumLoader size={20} />
                 ) : (
                   <Text style={styles.loginBtnText}>Sign In</Text>
                 )}

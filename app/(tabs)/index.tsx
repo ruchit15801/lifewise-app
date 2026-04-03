@@ -807,6 +807,14 @@ export default function HomeScreen() {
     });
   }, [showAlert]);
 
+  if (isLoading && !refreshing) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
+        <PremiumLoader />
+      </View>
+    );
+  }
+
   if (isSeniorMode) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -950,7 +958,7 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.seniorBtnLabel, { color: colors.text }]}>Family</Text>
             </Pressable>
-            <Pressable onPress={() => router.push('/(tabs)/bills')} style={[styles.seniorGridItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Pressable onPress={() => router.push('/(tabs)/bills')} style={[styles.seniorBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[styles.seniorBtnIcon, { backgroundColor: '#F59E0B' + '12' }]}>
                 <Ionicons name="notifications" size={32} color="#F59E0B" />
               </View>
@@ -1137,14 +1145,11 @@ export default function HomeScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    <Text
-                      style={[
-                        styles.reminderPillAmount,
-                        { color: colors.accent, opacity: showAmount ? 1 : 0 },
-                      ]}
-                    >
-                      {formatAmount(bill.amount)}
-                    </Text>
+                    {showAmount && (
+                      <Text style={[styles.reminderPillAmount, { color: colors.accent }]}>
+                        {formatAmount(bill.amount)}
+                      </Text>
+                    )}
                   </Pressable>
                 );
               })}

@@ -16,17 +16,18 @@ export function getApiUrl(): string {
   try {
     // 1. Clean the host of any protocol or trailing paths
     const cleanedHost = host.replace(/^https?:\/\//, "").split("/")[0];
-    
+
     if (!cleanedHost) {
       return "https://api.lifewiseee.com";
     }
 
     // 2. Identify if it's a local address
+    // Matches localhost, 127.0.0.1, 10.x.x.x, 192.168.x.x, 172.x.x.x
     const isLocal =
       cleanedHost.includes("localhost") ||
       cleanedHost.includes("127.0.0.1") ||
       cleanedHost.includes("10.0.2.2") ||
-      /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(cleanedHost);
+      /^(\d{1,3}\.){3}\d{1,3}/.test(cleanedHost);
 
     // 3. Construct the final URL securely
     const url = new URL(isLocal ? `http://${cleanedHost}` : `https://${cleanedHost}`);
@@ -71,21 +72,21 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const baseUrl = getApiUrl();
-    const url = new URL(queryKey.join("/") as string, baseUrl);
+    async ({ queryKey }) => {
+      const baseUrl = getApiUrl();
+      const url = new URL(queryKey.join("/") as string, baseUrl);
 
-    const res = await fetch(url.toString(), {
-      credentials: "include",
-    });
+      const res = await fetch(url.toString(), {
+        credentials: "include",
+      });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
 
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
+      await throwIfResNotOk(res);
+      return await res.json();
+    };
 
 export const queryClient = new QueryClient({
   defaultOptions: {

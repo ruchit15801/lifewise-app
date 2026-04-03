@@ -13,6 +13,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import PremiumLoader from '@/components/PremiumLoader';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -20,7 +21,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useCurrency } from '@/lib/currency-context';
 import { useExpenses } from '@/lib/expense-context';
 import { useTabBarContentInset } from '@/lib/tab-bar';
-import PremiumLoader from '@/components/PremiumLoader';
+
 import { useSeniorMode } from '@/lib/senior-context';
 import {
   CATEGORIES,
@@ -118,7 +119,8 @@ export default function TransactionsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.bg }]}>
-        <PremiumLoader size={60} text="Fetching Transactions..." />
+        <PremiumLoader size={60} />
+
       </View>
     );
   }

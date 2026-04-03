@@ -32,6 +32,7 @@ interface ParsedReminder {
   timeLabel?: string;
   repeatType: RepeatType;
   reminderType: ReminderType;
+  amount?: number;
 }
 
 function timeLabelFromDate(d: Date) {
@@ -64,10 +65,10 @@ const REPEAT_OPTIONS: { id: RepeatType; label: string }[] = [
 function extractAmountFromText(text: string): number | null {
   const t = String(text || '');
 
-  // Prefer explicit currency markers (₹ / rs / rupees).
+  // Prefer explicit currency markers (₹ / rs / rupees / rupia / rupaiya).
   const currencyRegexes: RegExp[] = [
-    /(?:₹|rs\.?|rupees?)\s*([0-9][0-9,]*\.?[0-9]*)/i,
-    /([0-9][0-9,]*\.?[0-9]*)\s*(?:₹|rs\.?|rupees?)/i,
+    /(?:₹|rs\.?|rupees?|rupia|rupaiya|rupaiye|paisa)\s*([0-9][0-9,]*\.?[0-9]*)/i,
+    /([0-9][0-9,]*\.?[0-9]*)\s*(?:₹|rs\.?|rupees?|rupia|rupaiya|rupaiye|paisa)/i,
   ];
   for (const rx of currencyRegexes) {
     const m = t.match(rx);
@@ -289,6 +290,7 @@ function parsedFromServer(p: {
   minute: number;
   repeatType: RepeatType;
   reminderType: ReminderType;
+  amount?: number | null;
 }): ParsedReminder {
   const dt = new Date(`${p.isoDate}T00:00:00.000Z`);
   if (!Number.isNaN(dt.getTime())) {
@@ -300,6 +302,7 @@ function parsedFromServer(p: {
     timeLabel: Number.isNaN(dt.getTime()) ? undefined : timeLabelFromDate(dt),
     repeatType: p.repeatType || 'none',
     reminderType: p.reminderType || 'custom',
+    amount: typeof p.amount === 'number' ? p.amount : undefined,
   };
 }
 
@@ -464,6 +467,7 @@ export default function VoiceReminderScreen() {
           minute: number;
           repeatType: RepeatType;
           reminderType: ReminderType;
+          amount?: number | null;
         };
       };
 
@@ -526,6 +530,7 @@ export default function VoiceReminderScreen() {
         minute: number;
         repeatType: RepeatType;
         reminderType: ReminderType;
+        amount?: number | null;
       };
       if (json?.isoDate) setServerParsed(parsedFromServer(json));
     } catch {
@@ -579,7 +584,7 @@ export default function VoiceReminderScreen() {
                   : 'create';
       const computedIcon = p.iconOverride ?? computedIconByCategory;
 
-      const extractedAmount = p.shouldHaveAmount ? (extractAmountFromText(spoken) ?? 0) : 0;
+      const extractedAmount = effective.amount ?? (p.shouldHaveAmount ? (extractAmountFromText(spoken) ?? 0) : 0);
 
       const newBill: Omit<Bill, 'id'> = {
         name: effective.title,
@@ -689,7 +694,7 @@ export default function VoiceReminderScreen() {
               <View style={[styles.micOuterGradient, { backgroundColor: '#4F46E5' }]}>
                 <Animated.View style={[styles.micInner, micStyle]}>
                   {state === 'transcribing' ? (
-                    <PremiumLoader size={40} />
+                    <PremiumLoader size={30} />
                   ) : (
                     <Ionicons
                       name={state === 'recording' ? 'stop' : 'mic'}
@@ -767,30 +772,47 @@ export default function VoiceReminderScreen() {
 
                   {policy.showDue && policy.showRepeat && <View style={styles.scheduleDivider} />}
 
-                  {policy.showRepeat && (
-                    <Pressable
-                      style={styles.scheduleRow}
-                      onPress={() => {
-                        if (!canInteract) return;
-                        if (policy.forcedRepeatType) return; // fixed repeat categories are not editable here
-                        setTempRepeat(effectiveParsedForUI.repeatType);
-                        setShowRepeatPicker(true);
-                      }}
-                    >
+                  {effectiveParsedForUI.amount !== undefined && effectiveParsedForUI.amount > 0 && (
+                    <View style={styles.scheduleRow}>
                       <View style={styles.scheduleLeft}>
-                        <Ionicons name="repeat" size={16} color="#4F46E5" />
-                        <Text style={styles.scheduleLabel}>Repeat</Text>
+                        <Ionicons name="cash" size={16} color="#4F46E5" />
+                        <Text style={styles.scheduleLabel}>Amount</Text>
                       </View>
                       <View style={styles.scheduleRight}>
-                        <Text style={styles.scheduleValue}>
-                          {effectiveParsedForUI.repeatType === 'none'
-                            ? 'One-time'
-                            : effectiveParsedForUI.repeatType.charAt(0).toUpperCase() +
-                              effectiveParsedForUI.repeatType.slice(1)}
+                        <Text style={[styles.scheduleValue, { color: '#10B981', fontWeight: '700' }]}>
+                          ₹{effectiveParsedForUI.amount || 0}
                         </Text>
-                        <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
                       </View>
-                    </Pressable>
+                    </View>
+                  )}
+
+                  {policy.showRepeat && (
+                    <>
+                      <View style={styles.scheduleDivider} />
+                      <Pressable
+                        style={styles.scheduleRow}
+                        onPress={() => {
+                          if (!canInteract) return;
+                          if (policy.forcedRepeatType) return; // fixed repeat categories are not editable here
+                          setTempRepeat(effectiveParsedForUI.repeatType);
+                          setShowRepeatPicker(true);
+                        }}
+                      >
+                        <View style={styles.scheduleLeft}>
+                          <Ionicons name="repeat" size={16} color="#4F46E5" />
+                          <Text style={styles.scheduleLabel}>Repeat</Text>
+                        </View>
+                        <View style={styles.scheduleRight}>
+                          <Text style={styles.scheduleValue}>
+                            {effectiveParsedForUI.repeatType === 'none'
+                              ? 'One-time'
+                              : effectiveParsedForUI.repeatType.charAt(0).toUpperCase() +
+                                effectiveParsedForUI.repeatType.slice(1)}
+                          </Text>
+                          <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                        </View>
+                      </Pressable>
+                    </>
                   )}
                 </View>
               )}

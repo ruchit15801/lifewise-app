@@ -31,6 +31,8 @@ import { SeniorProvider } from "@/lib/senior-context";
 import { AlertProvider } from "@/lib/alert-context";
 import CustomAlert from "@/components/CustomAlert";
 
+import PremiumLoader from "@/components/PremiumLoader";
+
 SplashScreen.preventAutoHideAsync();
 
 function AnimatedSplash() {
@@ -68,7 +70,9 @@ function AnimatedSplash() {
         >
           Your Intelligent Life Companion
         </Animated.Text>
-        <ActivityIndicator color="#EC4899" style={{ marginTop: 24 }} />
+        <View style={{ height: 100, marginTop: 24 }}>
+          <PremiumLoader size={40} />
+        </View>
       </Animated.View>
     </LinearGradient>
   );
